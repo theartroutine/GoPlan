@@ -1,88 +1,55 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
-import { checkBackendHealth, type BackendHealth } from "@/lib/api/health";
-import { setupInterceptors } from "@/lib/api/interceptors";
-import { API_BASE_URL } from "@/lib/api/config";
-import { type ApiError } from "@/lib/api/http";
-
-type ConnectionState = "checking" | "connected" | "failed";
+import { useAuth } from "@/features/auth/application/auth-context";
+import { AuthGuard } from "@/features/auth/presentation/auth-guard";
+import { LogoutButton } from "@/features/auth/presentation/logout-button";
+import { ProfileNameForm } from "@/features/auth/presentation/profile-name-form";
 
 export default function Home() {
-  const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
-  const [healthPayload, setHealthPayload] = useState<BackendHealth | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  return (
+    <AuthGuard>
+      <HomeContent />
+    </AuthGuard>
+  );
+}
 
-  useEffect(() => {
-    setupInterceptors();
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function verifyConnection() {
-      setConnectionState("checking");
-      setErrorMessage(null);
-      try {
-        const payload = await checkBackendHealth();
-        if (!isMounted) {
-          return;
-        }
-        setHealthPayload(payload);
-        setConnectionState("connected");
-      } catch (error) {
-        if (!isMounted) {
-          return;
-        }
-        const normalizedError = error as ApiError;
-        setErrorMessage(normalizedError.message);
-        setConnectionState("failed");
-      }
-    }
-
-    void verifyConnection();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const statusText = useMemo(() => {
-    if (connectionState === "checking") {
-      return "Checking backend connection...";
-    }
-    if (connectionState === "connected") {
-      return "Connected";
-    }
-    return "Connection failed";
-  }, [connectionState]);
+function HomeContent() {
+  const { user } = useAuth();
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900">
       <section className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold">Frontend-Backend Readiness Check</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          This page verifies that the frontend can reach the backend health endpoint.
-        </p>
-
-        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-sm font-medium text-slate-700">Backend URL</p>
-          <p className="mt-1 font-mono text-sm text-slate-900">{API_BASE_URL}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Welcome to GoPlan</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Signed in as{" "}
+              <span className="font-medium text-slate-900">
+                {user?.display_name || user?.email}
+              </span>
+            </p>
+          </div>
+          <LogoutButton />
         </div>
 
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-          <p className="text-sm font-medium text-slate-700">Connection status</p>
-          <p className="mt-1 text-lg font-semibold">{statusText}</p>
-          {connectionState === "connected" && healthPayload ? (
-            <p className="mt-2 text-sm text-slate-600">
-              Service: <span className="font-medium">{healthPayload.service}</span> | Timestamp:{" "}
-              <span className="font-mono">{healthPayload.timestamp}</span>
-            </p>
-          ) : null}
-          {connectionState === "failed" && errorMessage ? (
-            <p className="mt-2 text-sm text-rose-600">Error: {errorMessage}</p>
-          ) : null}
+        <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-6 text-center">
+          <p className="text-sm text-slate-500">
+            Your workspace is ready. Start planning your goals.
+          </p>
+        </div>
+      </section>
+
+      <section className="mx-auto mt-6 w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+        <h2 className="text-lg font-semibold">Your Profile</h2>
+        {user?.identify_tag && (
+          <p className="mt-1 text-sm text-slate-500">{user.identify_tag}</p>
+        )}
+
+        <div className="mt-6">
+          <ProfileNameForm
+            initialFirstName={user?.first_name ?? ""}
+            initialLastName={user?.last_name ?? ""}
+          />
         </div>
       </section>
     </main>

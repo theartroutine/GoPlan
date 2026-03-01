@@ -128,7 +128,10 @@ REST_FRAMEWORK = {
         'auth_login': '20/hour',
         'auth_register': '10/hour',
         'auth_refresh': '60/hour',
+        'auth_me': '300/hour',
         'auth_logout': '30/hour',
+        'auth_profile_setup': '20/hour',
+        'auth_profile_name': '60/hour',
     },
 }
 

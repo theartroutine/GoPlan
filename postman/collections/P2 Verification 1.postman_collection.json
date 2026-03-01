@@ -1,0 +1,149 @@
+{
+  "info": {
+    "_postman_id": "3f729c21-5b8d-4ad3-a440-5aac4ac3d0da",
+    "name": "P2 Verification",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "P2-1: No cookie",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"P2-1 status 401\", function () {",
+              "  pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"P2-1 detail Not authenticated\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.detail).to.eql(\"Not authenticated.\");",
+              "});"
+            ],
+            "id": "877fb24c-9dde-4d05-88b9-2b4b2054e6c5"
+          }
+        }
+      ],
+      "id": "5ac0e6f5-99f9-4d4d-af6f-e8cbe012cafe",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{frontend_base}}/api/auth/me",
+          "host": [
+            "{{frontend_base}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "P2-2: Invalid refresh token (first call)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"P2-2 status 401\", function () {",
+              "  pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"P2-2 code refresh_auth_soft_failed\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.code).to.eql(\"refresh_auth_soft_failed\");",
+              "});",
+              "pm.test(\"P2-2 set marker cookie\", function () {",
+              "  const setCookies = pm.response.headers.all()",
+              "    .filter(h => h.key.toLowerCase() === \"set-cookie\")",
+              "    .map(h => h.value)",
+              "    .join(\" | \");",
+              "  pm.expect(setCookies).to.include(\"refresh_auth_error=1\");",
+              "});"
+            ],
+            "id": "ba935e41-0c3c-4194-8c76-12e523bf46ce"
+          }
+        }
+      ],
+      "id": "bd900981-47c8-419d-a6be-db715a39f460",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "refresh_token=invalid.refresh.token",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{frontend_base}}/api/auth/me",
+          "host": [
+            "{{frontend_base}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "P2-3: Invalid refresh token + marker (second call)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"P2-3 status 401\", function () {",
+              "  pm.response.to.have.status(401);",
+              "});",
+              "pm.test(\"P2-3 code session_expired\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.code).to.eql(\"session_expired\");",
+              "});",
+              "pm.test(\"P2-3 clear refresh cookie\", function () {",
+              "  const setCookies = pm.response.headers.all()",
+              "    .filter(h => h.key.toLowerCase() === \"set-cookie\")",
+              "    .map(h => h.value)",
+              "    .join(\" | \");",
+              "  pm.expect(setCookies).to.include(\"refresh_token=\");",
+              "});"
+            ],
+            "id": "ad8e4606-a1d2-4e7d-a8cd-f659ffd80429"
+          }
+        }
+      ],
+      "id": "ac578e57-5bfe-478d-b75a-203f015d79b9",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "refresh_token=invalid.refresh.token; refresh_auth_error=1",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{frontend_base}}/api/auth/me",
+          "host": [
+            "{{frontend_base}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
