@@ -4,3 +4,4 @@ __pycache__/
 # db.env
 # .env
 AGENTS.md
+.agents

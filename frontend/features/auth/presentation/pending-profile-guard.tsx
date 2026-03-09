@@ -22,7 +22,7 @@ export function PendingProfileGuard({ children }: { children: ReactNode }) {
   if (status === "idle" || status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="h-8 w-8 text-indigo-600" />
+        <Spinner className="h-8 w-8 text-foreground" />
       </div>
     );
   }

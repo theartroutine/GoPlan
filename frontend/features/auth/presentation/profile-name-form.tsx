@@ -87,13 +87,13 @@ export function ProfileNameForm({ initialFirstName, initialLastName }: ProfileNa
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {generalError && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {generalError}
         </div>
       )}
 
       {successMessage && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <div className="rounded-lg border border-border bg-muted px-4 py-3 text-sm text-foreground">
           {successMessage}
         </div>
       )}
@@ -141,9 +141,9 @@ export function ProfileNameForm({ initialFirstName, initialLastName }: ProfileNa
       <button
         type="submit"
         disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
       >
-        {loading && <Spinner className="h-4 w-4 text-white" />}
+        {loading && <Spinner className="h-4 w-4 text-primary-foreground" />}
         Update name
       </button>
     </form>
