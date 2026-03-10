@@ -4,11 +4,11 @@ import { NextResponse } from "next/server";
 import { refreshWithSingleFlight } from "@/app/api/auth/_lib/refresh";
 import {
   HARD_AUTH_ERROR_CODE,
-  SOFT_AUTH_ERROR_CODE,
+  REFRESH_COOKIE_NAME,
   clearRefreshAuthErrorMarker,
   clearRefreshSession,
-  hasRefreshAuthErrorMarker,
-  setRefreshAuthErrorMarker,
+  handleRefreshFailure,
+  setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
 import {
   asObject,
@@ -18,13 +18,11 @@ import {
   normalizeErrorPayload,
 } from "@/app/api/auth/_lib/upstream";
 
-const REFRESH_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
-
 export async function GET() {
   const jar = await cookies();
-  const refreshToken = jar.get("refresh_token")?.value;
+  const refreshTokenValue = jar.get(REFRESH_COOKIE_NAME)?.value;
 
-  if (!refreshToken) {
+  if (!refreshTokenValue) {
     clearRefreshAuthErrorMarker(jar);
     return NextResponse.json(
       { detail: "Not authenticated." },
@@ -32,37 +30,12 @@ export async function GET() {
     );
   }
 
-  const refreshResult = await refreshWithSingleFlight(refreshToken);
+  const refreshResult = await refreshWithSingleFlight(refreshTokenValue);
 
-  if (refreshResult.kind === "auth_error") {
-    if (hasRefreshAuthErrorMarker(jar)) {
-      clearRefreshSession(jar);
-      return NextResponse.json(
-        {
-          detail: "Session expired.",
-          code: HARD_AUTH_ERROR_CODE,
-        },
-        { status: 401 },
-      );
-    }
+  const failureResponse = handleRefreshFailure(jar, refreshResult);
+  if (failureResponse) return failureResponse;
 
-    setRefreshAuthErrorMarker(jar);
-    return NextResponse.json(
-      {
-        detail: refreshResult.detail,
-        code: SOFT_AUTH_ERROR_CODE,
-      },
-      { status: 401 },
-    );
-  }
-
-  if (refreshResult.kind === "transient_error") {
-    clearRefreshAuthErrorMarker(jar);
-    return NextResponse.json(
-      { detail: refreshResult.detail },
-      { status: refreshResult.status },
-    );
-  }
+  if (refreshResult.kind !== "success") return; // unreachable, satisfies TS
 
   const meUpstream = await callAuthUpstream("/api/auth/me", {
     method: "GET",
@@ -80,10 +53,7 @@ export async function GET() {
     if (meUpstream.status === 401 || meUpstream.status === 403) {
       clearRefreshSession(jar);
       return NextResponse.json(
-        {
-          detail: "Session expired.",
-          code: HARD_AUTH_ERROR_CODE,
-        },
+        { detail: "Session expired.", code: HARD_AUTH_ERROR_CODE },
         { status: 401 },
       );
     }
@@ -110,13 +80,7 @@ export async function GET() {
   }
 
   clearRefreshAuthErrorMarker(jar);
-  jar.set("refresh_token", refreshResult.refreshToken, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: REFRESH_MAX_AGE,
-    secure: process.env.NODE_ENV === "production",
-  });
+  setRefreshToken(jar, refreshResult.refreshToken);
 
   return NextResponse.json({
     user: userPayload,

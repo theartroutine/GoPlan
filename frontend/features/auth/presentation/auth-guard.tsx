@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/features/auth/application/auth-context";
-import { Spinner } from "@/shared/ui/spinner";
+import { FullPageSpinner } from "@/shared/ui/full-page-spinner";
 
 export function AuthGuard({ children }: { children: ReactNode }) {
   const { status } = useAuth();
@@ -20,11 +20,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   }, [status, router]);
 
   if (status === "idle" || status === "loading") {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="h-8 w-8 text-foreground" />
-      </div>
-    );
+    return <FullPageSpinner />;
   }
 
   if (status !== "authenticated") {

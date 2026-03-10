@@ -7,6 +7,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.serializers import (
+    INVALID_FIRST_NAME_CODE,
+    INVALID_IDENTIFY_NAME_CODE,
+    INVALID_LAST_NAME_CODE,
     LoginSerializer,
     LogoutSerializer,
     ProfileNameUpdateSerializer,
@@ -25,9 +28,9 @@ from accounts.services import (
 )
 
 IDENTITY_VALIDATION_CODE_BY_FIELD = {
-    "first_name": "INVALID_FIRST_NAME",
-    "last_name": "INVALID_LAST_NAME",
-    "identify_name": "INVALID_IDENTIFY_NAME",
+    "first_name": INVALID_FIRST_NAME_CODE,
+    "last_name": INVALID_LAST_NAME_CODE,
+    "identify_name": INVALID_IDENTIFY_NAME_CODE,
 }
 DEFAULT_IDENTITY_VALIDATION_CODE = "INVALID_IDENTITY_PAYLOAD"
 

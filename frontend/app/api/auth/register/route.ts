@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { clearRefreshAuthErrorMarker } from "@/app/api/auth/_lib/session-state";
+import { clearRefreshAuthErrorMarker, setRefreshToken } from "@/app/api/auth/_lib/session-state";
 import {
   asObject,
   callAuthUpstream,
@@ -10,8 +10,6 @@ import {
   getString,
   normalizeErrorPayload,
 } from "@/app/api/auth/_lib/upstream";
-
-const REFRESH_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -46,9 +44,9 @@ export async function POST(request: NextRequest) {
   const userObj = asObject(payload?.user);
   const userPayload = extractUserPayload(userObj);
   const accessToken = getString(tokens, "access");
-  const refreshToken = getString(tokens, "refresh");
+  const refreshTokenValue = getString(tokens, "refresh");
 
-  if (!userPayload || !accessToken || !refreshToken) {
+  if (!userPayload || !accessToken || !refreshTokenValue) {
     return NextResponse.json(
       { detail: "Invalid register response from auth service." },
       { status: 502 },
@@ -57,14 +55,7 @@ export async function POST(request: NextRequest) {
 
   const jar = await cookies();
   clearRefreshAuthErrorMarker(jar);
-
-  jar.set("refresh_token", refreshToken, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: REFRESH_MAX_AGE,
-    secure: process.env.NODE_ENV === "production",
-  });
+  setRefreshToken(jar, refreshTokenValue);
 
   return NextResponse.json({
     user: userPayload,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from django.contrib.auth.base_user import BaseUserManager
-from django.contrib.auth.password_validation import validate_password
 
 
 class UserManager(BaseUserManager):
@@ -20,7 +19,6 @@ class UserManager(BaseUserManager):
 
         normalized_email = self.normalize_email_value(email)
         user = self.model(email=normalized_email, **extra_fields)
-        validate_password(password, user=user)
         user.set_password(password)
         user.save(using=self._db)
         return user

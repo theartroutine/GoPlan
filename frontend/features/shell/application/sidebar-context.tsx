@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -50,11 +51,16 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   );
 
   const toggle = useCallback(() => {
-    setCollapsed(!isCollapsed);
-  }, [isCollapsed]);
+    setCollapsed(!getSnapshot());
+  }, []);
+
+  const value = useMemo(
+    () => ({ isCollapsed, toggle }),
+    [isCollapsed, toggle],
+  );
 
   return (
-    <SidebarContext.Provider value={{ isCollapsed, toggle }}>
+    <SidebarContext.Provider value={value}>
       {children}
     </SidebarContext.Provider>
   );

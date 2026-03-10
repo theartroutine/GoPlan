@@ -5,6 +5,7 @@ import axios from "axios";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffProfileNameUpdate } from "@/features/auth/infrastructure/auth-api";
+import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
 import { Spinner } from "@/shared/ui/spinner";
 
@@ -21,7 +22,7 @@ const ERROR_CODE_TO_FIELD: ErrorCodeFieldMap = {
 };
 
 export function ProfileNameForm({ initialFirstName, initialLastName }: ProfileNameFormProps) {
-  const { nameUpdateSuccess } = useAuth();
+  const { profileUpdateSuccess } = useAuth();
 
   const [firstName, setFirstName] = useState(initialFirstName);
   const [lastName, setLastName] = useState(initialLastName);
@@ -43,7 +44,7 @@ export function ProfileNameForm({ initialFirstName, initialLastName }: ProfileNa
           first_name: firstName.trim(),
           last_name: lastName.trim(),
         });
-        nameUpdateSuccess(data.user);
+        profileUpdateSuccess(data.user);
         setSuccessMessage("Name updated successfully.");
       } catch (err) {
         if (!axios.isAxiosError(err) || !err.response) {
@@ -81,16 +82,12 @@ export function ProfileNameForm({ initialFirstName, initialLastName }: ProfileNa
         setLoading(false);
       }
     },
-    [firstName, lastName, nameUpdateSuccess],
+    [firstName, lastName, profileUpdateSuccess],
   );
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {generalError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {generalError}
-        </div>
-      )}
+      {generalError && <FormErrorBanner>{generalError}</FormErrorBanner>}
 
       {successMessage && (
         <div className="rounded-lg border border-border bg-muted px-4 py-3 text-sm text-foreground">

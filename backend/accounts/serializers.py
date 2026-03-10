@@ -119,16 +119,18 @@ class LoginSerializer(serializers.Serializer):
         return attrs
 
 
-class ProfileSetupSerializer(serializers.Serializer):
-    first_name = serializers.CharField(max_length=NAME_MAX_LENGTH, trim_whitespace=False)
-    last_name = serializers.CharField(max_length=NAME_MAX_LENGTH, trim_whitespace=False)
-    identify_name = serializers.CharField(max_length=24, trim_whitespace=False)
-
+class HumanNameValidationMixin:
     def validate_first_name(self, value: str) -> str:
         return validate_human_name(value, "first_name", INVALID_FIRST_NAME_CODE)
 
     def validate_last_name(self, value: str) -> str:
         return validate_human_name(value, "last_name", INVALID_LAST_NAME_CODE)
+
+
+class ProfileSetupSerializer(HumanNameValidationMixin, serializers.Serializer):
+    first_name = serializers.CharField(max_length=NAME_MAX_LENGTH, trim_whitespace=False)
+    last_name = serializers.CharField(max_length=NAME_MAX_LENGTH, trim_whitespace=False)
+    identify_name = serializers.CharField(max_length=24, trim_whitespace=False)
 
     def validate_identify_name(self, value: str) -> str:
         normalized = normalize_whitespace(value).lower()
@@ -149,15 +151,9 @@ class ProfileSetupSerializer(serializers.Serializer):
         )
 
 
-class ProfileNameUpdateSerializer(serializers.Serializer):
+class ProfileNameUpdateSerializer(HumanNameValidationMixin, serializers.Serializer):
     first_name = serializers.CharField(max_length=NAME_MAX_LENGTH, trim_whitespace=False)
     last_name = serializers.CharField(max_length=NAME_MAX_LENGTH, trim_whitespace=False)
-
-    def validate_first_name(self, value: str) -> str:
-        return validate_human_name(value, "first_name", INVALID_FIRST_NAME_CODE)
-
-    def validate_last_name(self, value: str) -> str:
-        return validate_human_name(value, "last_name", INVALID_LAST_NAME_CODE)
 
     def save(self, **kwargs):
         user = self.context["request"].user

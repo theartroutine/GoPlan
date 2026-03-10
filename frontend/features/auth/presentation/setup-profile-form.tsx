@@ -6,6 +6,7 @@ import axios from "axios";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffProfileSetup } from "@/features/auth/infrastructure/auth-api";
+import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
 import { Spinner } from "@/shared/ui/spinner";
 
@@ -28,7 +29,7 @@ function getIdentifyNameHint(value: string): string | undefined {
 }
 
 export function SetupProfileForm() {
-  const { profileSetupSuccess } = useAuth();
+  const { profileUpdateSuccess } = useAuth();
   const router = useRouter();
 
   const [firstName, setFirstName] = useState("");
@@ -64,7 +65,7 @@ export function SetupProfileForm() {
           last_name: lastName.trim(),
           identify_name: identifyName,
         });
-        profileSetupSuccess(data.user);
+        profileUpdateSuccess(data.user);
         router.replace("/");
       } catch (err) {
         if (!axios.isAxiosError(err) || !err.response) {
@@ -116,16 +117,12 @@ export function SetupProfileForm() {
         setLoading(false);
       }
     },
-    [firstName, lastName, identifyName, profileSetupSuccess, router],
+    [firstName, lastName, identifyName, profileUpdateSuccess, router],
   );
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {generalError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {generalError}
-        </div>
-      )}
+      {generalError && <FormErrorBanner>{generalError}</FormErrorBanner>}
 
       <FormField
         id="setup-first-name"

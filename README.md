@@ -15,7 +15,6 @@ Use it as a clean foundation, then add your domain apps and APIs.
 - Axios
 - PostgreSQL
 - Podman Compose
-
 ## Quick Start
 
 ```bash

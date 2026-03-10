@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { refreshWithSingleFlight } from "@/app/api/auth/_lib/refresh";
-import { clearRefreshSession } from "@/app/api/auth/_lib/session-state";
+import { REFRESH_COOKIE_NAME, clearRefreshSession } from "@/app/api/auth/_lib/session-state";
 import { callAuthUpstream } from "@/app/api/auth/_lib/upstream";
 
 async function callBackendLogout(refreshToken: string, authorization: string | null) {
@@ -23,7 +23,7 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
 
 export async function POST(request: NextRequest) {
   const jar = await cookies();
-  const refreshToken = jar.get("refresh_token")?.value;
+  const refreshToken = jar.get(REFRESH_COOKIE_NAME)?.value;
   let authorization = request.headers.get("authorization");
 
   // Best-effort: always clear cookies regardless of Django response

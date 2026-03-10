@@ -6,6 +6,7 @@ import axios from "axios";
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffRegister } from "@/features/auth/infrastructure/auth-api";
 import type { FieldErrors } from "@/features/auth/domain/types";
+import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
 import { Spinner } from "@/shared/ui/spinner";
 
@@ -62,11 +63,7 @@ export function RegisterForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {generalError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {generalError}
-        </div>
-      )}
+      {generalError && <FormErrorBanner>{generalError}</FormErrorBanner>}
 
       <FormField
         id="register-email"

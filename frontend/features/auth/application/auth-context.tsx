@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
   type ReactNode,
 } from "react";
@@ -76,8 +77,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 
 type AuthContextValue = AuthState & {
   loginSuccess: (user: AuthUser, accessToken: string) => void;
-  profileSetupSuccess: (user: AuthUser) => void;
-  nameUpdateSuccess: (user: AuthUser) => void;
+  profileUpdateSuccess: (user: AuthUser) => void;
   logout: () => Promise<void>;
 };
 
@@ -162,12 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const profileSetupSuccess = useCallback((user: AuthUser) => {
-    dispatch({ type: "AUTH_PROFILE_COMPLETED", user });
-    broadcastProfileCompleted();
-  }, []);
-
-  const nameUpdateSuccess = useCallback((user: AuthUser) => {
+  const profileUpdateSuccess = useCallback((user: AuthUser) => {
     dispatch({ type: "AUTH_PROFILE_COMPLETED", user });
     broadcastProfileCompleted();
   }, []);
@@ -184,8 +179,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     broadcastLogout();
   }, []);
 
+  const value = useMemo(
+    () => ({ ...state, loginSuccess, profileUpdateSuccess, logout }),
+    [state, loginSuccess, profileUpdateSuccess, logout],
+  );
+
   return (
-    <AuthContext.Provider value={{ ...state, loginSuccess, profileSetupSuccess, nameUpdateSuccess, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

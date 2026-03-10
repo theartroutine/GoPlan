@@ -5,6 +5,7 @@ import axios from "axios";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffLogin } from "@/features/auth/infrastructure/auth-api";
+import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
 import { Spinner } from "@/shared/ui/spinner";
 
@@ -41,11 +42,7 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+      {error && <FormErrorBanner>{error}</FormErrorBanner>}
 
       <FormField
         id="login-email"
