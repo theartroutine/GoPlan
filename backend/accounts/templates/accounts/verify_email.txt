@@ -1,0 +1,11 @@
+Hi,
+
+Please verify your email address by clicking the link below:
+
+{{ verification_url }}
+
+This link expires in 24 hours.
+
+If you didn't create a GoPlan account, you can safely ignore this email.
+
+-- GoPlan

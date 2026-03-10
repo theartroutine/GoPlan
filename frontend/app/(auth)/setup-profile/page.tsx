@@ -1,5 +1,6 @@
 import { SetupProfileForm } from "@/features/auth/presentation/setup-profile-form";
 import { PendingProfileGuard } from "@/features/auth/presentation/pending-profile-guard";
+import { VerifiedBanner } from "@/features/auth/presentation/verified-banner";
 
 export default function SetupProfilePage() {
   return (
@@ -14,7 +15,10 @@ export default function SetupProfilePage() {
           </p>
 
           <div className="mt-8 rounded-xl border border-border bg-card p-6 shadow-sm">
-            <SetupProfileForm />
+            <div className="space-y-4">
+              <VerifiedBanner />
+              <SetupProfileForm />
+            </div>
           </div>
         </div>
       </main>

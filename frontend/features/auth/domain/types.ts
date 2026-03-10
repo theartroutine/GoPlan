@@ -16,6 +16,11 @@ export type BffAuthResponse = {
   access_token: string;
 };
 
+export type BffRegisterResponse = {
+  detail: string;
+  email: string;
+};
+
 export type FieldErrors = Record<string, string[]>;
 
 export type AuthState = {

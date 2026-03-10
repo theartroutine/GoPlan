@@ -13,10 +13,14 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 
-from accounts.services import complete_profile_identity, update_display_name
+import logging
+
+from accounts.services import complete_profile_identity, send_verification_email, update_display_name
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
-GENERIC_REGISTER_ERROR = "Unable to register with provided credentials."
+GENERIC_REGISTER_ERROR = "Unable to register. If you already have an account, try signing in."
 IDENTIFY_NAME_PATTERN = re.compile(r"^[a-z]{3,24}$")
 NAME_MAX_LENGTH = 80
 NAME_SEPARATORS = {" ", "-", "'"}
@@ -94,12 +98,19 @@ class RegisterSerializer(serializers.Serializer):
     def create(self, validated_data):
         try:
             with transaction.atomic():
-                return User.objects.create_user(
+                user = User.objects.create_user(
                     email=validated_data["email"],
                     password=validated_data["password"],
                 )
         except IntegrityError as exc:
             raise serializers.ValidationError({"detail": GENERIC_REGISTER_ERROR}) from exc
+
+        try:
+            send_verification_email(user)
+        except Exception:
+            logger.exception("Failed to send verification email for user %s", user.pk)
+
+        return user
 
 
 class LoginSerializer(serializers.Serializer):
@@ -162,6 +173,25 @@ class ProfileNameUpdateSerializer(HumanNameValidationMixin, serializers.Serializ
             first_name=self.validated_data["first_name"],
             last_name=self.validated_data["last_name"],
         )
+
+
+class ResendVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value: str) -> str:
+        return User.objects.normalize_email_value(value)
+
+    def save(self, **kwargs):
+        email = self.validated_data["email"]
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return  # Anti-enumeration: silently succeed
+
+        if user.email_verified or user.is_staff or user.is_superuser:
+            return  # Already verified or admin — no email sent
+
+        send_verification_email(user)
 
 
 class RefreshTokenSerializer(serializers.Serializer):

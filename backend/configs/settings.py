@@ -132,6 +132,8 @@ REST_FRAMEWORK = {
         'auth_logout': '30/hour',
         'auth_profile_setup': '20/hour',
         'auth_profile_name': '60/hour',
+        'auth_verify_email': '10/hour',
+        'auth_resend_verification': '5/hour',
     },
 }
 
@@ -150,6 +152,17 @@ SIMPLE_JWT = {
 
 # Custom User Model
 AUTH_USER_MODEL = 'accounts.User'
+
+# -------- Email Backend --------
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
+EMAIL_USE_TLS = False  # Mailpit dev — no TLS needed
+DEFAULT_FROM_EMAIL = 'noreply@goplan.app'
+
+# -------- Email Verification --------
+EMAIL_VERIFICATION_MAX_AGE_SECONDS = 60 * 60 * 24  # 24 hours
+FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:3000')
 
 # MongoDB Integration
 # MONGO_URL = os.environ.get('MONGO_URL')

@@ -19,6 +19,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     identify_code = models.CharField(max_length=6, null=True, blank=True, unique=True, db_index=True)
     is_profile_completed = models.BooleanField(default=False, db_index=True)
     profile_completed_at = models.DateTimeField(null=True, blank=True)
+    email_verified = models.BooleanField(default=False, db_index=True)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)
@@ -61,6 +63,10 @@ class User(AbstractBaseUser, PermissionsMixin):
         if not self.identify_name or not self.identify_code:
             return None
         return f"{self.identify_name}#{self.identify_code}"
+
+    @property
+    def requires_email_verification(self) -> bool:
+        return not self.email_verified and not self.is_staff and not self.is_superuser
 
     @property
     def requires_profile_setup(self) -> bool:

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import axios from "axios";
 
 import { useAuth } from "@/features/auth/application/auth-context";
@@ -11,16 +13,22 @@ import { Spinner } from "@/shared/ui/spinner";
 
 export function LoginForm() {
   const { loginSuccess } = useAuth();
+  const searchParams = useSearchParams();
+
+  const verified = searchParams.get("verified") === "true";
+  const verifyError = searchParams.get("verify_error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
       setError(null);
+      setEmailNotVerified(false);
       setLoading(true);
 
       try {
@@ -28,8 +36,13 @@ export function LoginForm() {
         loginSuccess(data.user, data.access_token);
       } catch (err) {
         if (axios.isAxiosError(err)) {
-          const detail = err.response?.data?.detail;
-          setError(typeof detail === "string" ? detail : "Login failed. Please try again.");
+          const errData = err.response?.data;
+          if (errData?.error_code === "EMAIL_NOT_VERIFIED") {
+            setEmailNotVerified(true);
+          } else {
+            const detail = errData?.detail;
+            setError(typeof detail === "string" ? detail : "Login failed. Please try again.");
+          }
         } else {
           setError("Unexpected network error.");
         }
@@ -42,6 +55,30 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {verified && (
+        <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+          Email verified successfully! You can now sign in.
+        </div>
+      )}
+
+      {verifyError === "invalid" && (
+        <FormErrorBanner>
+          Verification link is invalid or expired. Please request a new one.
+        </FormErrorBanner>
+      )}
+
+      {emailNotVerified && (
+        <FormErrorBanner>
+          Please verify your email address before signing in.{" "}
+          <Link
+            href={`/verify-email?email=${encodeURIComponent(email)}`}
+            className="font-medium underline underline-offset-2"
+          >
+            Resend verification email
+          </Link>
+        </FormErrorBanner>
+      )}
+
       {error && <FormErrorBanner>{error}</FormErrorBanner>}
 
       <FormField

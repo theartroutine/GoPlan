@@ -1,10 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
-  asObject,
   callAuthUpstream,
   extractDetail,
-  getString,
   normalizeErrorPayload,
 } from "@/app/api/auth/_lib/upstream";
 
@@ -16,7 +14,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ detail: "Invalid request payload." }, { status: 400 });
   }
 
-  const upstream = await callAuthUpstream("/api/auth/register", {
+  const upstream = await callAuthUpstream("/api/auth/resend-verification", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -30,22 +28,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       normalizeErrorPayload(
         upstream.data,
-        extractDetail(upstream.data, "Registration failed. Please try again."),
+        extractDetail(upstream.data, "Failed to resend verification email."),
       ),
       { status: upstream.status },
     );
   }
 
-  const payload = asObject(upstream.data);
-  const detail = getString(payload, "detail");
-  const email = getString(payload, "email");
-
-  if (!detail || !email) {
-    return NextResponse.json(
-      { detail: "Invalid register response from auth service." },
-      { status: 502 },
-    );
-  }
-
-  return NextResponse.json({ detail, email }, { status: 201 });
+  return NextResponse.json(upstream.data);
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import axios from "axios";
 
-import { useAuth } from "@/features/auth/application/auth-context";
 import { bffRegister } from "@/features/auth/infrastructure/auth-api";
 import type { FieldErrors } from "@/features/auth/domain/types";
 import { FormErrorBanner } from "@/shared/ui/form-error-banner";
@@ -11,7 +11,7 @@ import { FormField } from "@/shared/ui/form-field";
 import { Spinner } from "@/shared/ui/spinner";
 
 export function RegisterForm() {
-  const { loginSuccess } = useAuth();
+  const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,7 +28,7 @@ export function RegisterForm() {
 
       try {
         const data = await bffRegister(email, password);
-        loginSuccess(data.user, data.access_token);
+        router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
       } catch (err) {
         if (axios.isAxiosError(err) && err.response?.data) {
           const errData = err.response.data;
@@ -58,7 +58,7 @@ export function RegisterForm() {
         setLoading(false);
       }
     },
-    [email, password, loginSuccess],
+    [email, password, router],
   );
 
   return (
