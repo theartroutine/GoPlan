@@ -5,6 +5,7 @@ import { Check, Copy } from "lucide-react";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { useSidebar } from "@/features/shell/application/sidebar-context";
+import { getInitials } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
 import { Button } from "@/shared/ui/button";
@@ -13,14 +14,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
-
-function getInitials(displayName: string): string {
-  const parts = displayName.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return displayName.slice(0, 2).toUpperCase();
-}
 
 export function SidebarUserSection() {
   const { user } = useAuth();

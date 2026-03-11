@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 
@@ -28,7 +28,24 @@ function getIdentifyNameHint(value: string): string | undefined {
   return undefined;
 }
 
-export function SetupProfileForm() {
+function getNameHint(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.includes(" ")) return "Must be a single word (no spaces).";
+  return undefined;
+}
+
+export type SetupProfileFields = {
+  firstName: string;
+  lastName: string;
+  identifyName: string;
+};
+
+type SetupProfileFormProps = {
+  onFieldsChange?: (fields: SetupProfileFields) => void;
+};
+
+export function SetupProfileForm({ onFieldsChange }: SetupProfileFormProps) {
   const { profileUpdateSuccess } = useAuth();
   const router = useRouter();
 
@@ -40,6 +57,12 @@ export function SetupProfileForm() {
   const [loading, setLoading] = useState(false);
 
   const identifyNameHint = useMemo(() => getIdentifyNameHint(identifyName), [identifyName]);
+  const firstNameHint = useMemo(() => getNameHint(firstName), [firstName]);
+  const lastNameHint = useMemo(() => getNameHint(lastName), [lastName]);
+
+  useEffect(() => {
+    onFieldsChange?.({ firstName, lastName, identifyName });
+  }, [firstName, lastName, identifyName, onFieldsChange]);
 
   const handleIdentifyNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.toLowerCase().replace(/[^a-z]/g, "");
@@ -130,6 +153,7 @@ export function SetupProfileForm() {
         type="text"
         autoComplete="given-name"
         required
+        placeholder="Minh"
         value={firstName}
         onChange={(e) => {
           setFirstName(e.target.value);
@@ -140,7 +164,7 @@ export function SetupProfileForm() {
             return next;
           });
         }}
-        error={fieldErrors.first_name}
+        error={fieldErrors.first_name ?? firstNameHint}
       />
 
       <FormField
@@ -149,6 +173,7 @@ export function SetupProfileForm() {
         type="text"
         autoComplete="family-name"
         required
+        placeholder="Duong"
         value={lastName}
         onChange={(e) => {
           setLastName(e.target.value);
@@ -159,16 +184,19 @@ export function SetupProfileForm() {
             return next;
           });
         }}
-        error={fieldErrors.last_name}
+        error={fieldErrors.last_name ?? lastNameHint}
       />
 
       <div>
         <FormField
           id="setup-identify-name"
           label="Identify name"
+          labelClassName="text-amber-600 dark:text-amber-400"
+          className="border-amber-400 dark:border-amber-600"
           type="text"
           autoComplete="username"
           required
+          placeholder="minhduong"
           value={identifyName}
           onChange={handleIdentifyNameChange}
           error={fieldErrors.identify_name ?? identifyNameHint}

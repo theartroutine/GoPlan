@@ -23,7 +23,7 @@ User = get_user_model()
 GENERIC_REGISTER_ERROR = "Unable to register. If you already have an account, try signing in."
 IDENTIFY_NAME_PATTERN = re.compile(r"^[a-z]{3,24}$")
 NAME_MAX_LENGTH = 80
-NAME_SEPARATORS = {" ", "-", "'"}
+NAME_SEPARATORS = {"-", "'"}
 DISALLOWED_UNICODE_CATEGORIES = {"Cc", "Cf", "Cs", "Co", "Cn"}
 INVALID_FIRST_NAME_CODE = "INVALID_FIRST_NAME"
 INVALID_LAST_NAME_CODE = "INVALID_LAST_NAME"
@@ -44,6 +44,12 @@ def validate_human_name(value: str, field_name: str, error_code: str) -> str:
             f"{field_name} must be at most {NAME_MAX_LENGTH} characters.",
             code=error_code,
         )
+    if " " in normalized:
+        raise serializers.ValidationError(
+            f"{field_name} must be a single word (no spaces).",
+            code=error_code,
+        )
+
     if normalized[0] in NAME_SEPARATORS or normalized[-1] in NAME_SEPARATORS:
         raise serializers.ValidationError(
             f"{field_name} cannot start or end with a separator.",

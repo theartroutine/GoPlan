@@ -148,6 +148,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Best-effort sync; user can reload manually
           });
       }
+      if (msg.type === "email_verified") {
+        // Re-bootstrap: refresh cookie is now available after verification
+        void bffMe()
+          .then((data) => {
+            tokenManager.set(data.access_token);
+            const authStatus = resolveAuthStatus(data.user);
+            if (authStatus === "pending_profile") {
+              dispatch({ type: "AUTH_PENDING_PROFILE", user: data.user });
+            } else {
+              dispatch({ type: "AUTH_SUCCESS", user: data.user });
+            }
+          })
+          .catch(() => {
+            // Best-effort; user can reload manually
+          });
+      }
     });
   }, []);
 

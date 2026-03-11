@@ -382,6 +382,62 @@ class AuthAPITestCase(APITestCase):
         self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
         self.assertIn("detail", response.data)
 
+    def test_profile_setup_rejects_first_name_with_spaces(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        tokens = self.issue_tokens_for_user(user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        response = self.client.post(
+            self.profile_setup_url,
+            {"first_name": "Quang Minh", "last_name": "Pham", "identify_name": "quangminh"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
+
+    def test_profile_setup_rejects_last_name_with_spaces(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        tokens = self.issue_tokens_for_user(user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        response = self.client.post(
+            self.profile_setup_url,
+            {"first_name": "Quang", "last_name": "Minh Quang", "identify_name": "quangminh"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error_code"], "INVALID_LAST_NAME")
+
+    def test_profile_setup_accepts_hyphenated_name(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        tokens = self.issue_tokens_for_user(user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        response = self.client.post(
+            self.profile_setup_url,
+            {"first_name": "Jean-Pierre", "last_name": "Dupont", "identify_name": "jeanpierre"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["user"]["display_name"], "Jean-Pierre Dupont")
+
+    def test_profile_setup_accepts_apostrophe_name(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        tokens = self.issue_tokens_for_user(user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        response = self.client.post(
+            self.profile_setup_url,
+            {"first_name": "O'Brien", "last_name": "Smith", "identify_name": "obrien"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["user"]["display_name"], "O'Brien Smith")
+
     def test_profile_setup_rejects_when_already_completed(self):
         user = self.create_completed_user(email="owner@example.com", password="StrongPass#2026")
         tokens = self.issue_tokens_for_user(user)
@@ -474,6 +530,20 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data["error_code"], "PROFILE_SETUP_REQUIRED")
+
+    def test_profile_name_update_rejects_name_with_spaces(self):
+        user = self.create_completed_user(email="owner@example.com", password="StrongPass#2026")
+        tokens = self.issue_tokens_for_user(user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        response = self.client.patch(
+            self.profile_name_url,
+            {"first_name": "Pham Quang", "last_name": "Minh"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
 
     def test_profile_name_update_rejects_invalid_last_name_with_error_code(self):
         user = self.create_completed_user(email="owner@example.com", password="StrongPass#2026")

@@ -5,12 +5,13 @@ import { cn } from "@/shared/lib/utils";
 type FormFieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string;
   error?: string;
+  labelClassName?: string;
 };
 
-export function FormField({ label, error, id, className, ...props }: FormFieldProps) {
+export function FormField({ label, error, id, className, labelClassName, ...props }: FormFieldProps) {
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium text-foreground">
+      <label htmlFor={id} className={cn("block text-sm font-medium text-foreground", labelClassName)}>
         {label}
       </label>
       <input
