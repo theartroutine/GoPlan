@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type Ref } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 
@@ -43,9 +43,12 @@ export type SetupProfileFields = {
 
 type SetupProfileFormProps = {
   onFieldsChange?: (fields: SetupProfileFields) => void;
+  firstNameRef?: Ref<HTMLInputElement>;
+  lastNameRef?: Ref<HTMLInputElement>;
+  identifyNameRef?: Ref<HTMLInputElement>;
 };
 
-export function SetupProfileForm({ onFieldsChange }: SetupProfileFormProps) {
+export function SetupProfileForm({ onFieldsChange, firstNameRef, lastNameRef, identifyNameRef }: SetupProfileFormProps) {
   const { profileUpdateSuccess } = useAuth();
   const router = useRouter();
 
@@ -148,6 +151,7 @@ export function SetupProfileForm({ onFieldsChange }: SetupProfileFormProps) {
       {generalError && <FormErrorBanner>{generalError}</FormErrorBanner>}
 
       <FormField
+        ref={firstNameRef}
         id="setup-first-name"
         label="First name"
         type="text"
@@ -168,6 +172,7 @@ export function SetupProfileForm({ onFieldsChange }: SetupProfileFormProps) {
       />
 
       <FormField
+        ref={lastNameRef}
         id="setup-last-name"
         label="Last name"
         type="text"
@@ -189,6 +194,7 @@ export function SetupProfileForm({ onFieldsChange }: SetupProfileFormProps) {
 
       <div>
         <FormField
+          ref={identifyNameRef}
           id="setup-identify-name"
           label="Identify name"
           labelClassName="text-amber-600 dark:text-amber-400"
