@@ -23,7 +23,7 @@ frontend/.env.local
 !backend/.env.example
 !backend/db.env.example
 !frontend/.env.example
-explain
+report
 AGENTS.md
 package-lock.json
 .claude

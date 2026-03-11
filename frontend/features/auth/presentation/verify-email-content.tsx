@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import axios from "axios";
-import { Mail } from "lucide-react";
+import { Inbox, Mail } from "lucide-react";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffResendVerification } from "@/features/auth/infrastructure/auth-api";
@@ -53,7 +53,7 @@ export function VerifyEmailContent() {
   }, [email]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {error && <FormErrorBanner>{error}</FormErrorBanner>}
 
       {success && (
@@ -62,12 +62,35 @@ export function VerifyEmailContent() {
         </div>
       )}
 
-      {/* Animated email icon */}
-      <div className="flex justify-center">
-        <div className="animate-pulse rounded-full bg-primary/10 p-4">
-          <Mail className="h-8 w-8 text-primary" />
+      {/* Hero: Mail icon with ring waves → dashed line → Inbox icon */}
+      <div className="flex items-center justify-center gap-6">
+        {/* Mail circle + ring waves */}
+        <div className="relative flex items-center justify-center">
+          <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+            <Mail className="h-7 w-7 text-primary" />
+          </div>
+          <div className="absolute inset-0 m-auto h-14 w-14 rounded-full border-2 border-primary/30 animate-[ring-expand_2.4s_ease-out_infinite]" />
+          <div className="absolute inset-0 m-auto h-14 w-14 rounded-full border-2 border-primary/30 animate-[ring-expand_2.4s_ease-out_0.8s_infinite]" />
+          <div className="absolute inset-0 m-auto h-14 w-14 rounded-full border-2 border-primary/30 animate-[ring-expand_2.4s_ease-out_1.6s_infinite]" />
+        </div>
+
+        {/* Dashed connector */}
+        <div className="w-10 border-t-2 border-dashed border-muted-foreground/30" />
+
+        {/* Inbox circle */}
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+          <Inbox className="h-7 w-7 text-muted-foreground" />
         </div>
       </div>
+
+      {/* Email pill */}
+      {email && (
+        <div className="flex justify-center">
+          <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+            {email}
+          </span>
+        </div>
+      )}
 
       {/* Waiting text */}
       <p className="text-center text-sm font-medium text-foreground">
@@ -77,46 +100,19 @@ export function VerifyEmailContent() {
         </span>
       </p>
 
-      <p className="text-center text-sm text-muted-foreground">
-        We sent a verification link to{" "}
-        {email ? (
-          <span className="font-medium text-foreground">{email}</span>
-        ) : (
-          "your email address"
-        )}
-      </p>
-
-      {/* Step indicator */}
-      <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">1</span>
-          Check inbox
-        </span>
-        <span className="h-px w-4 bg-border" />
-        <span className="flex items-center gap-1.5">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">2</span>
-          Click link
-        </span>
-        <span className="h-px w-4 bg-border" />
-        <span className="flex items-center gap-1.5">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">3</span>
-          Done
-        </span>
+      {/* Resend row */}
+      <div className="flex items-center justify-center gap-3">
+        <span className="text-sm text-muted-foreground">Didn&apos;t get it?</span>
+        <button
+          type="button"
+          onClick={handleResend}
+          disabled={loading || !email}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          {loading && <Spinner className="h-3.5 w-3.5" />}
+          Resend
+        </button>
       </div>
-
-      <p className="text-center text-xs text-muted-foreground">
-        Didn&apos;t receive the email? Check your spam folder or resend it.
-      </p>
-
-      <button
-        type="button"
-        onClick={handleResend}
-        disabled={loading || !email}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-      >
-        {loading && <Spinner className="h-4 w-4 text-primary-foreground" />}
-        Resend verification email
-      </button>
     </div>
   );
 }
