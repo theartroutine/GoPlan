@@ -11,12 +11,12 @@ from accounts.managers import UserManager
 
 class User(AbstractBaseUser, PermissionsMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True, db_index=True)
+    email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=80, blank=True, default="")
     last_name = models.CharField(max_length=80, blank=True, default="")
     display_name = models.CharField(max_length=161, blank=True, default="", db_index=True)
     identify_name = models.CharField(max_length=24, null=True, blank=True, db_index=True)
-    identify_code = models.CharField(max_length=6, null=True, blank=True, unique=True, db_index=True)
+    identify_code = models.CharField(max_length=6, null=True, blank=True, unique=True)
     is_profile_completed = models.BooleanField(default=False, db_index=True)
     profile_completed_at = models.DateTimeField(null=True, blank=True)
     email_verified = models.BooleanField(default=False, db_index=True)
@@ -34,7 +34,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         db_table = "accounts_user"
-        ordering = ("-created_at",)
+        ordering = []
         constraints = [
             models.CheckConstraint(
                 name="accounts_user_profile_completed_fields_check",

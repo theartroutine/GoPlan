@@ -16,10 +16,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?verify_error=invalid", request.url));
   }
 
-  const upstream = await callAuthUpstream(
-    `/api/auth/verify-email?token=${encodeURIComponent(token)}`,
-    { method: "GET" },
-  );
+  const upstream = await callAuthUpstream("/api/auth/verify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
 
   if (upstream.kind === "network_error") {
     return NextResponse.redirect(new URL("/login?verify_error=invalid", request.url));

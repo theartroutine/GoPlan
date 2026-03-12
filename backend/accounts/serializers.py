@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
+from smtplib import SMTPException
 
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -12,8 +14,6 @@ from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
-
-import logging
 
 from accounts.services import complete_profile_identity, send_verification_email, update_display_name
 
@@ -113,7 +113,7 @@ class RegisterSerializer(serializers.Serializer):
 
         try:
             send_verification_email(user)
-        except Exception:
+        except (SMTPException, OSError):
             logger.exception("Failed to send verification email for user %s", user.pk)
 
         return user
@@ -197,7 +197,10 @@ class ResendVerificationSerializer(serializers.Serializer):
         if user.email_verified or user.is_staff or user.is_superuser:
             return  # Already verified or admin — no email sent
 
-        send_verification_email(user)
+        try:
+            send_verification_email(user)
+        except (SMTPException, OSError):
+            logger.exception("Failed to send verification email for user %s", user.pk)
 
 
 class RefreshTokenSerializer(serializers.Serializer):

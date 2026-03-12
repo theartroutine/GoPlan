@@ -105,7 +105,7 @@ class RegisterAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(
-            {"detail": "Verification email sent. Please check your inbox.", "email": user.email},
+            {"detail": "Account created. A verification email will be sent shortly.", "email": user.email},
             status=status.HTTP_201_CREATED,
         )
 
@@ -132,8 +132,8 @@ class VerifyEmailAPIView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_scope = "auth_verify_email"
 
-    def get(self, request, *args, **kwargs):
-        token = request.query_params.get("token")
+    def post(self, request, *args, **kwargs):
+        token = request.data.get("token")
         if not token:
             return Response(
                 {"detail": "Verification token is required.", "error_code": "INVALID_OR_EXPIRED_TOKEN"},
@@ -146,7 +146,7 @@ class VerifyEmailAPIView(APIView):
                 {"detail": "Verification link is invalid or expired.", "error_code": "INVALID_OR_EXPIRED_TOKEN"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        confirm_email(user)
+        user = confirm_email(user)
         payload = build_auth_response(user)
         return Response(payload, status=status.HTTP_200_OK)
 

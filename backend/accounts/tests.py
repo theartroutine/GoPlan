@@ -219,11 +219,12 @@ class AuthAPITestCase(APITestCase):
         user = User.objects.create_user(email="owner@example.com", password="StrongPass#2026")
         token = generate_email_verification_token(user)
 
-        response = self.client.get(f"{self.verify_email_url}?token={token}")
+        response = self.client.post(self.verify_email_url, {"token": token}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("tokens", response.data)
         self.assertIn("user", response.data)
+        self.assertTrue(response.data["user"]["email_verified"])
 
         user.refresh_from_db()
         self.assertTrue(user.email_verified)
@@ -234,13 +235,13 @@ class AuthAPITestCase(APITestCase):
         token = generate_email_verification_token(user)
 
         with patch("accounts.services.settings.EMAIL_VERIFICATION_MAX_AGE_SECONDS", 0):
-            response = self.client.get(f"{self.verify_email_url}?token={token}")
+            response = self.client.post(self.verify_email_url, {"token": token}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_OR_EXPIRED_TOKEN")
 
     def test_verify_email_invalid_token(self):
-        response = self.client.get(f"{self.verify_email_url}?token=garbage-token")
+        response = self.client.post(self.verify_email_url, {"token": "garbage-token"}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_OR_EXPIRED_TOKEN")
@@ -249,14 +250,14 @@ class AuthAPITestCase(APITestCase):
         user = User.objects.create_user(email="owner@example.com", password="StrongPass#2026")
         token = generate_email_verification_token(user)
 
-        response1 = self.client.get(f"{self.verify_email_url}?token={token}")
-        response2 = self.client.get(f"{self.verify_email_url}?token={token}")
+        response1 = self.client.post(self.verify_email_url, {"token": token}, format="json")
+        response2 = self.client.post(self.verify_email_url, {"token": token}, format="json")
 
         self.assertEqual(response1.status_code, status.HTTP_200_OK)
         self.assertEqual(response2.status_code, status.HTTP_200_OK)
 
     def test_verify_email_missing_token(self):
-        response = self.client.get(self.verify_email_url)
+        response = self.client.post(self.verify_email_url, {}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_OR_EXPIRED_TOKEN")
