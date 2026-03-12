@@ -172,6 +172,7 @@ def blacklist_all_user_refresh_tokens(user: User) -> None:
     to_blacklist = OutstandingToken.objects.filter(user=user).exclude(id__in=existing_ids)
     BlacklistedToken.objects.bulk_create(
         [BlacklistedToken(token=token) for token in to_blacklist],
+        ignore_conflicts=True,
     )
 
 
