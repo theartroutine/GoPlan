@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { broadcastEmailVerified } from "@/features/auth/infrastructure/auth-channel";
+import { FormSuccessBanner } from "@/shared/ui/form-success-banner";
 
 export function VerifiedBanner() {
   const searchParams = useSearchParams();
@@ -18,8 +19,8 @@ export function VerifiedBanner() {
   if (!verified) return null;
 
   return (
-    <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+    <FormSuccessBanner>
       Email verified! Complete your profile to get started.
-    </div>
+    </FormSuccessBanner>
   );
 }

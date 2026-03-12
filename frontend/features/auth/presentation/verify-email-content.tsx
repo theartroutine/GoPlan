@@ -7,7 +7,9 @@ import { Inbox, Mail } from "lucide-react";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffResendVerification } from "@/features/auth/infrastructure/auth-api";
+import { Button } from "@/shared/ui/button";
 import { FormErrorBanner } from "@/shared/ui/form-error-banner";
+import { FormSuccessBanner } from "@/shared/ui/form-success-banner";
 import { Spinner } from "@/shared/ui/spinner";
 
 export function VerifyEmailContent() {
@@ -57,9 +59,9 @@ export function VerifyEmailContent() {
       {error && <FormErrorBanner>{error}</FormErrorBanner>}
 
       {success && (
-        <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+        <FormSuccessBanner>
           Verification email resent successfully.
-        </div>
+        </FormSuccessBanner>
       )}
 
       {/* Hero: Mail icon with ring waves → dashed line → Inbox icon */}
@@ -96,23 +98,26 @@ export function VerifyEmailContent() {
       <p className="text-center text-sm font-medium text-foreground">
         Waiting for verification
         <span className="inline-flex w-6">
-          <span className="animate-[ellipsis_1.4s_infinite]">...</span>
+          <span className="animate-[ellipsis_1.4s_infinite]">.</span>
+          <span className="animate-[ellipsis_1.4s_0.2s_infinite]">.</span>
+          <span className="animate-[ellipsis_1.4s_0.4s_infinite]">.</span>
         </span>
       </p>
 
       {/* Resend row */}
       <div className="flex items-center justify-center gap-3">
         <span className="text-sm text-muted-foreground">Didn&apos;t get it?</span>
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={handleResend}
           disabled={loading || !email}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
         >
           {loading && <Spinner className="h-3.5 w-3.5" />}
           Resend
-        </button>
+        </Button>
       </div>
+
     </div>
   );
 }
