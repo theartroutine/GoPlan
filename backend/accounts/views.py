@@ -16,8 +16,10 @@ from accounts.serializers import (
     ProfileSetupSerializer,
     RefreshTokenSerializer,
     RegisterSerializer,
+    ResendVerificationSerializer,
 )
 from accounts.services import (
+    EmailVerificationError,
     IdentifyCodeGenerationError,
     IdentityProfileConflictError,
     ProfileAlreadyCompletedError,
@@ -25,6 +27,8 @@ from accounts.services import (
     ProfileSetupNotRequiredError,
     build_auth_response,
     build_user_payload,
+    confirm_email,
+    verify_email_token,
 )
 
 IDENTITY_VALIDATION_CODE_BY_FIELD = {
@@ -100,8 +104,10 @@ class RegisterAPIView(APIView):
         serializer = RegisterSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        payload = build_auth_response(user)
-        return Response(payload, status=status.HTTP_201_CREATED)
+        return Response(
+            {"detail": "Account created. A verification email will be sent shortly.", "email": user.email},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class LoginAPIView(APIView):
@@ -111,8 +117,52 @@ class LoginAPIView(APIView):
     def post(self, request, *args, **kwargs):
         serializer = LoginSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        payload = build_auth_response(serializer.validated_data["user"])
+        user = serializer.validated_data["user"]
+        if user.requires_email_verification:
+            return Response(
+                {"detail": "Please verify your email address before signing in.",
+                 "error_code": "EMAIL_NOT_VERIFIED"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        payload = build_auth_response(user)
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class VerifyEmailAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "auth_verify_email"
+
+    def post(self, request, *args, **kwargs):
+        token = request.data.get("token")
+        if not token:
+            return Response(
+                {"detail": "Verification token is required.", "error_code": "INVALID_OR_EXPIRED_TOKEN"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            user = verify_email_token(token)
+        except EmailVerificationError:
+            return Response(
+                {"detail": "Verification link is invalid or expired.", "error_code": "INVALID_OR_EXPIRED_TOKEN"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = confirm_email(user)
+        payload = build_auth_response(user)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class ResendVerificationAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "auth_resend_verification"
+
+    def post(self, request, *args, **kwargs):
+        serializer = ResendVerificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {"detail": "If an account exists with that email, a verification link has been sent."},
+            status=status.HTTP_200_OK,
+        )
 
 
 class MeAPIView(APIView):

@@ -1,19 +1,22 @@
-import { type InputHTMLAttributes } from "react";
+import { type InputHTMLAttributes, type Ref } from "react";
 
 import { cn } from "@/shared/lib/utils";
 
 type FormFieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string;
   error?: string;
+  labelClassName?: string;
+  ref?: Ref<HTMLInputElement>;
 };
 
-export function FormField({ label, error, id, className, ...props }: FormFieldProps) {
+export function FormField({ label, error, id, className, labelClassName, ref, ...props }: FormFieldProps) {
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium text-foreground">
+      <label htmlFor={id} className={cn("block text-sm font-medium text-foreground", labelClassName)}>
         {label}
       </label>
       <input
+        ref={ref}
         id={id}
         className={cn(
           "mt-1 block w-full rounded-lg border px-3 py-2 text-sm shadow-sm outline-none transition-colors focus:ring-2 focus:ring-offset-1",

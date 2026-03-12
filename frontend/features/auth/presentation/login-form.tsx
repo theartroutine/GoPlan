@@ -1,26 +1,36 @@
 "use client";
 
 import { useCallback, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import axios from "axios";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffLogin } from "@/features/auth/infrastructure/auth-api";
+import { Button } from "@/shared/ui/button";
 import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
+import { FormSuccessBanner } from "@/shared/ui/form-success-banner";
 import { Spinner } from "@/shared/ui/spinner";
 
 export function LoginForm() {
   const { loginSuccess } = useAuth();
+  const searchParams = useSearchParams();
+
+  const verified = searchParams.get("verified") === "true";
+  const verifyError = searchParams.get("verify_error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
       setError(null);
+      setEmailNotVerified(false);
       setLoading(true);
 
       try {
@@ -28,8 +38,13 @@ export function LoginForm() {
         loginSuccess(data.user, data.access_token);
       } catch (err) {
         if (axios.isAxiosError(err)) {
-          const detail = err.response?.data?.detail;
-          setError(typeof detail === "string" ? detail : "Login failed. Please try again.");
+          const errData = err.response?.data;
+          if (errData?.error_code === "EMAIL_NOT_VERIFIED") {
+            setEmailNotVerified(true);
+          } else {
+            const detail = errData?.detail;
+            setError(typeof detail === "string" ? detail : "Login failed. Please try again.");
+          }
         } else {
           setError("Unexpected network error.");
         }
@@ -42,6 +57,30 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {verified && (
+        <FormSuccessBanner>
+          Email verified successfully! You can now sign in.
+        </FormSuccessBanner>
+      )}
+
+      {verifyError === "invalid" && (
+        <FormErrorBanner>
+          Verification link is invalid or expired. Please request a new one.
+        </FormErrorBanner>
+      )}
+
+      {emailNotVerified && (
+        <FormErrorBanner>
+          Please verify your email address before signing in.{" "}
+          <Link
+            href={`/verify-email?email=${encodeURIComponent(email)}`}
+            className="font-medium underline underline-offset-2"
+          >
+            Resend verification email
+          </Link>
+        </FormErrorBanner>
+      )}
+
       {error && <FormErrorBanner>{error}</FormErrorBanner>}
 
       <FormField
@@ -51,7 +90,11 @@ export function LoginForm() {
         autoComplete="email"
         required
         value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          setError(null);
+          setEmailNotVerified(false);
+        }}
       />
 
       <FormField
@@ -61,17 +104,17 @@ export function LoginForm() {
         autoComplete="current-password"
         required
         value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        onChange={(e) => {
+          setPassword(e.target.value);
+          setError(null);
+          setEmailNotVerified(false);
+        }}
       />
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-      >
-        {loading && <Spinner className="h-4 w-4 text-primary-foreground" />}
+      <Button type="submit" disabled={loading} className="w-full">
+        {loading && <Spinner className="h-4 w-4" />}
         Sign in
-      </button>
+      </Button>
     </form>
   );
 }

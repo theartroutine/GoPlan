@@ -1,6 +1,7 @@
 type AuthChannelMessage =
   | { type: "logout" }
-  | { type: "profile_completed" };
+  | { type: "profile_completed" }
+  | { type: "email_verified" };
 
 let channel: BroadcastChannel | null = null;
 
@@ -18,6 +19,10 @@ export function broadcastLogout(): void {
 
 export function broadcastProfileCompleted(): void {
   getChannel()?.postMessage({ type: "profile_completed" } satisfies AuthChannelMessage);
+}
+
+export function broadcastEmailVerified(): void {
+  getChannel()?.postMessage({ type: "email_verified" } satisfies AuthChannelMessage);
 }
 
 export function onAuthMessage(callback: (msg: AuthChannelMessage) => void): () => void {

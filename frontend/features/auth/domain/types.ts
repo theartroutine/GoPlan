@@ -7,6 +7,7 @@ export type AuthUser = {
   identify_name: string | null;
   identify_code: string | null;
   identify_tag: string | null;
+  email_verified: boolean;
   is_profile_completed: boolean;
   requires_profile_setup: boolean;
 };
@@ -14,6 +15,11 @@ export type AuthUser = {
 export type BffAuthResponse = {
   user: AuthUser;
   access_token: string;
+};
+
+export type BffRegisterResponse = {
+  detail: string;
+  email: string;
 };
 
 export type FieldErrors = Record<string, string[]>;

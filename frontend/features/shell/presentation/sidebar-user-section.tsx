@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Check, Copy } from "lucide-react";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { useSidebar } from "@/features/shell/application/sidebar-context";
+import { getInitials } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
 import { Button } from "@/shared/ui/button";
@@ -14,27 +15,23 @@ import {
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
 
-function getInitials(displayName: string): string {
-  const parts = displayName.trim().split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return displayName.slice(0, 2).toUpperCase();
-}
-
 export function SidebarUserSection() {
   const { user } = useAuth();
   const { isCollapsed } = useSidebar();
   const [copied, setCopied] = useState(false);
 
-  async function handleCopy() {
+  const handleCopy = useCallback(async () => {
     const identifyTag = user?.identify_tag;
     if (!identifyTag) return;
 
-    await navigator.clipboard.writeText(identifyTag);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+    try {
+      await navigator.clipboard.writeText(identifyTag);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable or permission denied — silently fail
+    }
+  }, [user?.identify_tag]);
 
   if (!user) return null;
 

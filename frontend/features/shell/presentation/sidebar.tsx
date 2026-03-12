@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   LogOut,
@@ -9,6 +9,7 @@ import {
   Settings,
   UserCircle,
   Users,
+  X,
 } from "lucide-react";
 
 import type { NavigationItem } from "@/features/shell/domain/types";
@@ -35,11 +36,14 @@ const NAV_ITEMS: NavigationItem[] = [
   { key: "settings", label: "Settings", href: "/settings", icon: Settings },
 ];
 
-export function Sidebar() {
+function SidebarContent({ isMobile }: { isMobile: boolean }) {
   const { logout } = useAuth();
-  const { isCollapsed, toggle } = useSidebar();
+  const { isCollapsed, toggle, closeMobile } = useSidebar();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // On mobile, always show expanded content
+  const collapsed = isMobile ? false : isCollapsed;
 
   const handleLogout = useCallback(async () => {
     setLoggingOut(true);
@@ -52,7 +56,7 @@ export function Sidebar() {
       variant="ghost"
       className={cn(
         "w-full gap-3 text-destructive hover:text-destructive hover:bg-destructive/10 transition-[padding] duration-200",
-        isCollapsed ? "justify-center px-0" : "justify-start",
+        collapsed ? "justify-center px-0" : "justify-start",
       )}
       onClick={handleLogout}
       disabled={loggingOut}
@@ -65,7 +69,7 @@ export function Sidebar() {
       <span
         className={cn(
           "overflow-hidden whitespace-nowrap transition-[opacity,max-width] duration-200",
-          isCollapsed ? "max-w-0 opacity-0" : "max-w-24 opacity-100",
+          collapsed ? "max-w-0 opacity-0" : "max-w-24 opacity-100",
         )}
       >
         Log out
@@ -74,37 +78,46 @@ export function Sidebar() {
   );
 
   return (
-    <aside
-      className={cn(
-        "flex h-screen shrink-0 flex-col border-r border-border bg-background transition-[width] duration-200",
-        isCollapsed ? "w-[68px]" : "w-64",
-      )}
-    >
-      <SidebarLogo />
+    <>
+      <div className="flex items-center justify-between">
+        <SidebarLogo />
+        {isMobile && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="mr-3 text-muted-foreground"
+            onClick={closeMobile}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
         <nav className="flex flex-col gap-1">
-          <div
-            className={cn(
-              "overflow-hidden transition-[opacity,max-height] duration-200",
-              isCollapsed ? "max-h-10 opacity-100" : "max-h-0 opacity-0",
-            )}
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={toggle}
-                  className="flex w-full items-center justify-center gap-3 rounded-md px-0 py-2 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                >
-                  <PanelLeftOpen className="h-4 w-4 shrink-0" />
-                  <span className="max-w-0 overflow-hidden" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Expand sidebar</TooltipContent>
-            </Tooltip>
-          </div>
+          {!isMobile && (
+            <div
+              className={cn(
+                "overflow-hidden transition-[opacity,max-height] duration-200",
+                collapsed ? "max-h-10 opacity-100" : "max-h-0 opacity-0",
+              )}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={toggle}
+                    className="flex w-full items-center justify-center gap-3 rounded-md px-0 py-2 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                  >
+                    <PanelLeftOpen className="h-4 w-4 shrink-0" />
+                    <span className="max-w-0 overflow-hidden" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Expand sidebar</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
           {NAV_ITEMS.map((item) => (
-            <SidebarNavItem key={item.key} item={item} />
+            <SidebarNavItem key={item.key} item={item} isMobile={isMobile} />
           ))}
         </nav>
       </div>
@@ -113,7 +126,7 @@ export function Sidebar() {
         <Separator className="mb-3" />
         <SidebarUserSection />
         <div className="mt-2 px-1">
-          {isCollapsed ? (
+          {collapsed && !isMobile ? (
             <Tooltip>
               <TooltipTrigger asChild>{logoutButton}</TooltipTrigger>
               <TooltipContent side="right">Log out</TooltipContent>
@@ -123,6 +136,45 @@ export function Sidebar() {
           )}
         </div>
       </div>
-    </aside>
+    </>
+  );
+}
+
+export function Sidebar() {
+  const { isMobileOpen, closeMobile, isCollapsed } = useSidebar();
+  const pathname = usePathname();
+
+  // Auto-close mobile drawer on route change
+  useEffect(() => {
+    closeMobile();
+  }, [pathname, closeMobile]);
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside
+        className={cn(
+          "hidden lg:flex h-screen shrink-0 flex-col border-r border-border bg-background transition-[width] duration-200",
+          isCollapsed ? "w-[68px]" : "w-64",
+        )}
+      >
+        <SidebarContent isMobile={false} />
+      </aside>
+
+      {/* Mobile overlay drawer */}
+      {isMobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={closeMobile}
+          />
+          {/* Drawer */}
+          <aside className="relative flex h-full w-64 flex-col bg-background shadow-xl animate-in slide-in-from-left duration-200">
+            <SidebarContent isMobile={true} />
+          </aside>
+        </div>
+      )}
+    </>
   );
 }

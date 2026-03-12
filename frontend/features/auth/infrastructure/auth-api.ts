@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import type { AuthUser, BffAuthResponse } from "@/features/auth/domain/types";
+import type { AuthUser, BffAuthResponse, BffRegisterResponse } from "@/features/auth/domain/types";
 import { tokenManager } from "@/features/auth/infrastructure/token-manager";
 
 const bff = axios.create({
@@ -15,14 +15,20 @@ export async function bffLogin(email: string, password: string): Promise<BffAuth
   return res.data;
 }
 
-export async function bffRegister(email: string, password: string): Promise<BffAuthResponse> {
-  const res = await bff.post<BffAuthResponse>("/api/auth/register", { email, password });
+export async function bffRegister(email: string, password: string): Promise<BffRegisterResponse> {
+  const res = await bff.post<BffRegisterResponse>("/api/auth/register", { email, password });
   return res.data;
 }
 
-export async function bffLogout(accessToken: string): Promise<void> {
+export async function bffResendVerification(email: string): Promise<{ detail: string }> {
+  const res = await bff.post<{ detail: string }>("/api/auth/resend-verification", { email });
+  return res.data;
+}
+
+export async function bffLogout(): Promise<void> {
+  const accessToken = tokenManager.get();
   await bff.post("/api/auth/logout", null, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
   });
 }
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type Ref } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffProfileSetup } from "@/features/auth/infrastructure/auth-api";
+import { Button } from "@/shared/ui/button";
 import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
 import { Spinner } from "@/shared/ui/spinner";
@@ -28,7 +29,27 @@ function getIdentifyNameHint(value: string): string | undefined {
   return undefined;
 }
 
-export function SetupProfileForm() {
+function getNameHint(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.includes(" ")) return "Must be a single word (no spaces).";
+  return undefined;
+}
+
+export type SetupProfileFields = {
+  firstName: string;
+  lastName: string;
+  identifyName: string;
+};
+
+type SetupProfileFormProps = {
+  onFieldsChange?: (fields: SetupProfileFields) => void;
+  firstNameRef?: Ref<HTMLInputElement>;
+  lastNameRef?: Ref<HTMLInputElement>;
+  identifyNameRef?: Ref<HTMLInputElement>;
+};
+
+export function SetupProfileForm({ onFieldsChange, firstNameRef, lastNameRef, identifyNameRef }: SetupProfileFormProps) {
   const { profileUpdateSuccess } = useAuth();
   const router = useRouter();
 
@@ -40,6 +61,12 @@ export function SetupProfileForm() {
   const [loading, setLoading] = useState(false);
 
   const identifyNameHint = useMemo(() => getIdentifyNameHint(identifyName), [identifyName]);
+  const firstNameHint = useMemo(() => getNameHint(firstName), [firstName]);
+  const lastNameHint = useMemo(() => getNameHint(lastName), [lastName]);
+
+  useEffect(() => {
+    onFieldsChange?.({ firstName, lastName, identifyName });
+  }, [firstName, lastName, identifyName, onFieldsChange]);
 
   const handleIdentifyNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.toLowerCase().replace(/[^a-z]/g, "");
@@ -70,7 +97,6 @@ export function SetupProfileForm() {
       } catch (err) {
         if (!axios.isAxiosError(err) || !err.response) {
           setGeneralError("Unexpected network error.");
-          setLoading(false);
           return;
         }
 
@@ -86,14 +112,12 @@ export function SetupProfileForm() {
 
         if (errorCode === "PROFILE_SETUP_NOT_REQUIRED") {
           setGeneralError(detail ?? "Profile setup is not required.");
-          setLoading(false);
           router.replace("/");
           return;
         }
 
         if (errorCode === "IDENTIFY_CODE_GENERATION_FAILED") {
           setGeneralError("Unable to generate identify code. Please try again.");
-          setLoading(false);
           return;
         }
 
@@ -101,7 +125,6 @@ export function SetupProfileForm() {
         if (errorCode && errorCode in ERROR_CODE_TO_FIELD) {
           const field = ERROR_CODE_TO_FIELD[errorCode];
           setFieldErrors({ [field]: detail ?? "Invalid value." });
-          setLoading(false);
           return;
         }
 
@@ -125,11 +148,13 @@ export function SetupProfileForm() {
       {generalError && <FormErrorBanner>{generalError}</FormErrorBanner>}
 
       <FormField
+        ref={firstNameRef}
         id="setup-first-name"
         label="First name"
         type="text"
         autoComplete="given-name"
         required
+        placeholder="Minh"
         value={firstName}
         onChange={(e) => {
           setFirstName(e.target.value);
@@ -140,15 +165,17 @@ export function SetupProfileForm() {
             return next;
           });
         }}
-        error={fieldErrors.first_name}
+        error={fieldErrors.first_name ?? firstNameHint}
       />
 
       <FormField
+        ref={lastNameRef}
         id="setup-last-name"
         label="Last name"
         type="text"
         autoComplete="family-name"
         required
+        placeholder="Duong"
         value={lastName}
         onChange={(e) => {
           setLastName(e.target.value);
@@ -159,16 +186,20 @@ export function SetupProfileForm() {
             return next;
           });
         }}
-        error={fieldErrors.last_name}
+        error={fieldErrors.last_name ?? lastNameHint}
       />
 
       <div>
         <FormField
+          ref={identifyNameRef}
           id="setup-identify-name"
           label="Identify name"
+          labelClassName="text-amber-600 dark:text-amber-400"
+          className="border-amber-400 dark:border-amber-600"
           type="text"
           autoComplete="username"
           required
+          placeholder="minhduong"
           value={identifyName}
           onChange={handleIdentifyNameChange}
           error={fieldErrors.identify_name ?? identifyNameHint}
@@ -178,14 +209,10 @@ export function SetupProfileForm() {
         </p>
       </div>
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-      >
-        {loading && <Spinner className="h-4 w-4 text-primary-foreground" />}
+      <Button type="submit" disabled={loading} className="w-full">
+        {loading && <Spinner className="h-4 w-4" />}
         Complete setup
-      </button>
+      </Button>
     </form>
   );
 }

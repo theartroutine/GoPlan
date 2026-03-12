@@ -12,9 +12,12 @@ import {
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
 
-export function SidebarNavItem({ item }: { item: NavigationItem }) {
+export function SidebarNavItem({ item, isMobile = false }: { item: NavigationItem; isMobile?: boolean }) {
   const pathname = usePathname();
   const { isCollapsed } = useSidebar();
+
+  // On mobile, always show expanded style
+  const collapsed = isMobile ? false : isCollapsed;
 
   const isActive =
     item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
@@ -29,14 +32,14 @@ export function SidebarNavItem({ item }: { item: NavigationItem }) {
         isActive
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-        isCollapsed ? "justify-center px-0" : "px-3",
+        collapsed ? "justify-center px-0" : "px-3",
       )}
     >
       <Icon className="h-4 w-4 shrink-0" />
       <span
         className={cn(
           "truncate overflow-hidden whitespace-nowrap transition-[opacity,max-width] duration-200",
-          isCollapsed ? "max-w-0 opacity-0" : "max-w-48 opacity-100",
+          collapsed ? "max-w-0 opacity-0" : "max-w-48 opacity-100",
         )}
       >
         {item.label}
@@ -44,7 +47,7 @@ export function SidebarNavItem({ item }: { item: NavigationItem }) {
     </Link>
   );
 
-  if (isCollapsed) {
+  if (collapsed) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>{linkContent}</TooltipTrigger>

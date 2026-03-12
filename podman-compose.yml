@@ -46,6 +46,15 @@ services:
   #     timeout: 3s
   #     retries: 10
 
+  # -------- Mailpit (Dev Email) --------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit-goplan
+    ports:
+      - "8025:8025"   # Web UI — http://localhost:8025
+      - "1025:1025"   # SMTP — Django sends email here
+    restart: unless-stopped
+
   # -------- Django Backend Service --------
   backend:
     build:
