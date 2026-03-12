@@ -12,6 +12,8 @@ from accounts.serializers import (
     INVALID_LAST_NAME_CODE,
     LoginSerializer,
     LogoutSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     ProfileNameUpdateSerializer,
     ProfileSetupSerializer,
     RefreshTokenSerializer,
@@ -93,6 +95,48 @@ def build_identity_conflict_error(exc: IdentityProfileConflictError):
         detail=str(exc),
         error_code="IDENTITY_PROFILE_CONFLICT",
         status_code=status.HTTP_409_CONFLICT,
+    )
+
+
+def build_password_reset_confirm_error(serializer: serializers.Serializer):
+    errors = serializer.errors
+
+    if "detail" in errors and "error_code" in errors:
+        detail_errors = errors["detail"]
+        error_code_errors = errors["error_code"]
+        detail = detail_errors[0] if isinstance(detail_errors, list) and detail_errors else detail_errors
+        error_code = (
+            error_code_errors[0]
+            if isinstance(error_code_errors, list) and error_code_errors
+            else error_code_errors
+        )
+        return Response(
+            {"detail": force_str(detail), "error_code": force_str(error_code)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if "non_field_errors" in errors:
+        non_field = errors["non_field_errors"]
+        if isinstance(non_field, list) and non_field:
+            first_error = non_field[0]
+            if isinstance(first_error, dict) and "error_code" in first_error:
+                return Response(
+                    {
+                        "detail": first_error.get("detail", "Invalid or expired reset link."),
+                        "error_code": first_error["error_code"],
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+    if "password" in errors:
+        return Response(
+            {"password": errors["password"]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        {"detail": "Invalid request.", "error_code": "INVALID_OR_EXPIRED_TOKEN"},
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -250,3 +294,32 @@ class ProfileNameUpdateAPIView(APIView):
             return build_identity_conflict_error(exc)
 
         return Response({"user": build_user_payload(user)}, status=status.HTTP_200_OK)
+
+
+class PasswordResetRequestAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "auth_password_reset_request"
+
+    def post(self, request, *args, **kwargs):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {"detail": "If an account exists with that email, a password reset link has been sent."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "auth_password_reset_confirm"
+
+    def post(self, request, *args, **kwargs):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        if not serializer.is_valid():
+            return build_password_reset_confirm_error(serializer)
+        serializer.save()
+        return Response(
+            {"detail": "Password has been reset successfully."},
+            status=status.HTTP_200_OK,
+        )

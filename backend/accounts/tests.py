@@ -7,7 +7,11 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
-from rest_framework_simplejwt.tokens import RefreshToken
+from accounts.tokens import RefreshToken
+
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 
 from accounts.services import generate_email_verification_token
 
@@ -22,6 +26,8 @@ class AuthAPITestCase(APITestCase):
     me_url = "/api/auth/me"
     profile_setup_url = "/api/auth/profile/setup"
     profile_name_url = "/api/auth/profile/name"
+    password_reset_request_url = "/api/auth/password-reset/request"
+    password_reset_confirm_url = "/api/auth/password-reset/confirm"
     refresh_url = "/api/auth/refresh"
     logout_url = "/api/auth/logout"
 
@@ -80,6 +86,11 @@ class AuthAPITestCase(APITestCase):
         self.assertIn("email_verified", payload)
         self.assertEqual(payload["requires_profile_setup"], expected_requires_setup)
         uuid.UUID(payload["id"])
+
+    def assert_invalid_reset_link_error(self, response):
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "Invalid or expired reset link.")
+        self.assertEqual(response.data["error_code"], "INVALID_OR_EXPIRED_TOKEN")
 
     # -------- Register --------
 
@@ -641,3 +652,253 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("refresh", response.data)
+
+    # -------- Auth Version / Session Revocation --------
+
+    def test_auth_version_valid_token_accepted(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        tokens = self.issue_tokens_for_user(user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+        response = self.client.get(self.me_url, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_auth_version_increment_rejects_old_access_token(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        tokens = self.issue_tokens_for_user(user)
+
+        user.auth_version += 1
+        user.save(update_fields=["auth_version", "updated_at"])
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+        response = self.client.get(self.me_url, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_auth_version_increment_new_token_works(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+
+        user.auth_version += 1
+        user.save(update_fields=["auth_version", "updated_at"])
+
+        tokens = self.issue_tokens_for_user(user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+        response = self.client.get(self.me_url, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_blacklist_all_refresh_tokens_rejects_old_refresh(self):
+        from accounts.services import blacklist_all_user_refresh_tokens
+
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        tokens = self.issue_tokens_for_user(user)
+
+        blacklist_all_user_refresh_tokens(user)
+
+        response = self.client.post(self.refresh_url, {"refresh": tokens["refresh"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    # -------- Password Reset Request --------
+
+    @staticmethod
+    def make_reset_uid(user):
+        return urlsafe_base64_encode(force_bytes(str(user.pk)))
+
+    @patch("accounts.serializers.send_password_reset_email")
+    def test_password_reset_request_success_for_verified_user(self, mock_send):
+        self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+
+        response = self.client.post(
+            self.password_reset_request_url, {"email": "owner@example.com"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("detail", response.data)
+        mock_send.assert_called_once()
+
+    @patch("accounts.serializers.send_password_reset_email")
+    def test_password_reset_request_nonexistent_email_returns_200(self, mock_send):
+        response = self.client.post(
+            self.password_reset_request_url, {"email": "nobody@example.com"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_send.assert_not_called()
+
+    @patch("accounts.serializers.send_password_reset_email")
+    def test_password_reset_request_admin_user_returns_200_no_email(self, mock_send):
+        User.objects.create_superuser(email="admin@example.com", password="StrongPass#2026")
+
+        response = self.client.post(
+            self.password_reset_request_url, {"email": "admin@example.com"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_send.assert_not_called()
+
+    @patch("accounts.serializers.send_password_reset_email")
+    def test_password_reset_request_inactive_user_returns_200_no_email(self, mock_send):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        user.is_active = False
+        user.save(update_fields=["is_active", "updated_at"])
+
+        response = self.client.post(
+            self.password_reset_request_url, {"email": "owner@example.com"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_send.assert_not_called()
+
+    @patch("accounts.serializers.send_password_reset_email")
+    def test_password_reset_request_unverified_user_returns_200_no_email(self, mock_send):
+        User.objects.create_user(email="owner@example.com", password="StrongPass#2026")
+
+        response = self.client.post(
+            self.password_reset_request_url, {"email": "owner@example.com"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_send.assert_not_called()
+
+    # -------- Password Reset Confirm --------
+
+    def test_password_reset_confirm_success(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        uid = self.make_reset_uid(user)
+        token = default_token_generator.make_token(user)
+
+        response = self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": token, "password": "NewStrongPass#2026"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("detail", response.data)
+
+        user.refresh_from_db()
+        self.assertTrue(user.check_password("NewStrongPass#2026"))
+        self.assertFalse(user.check_password("StrongPass#2026"))
+
+    def test_password_reset_confirm_reused_token_rejected(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        uid = self.make_reset_uid(user)
+        token = default_token_generator.make_token(user)
+
+        # First reset succeeds
+        self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": token, "password": "NewStrongPass#2026"},
+            format="json",
+        )
+
+        # Second reset with same token fails (password hash changed)
+        response = self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": token, "password": "AnotherPass#2026"},
+            format="json",
+        )
+
+        self.assert_invalid_reset_link_error(response)
+
+    def test_password_reset_confirm_invalid_token(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        uid = self.make_reset_uid(user)
+
+        response = self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": "invalid-token", "password": "NewStrongPass#2026"},
+            format="json",
+        )
+
+        self.assert_invalid_reset_link_error(response)
+
+    def test_password_reset_confirm_invalid_uid(self):
+        response = self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": "invaliduid", "token": "sometoken", "password": "NewStrongPass#2026"},
+            format="json",
+        )
+
+        self.assert_invalid_reset_link_error(response)
+
+    def test_password_reset_confirm_weak_password(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        uid = self.make_reset_uid(user)
+        token = default_token_generator.make_token(user)
+
+        response = self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": token, "password": "12345678"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", response.data)
+
+    def test_password_reset_confirm_revokes_sessions(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        old_tokens = self.issue_tokens_for_user(user)
+        uid = self.make_reset_uid(user)
+        token = default_token_generator.make_token(user)
+
+        self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": token, "password": "NewStrongPass#2026"},
+            format="json",
+        )
+
+        # Old access token rejected (auth_version mismatch)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {old_tokens['access']}")
+        me_response = self.client.get(self.me_url, format="json")
+        self.assertEqual(me_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # Old refresh token blacklisted
+        self.client.credentials()
+        refresh_response = self.client.post(
+            self.refresh_url, {"refresh": old_tokens["refresh"]}, format="json"
+        )
+        self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_password_reset_confirm_rejects_superuser(self):
+        admin = User.objects.create_superuser(email="admin@example.com", password="StrongPass#2026")
+        uid = self.make_reset_uid(admin)
+        token = default_token_generator.make_token(admin)
+
+        response = self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": token, "password": "NewStrongPass#2026"},
+            format="json",
+        )
+
+        self.assert_invalid_reset_link_error(response)
+
+    def test_password_reset_confirm_rejects_staff_user(self):
+        staff = User.objects.create_user(email="staff@example.com", password="StrongPass#2026")
+        staff.is_staff = True
+        staff.save(update_fields=["is_staff", "updated_at"])
+        uid = self.make_reset_uid(staff)
+        token = default_token_generator.make_token(staff)
+
+        response = self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": token, "password": "NewStrongPass#2026"},
+            format="json",
+        )
+
+        self.assert_invalid_reset_link_error(response)
+
+    def test_password_reset_confirm_rejects_password_similar_to_email(self):
+        user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
+        uid = self.make_reset_uid(user)
+        token = default_token_generator.make_token(user)
+
+        response = self.client.post(
+            self.password_reset_confirm_url,
+            {"uid": uid, "token": token, "password": "owner@example.com"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", response.data)

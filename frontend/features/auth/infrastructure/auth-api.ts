@@ -49,6 +49,24 @@ export async function bffProfileSetup(
   return res.data;
 }
 
+export async function bffPasswordResetRequest(email: string): Promise<{ detail: string }> {
+  const res = await bff.post<{ detail: string }>("/api/auth/password-reset/request", { email });
+  return res.data;
+}
+
+export async function bffPasswordResetConfirm(
+  uid: string,
+  token: string,
+  password: string,
+): Promise<{ detail: string }> {
+  const res = await bff.post<{ detail: string }>("/api/auth/password-reset/confirm", {
+    uid,
+    token,
+    password,
+  });
+  return res.data;
+}
+
 export async function bffProfileNameUpdate(
   data: { first_name: string; last_name: string },
 ): Promise<ProfileResponse> {

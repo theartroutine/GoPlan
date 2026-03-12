@@ -7,15 +7,26 @@ from smtplib import SMTPException
 
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
-from rest_framework_simplejwt.tokens import RefreshToken, TokenError
+from rest_framework_simplejwt.tokens import TokenError
 
-from accounts.services import complete_profile_identity, send_verification_email, update_display_name
+from accounts.tokens import RefreshToken
+
+from accounts.services import (
+    complete_profile_identity,
+    reset_user_password,
+    send_password_reset_email,
+    send_verification_email,
+    update_display_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -251,3 +262,63 @@ class LogoutSerializer(serializers.Serializer):
             return None
 
         return None
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value: str) -> str:
+        return User.objects.normalize_email_value(value)
+
+    def save(self, **kwargs):
+        email = self.validated_data["email"]
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return  # Anti-enumeration: silently succeed
+
+        if not user.is_active or user.is_staff or user.is_superuser:
+            return  # Skip admin/inactive users
+
+        if not user.email_verified:
+            return  # Only verified users can reset password
+
+        try:
+            send_password_reset_email(user)
+        except (SMTPException, OSError):
+            logger.exception("Failed to send password reset email for user %s", user.pk)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    INVALID_RESET_LINK_ERROR = {"detail": "Invalid or expired reset link.", "error_code": "INVALID_OR_EXPIRED_TOKEN"}
+
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    password = serializers.CharField(write_only=True, min_length=8, trim_whitespace=False)
+
+    def validate(self, attrs):
+        try:
+            uid = force_str(urlsafe_base64_decode(attrs["uid"]))
+            user = User.objects.get(pk=uid)
+        except (ValueError, TypeError, OverflowError, User.DoesNotExist):
+            raise serializers.ValidationError(self.INVALID_RESET_LINK_ERROR)
+
+        if user.is_staff or user.is_superuser:
+            raise serializers.ValidationError(self.INVALID_RESET_LINK_ERROR)
+
+        if not default_token_generator.check_token(user, attrs["token"]):
+            raise serializers.ValidationError(self.INVALID_RESET_LINK_ERROR)
+
+        try:
+            validate_password(attrs["password"], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)})
+
+        attrs["user"] = user
+        return attrs
+
+    def save(self, **kwargs):
+        return reset_user_password(
+            user=self.validated_data["user"],
+            new_password=self.validated_data["password"],
+        )

@@ -18,6 +18,7 @@ export function LoginForm() {
   const searchParams = useSearchParams();
 
   const verified = searchParams.get("verified") === "true";
+  const reset = searchParams.get("reset") === "true";
   const verifyError = searchParams.get("verify_error");
 
   const [email, setEmail] = useState("");
@@ -60,6 +61,12 @@ export function LoginForm() {
       {verified && (
         <FormSuccessBanner>
           Email verified successfully! You can now sign in.
+        </FormSuccessBanner>
+      )}
+
+      {reset && (
+        <FormSuccessBanner>
+          Password reset successfully! You can now sign in with your new password.
         </FormSuccessBanner>
       )}
 
@@ -110,6 +117,15 @@ export function LoginForm() {
           setEmailNotVerified(false);
         }}
       />
+
+      <div className="flex justify-end">
+        <Link
+          href="/forgot-password"
+          className="text-sm font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground/80"
+        >
+          Forgot password?
+        </Link>
+      </div>
 
       <Button type="submit" disabled={loading} className="w-full">
         {loading && <Spinner className="h-4 w-4" />}

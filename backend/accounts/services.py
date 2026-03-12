@@ -5,12 +5,17 @@ import string
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
 from django.core import signing
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.template.loader import render_to_string
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from django.utils import timezone
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
+from accounts.tokens import RefreshToken
 
 User = get_user_model()
 IDENTIFY_CODE_ALPHABET = string.ascii_uppercase + string.digits
@@ -160,6 +165,17 @@ def complete_profile_identity(user: User, first_name: str, last_name: str, ident
     raise IdentifyCodeGenerationError("Unable to generate a unique identify code.") from last_exception
 
 
+def blacklist_all_user_refresh_tokens(user: User) -> None:
+    existing_ids = set(
+        BlacklistedToken.objects.filter(token__user=user).values_list("token_id", flat=True)
+    )
+    to_blacklist = OutstandingToken.objects.filter(user=user).exclude(id__in=existing_ids)
+    BlacklistedToken.objects.bulk_create(
+        [BlacklistedToken(token=token) for token in to_blacklist],
+        ignore_conflicts=True,
+    )
+
+
 def update_display_name(user: User, first_name: str, last_name: str) -> User:
     with transaction.atomic():
         locked_user = User.objects.select_for_update().get(pk=user.pk)
@@ -172,3 +188,30 @@ def update_display_name(user: User, first_name: str, last_name: str) -> User:
         locked_user.display_name = build_display_name(first_name, last_name)
         locked_user.save(update_fields=["first_name", "last_name", "display_name", "updated_at"])
         return locked_user
+
+
+def generate_password_reset_url(user: User) -> str:
+    uid = urlsafe_base64_encode(force_bytes(str(user.pk)))
+    token = default_token_generator.make_token(user)
+    return f"{settings.FRONTEND_BASE_URL}/reset-password?uid={uid}&token={token}"
+
+
+def send_password_reset_email(user: User) -> None:
+    reset_url = generate_password_reset_url(user)
+    body = render_to_string("accounts/password_reset.txt", {"reset_url": reset_url})
+    send_mail(
+        subject="Reset your GoPlan password",
+        message=body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+    )
+
+
+def reset_user_password(user: User, new_password: str) -> User:
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
+        locked_user.set_password(new_password)
+        locked_user.auth_version += 1
+        locked_user.save(update_fields=["password", "auth_version", "updated_at"])
+        blacklist_all_user_refresh_tokens(locked_user)
+    return locked_user
