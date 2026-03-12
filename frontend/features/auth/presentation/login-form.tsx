@@ -7,8 +7,10 @@ import axios from "axios";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffLogin } from "@/features/auth/infrastructure/auth-api";
+import { Button } from "@/shared/ui/button";
 import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
+import { FormSuccessBanner } from "@/shared/ui/form-success-banner";
 import { Spinner } from "@/shared/ui/spinner";
 
 export function LoginForm() {
@@ -56,9 +58,9 @@ export function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {verified && (
-        <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-400">
+        <FormSuccessBanner>
           Email verified successfully! You can now sign in.
-        </div>
+        </FormSuccessBanner>
       )}
 
       {verifyError === "invalid" && (
@@ -88,7 +90,11 @@ export function LoginForm() {
         autoComplete="email"
         required
         value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          setError(null);
+          setEmailNotVerified(false);
+        }}
       />
 
       <FormField
@@ -98,17 +104,17 @@ export function LoginForm() {
         autoComplete="current-password"
         required
         value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        onChange={(e) => {
+          setPassword(e.target.value);
+          setError(null);
+          setEmailNotVerified(false);
+        }}
       />
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-      >
-        {loading && <Spinner className="h-4 w-4 text-primary-foreground" />}
+      <Button type="submit" disabled={loading} className="w-full">
+        {loading && <Spinner className="h-4 w-4" />}
         Sign in
-      </button>
+      </Button>
     </form>
   );
 }

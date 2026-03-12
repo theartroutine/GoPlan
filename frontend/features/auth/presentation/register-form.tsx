@@ -6,6 +6,7 @@ import axios from "axios";
 
 import { bffRegister } from "@/features/auth/infrastructure/auth-api";
 import type { FieldErrors } from "@/features/auth/domain/types";
+import { Button } from "@/shared/ui/button";
 import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
 import { Spinner } from "@/shared/ui/spinner";
@@ -38,8 +39,8 @@ export function RegisterForm() {
           let hasFieldErrors = false;
 
           for (const [key, value] of Object.entries(errData)) {
-            if (Array.isArray(value)) {
-              fields[key] = value as string[];
+            if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+              fields[key] = value;
               hasFieldErrors = true;
             }
           }
@@ -88,14 +89,10 @@ export function RegisterForm() {
         error={fieldErrors.password?.join(" ")}
       />
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-      >
-        {loading && <Spinner className="h-4 w-4 text-primary-foreground" />}
+      <Button type="submit" disabled={loading} className="w-full">
+        {loading && <Spinner className="h-4 w-4" />}
         Create account
-      </button>
+      </Button>
     </form>
   );
 }

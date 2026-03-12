@@ -25,9 +25,10 @@ export async function bffResendVerification(email: string): Promise<{ detail: st
   return res.data;
 }
 
-export async function bffLogout(accessToken: string): Promise<void> {
+export async function bffLogout(): Promise<void> {
+  const accessToken = tokenManager.get();
   await bff.post("/api/auth/logout", null, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
   });
 }
 

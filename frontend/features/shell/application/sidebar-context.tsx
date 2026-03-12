@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -14,6 +15,9 @@ const STORAGE_KEY = "goplan:sidebar";
 type SidebarContextValue = {
   isCollapsed: boolean;
   toggle: () => void;
+  isMobileOpen: boolean;
+  openMobile: () => void;
+  closeMobile: () => void;
 };
 
 const SidebarContext = createContext<SidebarContextValue | null>(null);
@@ -50,13 +54,23 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     getServerSnapshot,
   );
 
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
   const toggle = useCallback(() => {
     setCollapsed(!getSnapshot());
   }, []);
 
+  const openMobile = useCallback(() => {
+    setIsMobileOpen(true);
+  }, []);
+
+  const closeMobile = useCallback(() => {
+    setIsMobileOpen(false);
+  }, []);
+
   const value = useMemo(
-    () => ({ isCollapsed, toggle }),
-    [isCollapsed, toggle],
+    () => ({ isCollapsed, toggle, isMobileOpen, openMobile, closeMobile }),
+    [isCollapsed, toggle, isMobileOpen, openMobile, closeMobile],
   );
 
   return (

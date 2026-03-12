@@ -184,9 +184,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    const token = tokenManager.get();
     try {
-      await bffLogout(token ?? "");
+      await bffLogout();
     } catch {
       // Best-effort
     }

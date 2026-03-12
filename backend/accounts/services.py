@@ -23,10 +23,6 @@ class EmailVerificationError(Exception):
     """Invalid or expired verification token."""
 
 
-class EmailNotVerifiedError(Exception):
-    """User has not verified their email."""
-
-
 class IdentityProfileConflictError(Exception):
     """Raised when identity profile operations cannot proceed due to state conflicts."""
 

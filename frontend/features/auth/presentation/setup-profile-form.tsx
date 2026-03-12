@@ -6,6 +6,7 @@ import axios from "axios";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { bffProfileSetup } from "@/features/auth/infrastructure/auth-api";
+import { Button } from "@/shared/ui/button";
 import { FormErrorBanner } from "@/shared/ui/form-error-banner";
 import { FormField } from "@/shared/ui/form-field";
 import { Spinner } from "@/shared/ui/spinner";
@@ -96,7 +97,6 @@ export function SetupProfileForm({ onFieldsChange, firstNameRef, lastNameRef, id
       } catch (err) {
         if (!axios.isAxiosError(err) || !err.response) {
           setGeneralError("Unexpected network error.");
-          setLoading(false);
           return;
         }
 
@@ -112,14 +112,12 @@ export function SetupProfileForm({ onFieldsChange, firstNameRef, lastNameRef, id
 
         if (errorCode === "PROFILE_SETUP_NOT_REQUIRED") {
           setGeneralError(detail ?? "Profile setup is not required.");
-          setLoading(false);
           router.replace("/");
           return;
         }
 
         if (errorCode === "IDENTIFY_CODE_GENERATION_FAILED") {
           setGeneralError("Unable to generate identify code. Please try again.");
-          setLoading(false);
           return;
         }
 
@@ -127,7 +125,6 @@ export function SetupProfileForm({ onFieldsChange, firstNameRef, lastNameRef, id
         if (errorCode && errorCode in ERROR_CODE_TO_FIELD) {
           const field = ERROR_CODE_TO_FIELD[errorCode];
           setFieldErrors({ [field]: detail ?? "Invalid value." });
-          setLoading(false);
           return;
         }
 
@@ -212,14 +209,10 @@ export function SetupProfileForm({ onFieldsChange, firstNameRef, lastNameRef, id
         </p>
       </div>
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-      >
-        {loading && <Spinner className="h-4 w-4 text-primary-foreground" />}
+      <Button type="submit" disabled={loading} className="w-full">
+        {loading && <Spinner className="h-4 w-4" />}
         Complete setup
-      </button>
+      </Button>
     </form>
   );
 }

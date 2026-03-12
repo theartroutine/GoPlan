@@ -127,11 +127,26 @@ body {
   100% { transform: scale(2.4); opacity: 0; }
 }
 
+@keyframes ellipsis {
+  0%, 20% { opacity: 0; }
+  40%, 100% { opacity: 1; }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
   }
 }

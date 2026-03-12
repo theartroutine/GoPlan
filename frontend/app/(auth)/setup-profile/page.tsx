@@ -43,9 +43,6 @@ export default function SetupProfilePage() {
   const lastNameRef = useRef<HTMLInputElement>(null);
   const identifyNameRef = useRef<HTMLInputElement>(null);
 
-  const handleFieldsChange = useCallback((f: SetupProfileFields) => {
-    setFields(f);
-  }, []);
 
   const measure = useCallback(() => {
     const grid = gridNode;
@@ -180,7 +177,7 @@ export default function SetupProfilePage() {
               <div className="space-y-4">
                 <VerifiedBanner />
                 <SetupProfileForm
-                  onFieldsChange={handleFieldsChange}
+                  onFieldsChange={setFields}
                   firstNameRef={firstNameRef}
                   lastNameRef={lastNameRef}
                   identifyNameRef={identifyNameRef}

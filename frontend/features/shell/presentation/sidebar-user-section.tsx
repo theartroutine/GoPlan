@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Check, Copy } from "lucide-react";
 
 import { useAuth } from "@/features/auth/application/auth-context";
@@ -20,14 +20,18 @@ export function SidebarUserSection() {
   const { isCollapsed } = useSidebar();
   const [copied, setCopied] = useState(false);
 
-  async function handleCopy() {
+  const handleCopy = useCallback(async () => {
     const identifyTag = user?.identify_tag;
     if (!identifyTag) return;
 
-    await navigator.clipboard.writeText(identifyTag);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+    try {
+      await navigator.clipboard.writeText(identifyTag);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable or permission denied — silently fail
+    }
+  }, [user?.identify_tag]);
 
   if (!user) return null;
 
