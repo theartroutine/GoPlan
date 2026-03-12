@@ -117,7 +117,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework Defaults
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'accounts.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -139,6 +139,8 @@ REST_FRAMEWORK = {
         'auth_profile_name': '60/hour',
         'auth_verify_email': '10/hour',
         'auth_resend_verification': '5/hour',
+        'auth_password_reset_request': '5/hour',
+        'auth_password_reset_confirm': '10/hour',
     },
 }
 
@@ -155,7 +157,7 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'AUTH_TOKEN_CLASSES': ('accounts.tokens.AccessToken',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
@@ -169,6 +171,9 @@ EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', '0') == '1'
 DEFAULT_FROM_EMAIL = 'noreply@goplan.app'
+
+# -------- Password Reset --------
+PASSWORD_RESET_TIMEOUT = 3600  # 1 hour
 
 # -------- Email Verification --------
 EMAIL_VERIFICATION_MAX_AGE_SECONDS = 60 * 60 * 24  # 24 hours

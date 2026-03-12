@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const AUTH_PAGES = ["/login", "/register", "/verify-email", "/setup-profile"];
+const AUTH_PAGES = ["/login", "/register", "/verify-email", "/setup-profile", "/forgot-password", "/reset-password"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

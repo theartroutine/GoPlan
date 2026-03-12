@@ -21,6 +21,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     profile_completed_at = models.DateTimeField(null=True, blank=True)
     email_verified = models.BooleanField(default=False, db_index=True)
     email_verified_at = models.DateTimeField(null=True, blank=True)
+    auth_version = models.PositiveIntegerField(default=1)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)

@@ -4,6 +4,8 @@ from accounts.views import (
     LoginAPIView,
     LogoutAPIView,
     MeAPIView,
+    PasswordResetConfirmAPIView,
+    PasswordResetRequestAPIView,
     ProfileNameUpdateAPIView,
     ProfileSetupAPIView,
     RefreshAPIView,
@@ -22,6 +24,8 @@ urlpatterns = [
     path("me", MeAPIView.as_view(), name="me"),
     path("profile/setup", ProfileSetupAPIView.as_view(), name="profile-setup"),
     path("profile/name", ProfileNameUpdateAPIView.as_view(), name="profile-name"),
+    path("password-reset/request", PasswordResetRequestAPIView.as_view(), name="password-reset-request"),
+    path("password-reset/confirm", PasswordResetConfirmAPIView.as_view(), name="password-reset-confirm"),
     path("refresh", RefreshAPIView.as_view(), name="refresh"),
     path("logout", LogoutAPIView.as_view(), name="logout"),
 ]
