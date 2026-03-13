@@ -37,6 +37,13 @@ export async function bffMe(): Promise<BffAuthResponse> {
   return res.data;
 }
 
+type BffRefreshResponse = { access_token: string };
+
+export async function bffRefresh(): Promise<BffRefreshResponse> {
+  const res = await bff.post<BffRefreshResponse>("/api/auth/refresh");
+  return res.data;
+}
+
 type ProfileResponse = { user: AuthUser };
 
 export async function bffProfileSetup(

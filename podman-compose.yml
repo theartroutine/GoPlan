@@ -35,16 +35,17 @@ services:
   #     timeout: 3s
   #     retries: 10
 
-  # redis-skeleton:
-  #   image: redis:7-alpine
-  #   container_name: redis-skeleton
-  #   volumes:
-  #     - redisdata:/data
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 10
+  # -------- Redis (Channel Layer) --------
+  redis-messaging:
+    image: redis:7-alpine
+    container_name: redis-messaging-goplan
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # -------- Mailpit (Dev Email) --------
   mailpit:
@@ -74,10 +75,10 @@ services:
         condition: service_healthy
       # mongo:
       #   condition: service_healthy
-      # redis-skeleton:
-      #   condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
 
 volumes:
   pgdata: {}
   # mongodata: {}
-  # redisdata: {}
+  redisdata: {}
