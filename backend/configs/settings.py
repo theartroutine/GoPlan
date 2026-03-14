@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'accounts',
     'realtime',
     'notifications',
+    'friends',
 
 ]
 
@@ -150,6 +151,12 @@ REST_FRAMEWORK = {
         'notifications_unread_count': '300/hour',
         'notifications_mark_read': '120/hour',
         'notifications_mark_all_read': '60/hour',
+        'friends_send_request': '30/hour',
+        'friends_requests_list': '120/hour',
+        'friends_respond': '60/hour',
+        'friends_list': '120/hour',
+        'friends_remove': '30/hour',
+        'friends_search': '60/hour',
     },
 }
 

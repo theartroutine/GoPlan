@@ -4,4 +4,5 @@ from django.urls import include, path
 urlpatterns = [
     path("auth/", include("accounts.urls")),
     path("notifications/", include("notifications.urls")),
+    path("friends/", include("friends.urls")),
 ]

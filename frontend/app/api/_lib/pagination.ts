@@ -25,3 +25,15 @@ export function normalizePaginatedResponse(data: unknown) {
     previous_cursor: extractCursor(obj.previous as string | null),
   };
 }
+
+/**
+ * Strip next/previous URLs from DRF LimitOffsetPagination response.
+ * Returns {count, results} — frontend manages offset/limit directly.
+ */
+export function stripPaginationUrls(data: unknown) {
+  const obj = data as Record<string, unknown>;
+  return {
+    count: obj.count,
+    results: obj.results,
+  };
+}

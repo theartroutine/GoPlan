@@ -38,7 +38,7 @@ export function NotificationItem({ notification, onMarkRead }: NotificationItemP
         <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
       )}
       <div className={`min-w-0 flex-1 ${notification.is_read ? "pl-5" : ""}`}>
-        <p className="text-sm leading-snug">{renderNotificationText(notification)}</p>
+        <p className="line-clamp-2 text-sm leading-snug">{renderNotificationText(notification)}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {formatRelativeTime(notification.created_at)}
         </p>

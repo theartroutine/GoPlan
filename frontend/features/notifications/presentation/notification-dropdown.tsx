@@ -16,13 +16,13 @@ export function NotificationDropdown() {
   } = useNotifications();
 
   return (
-    <div className="flex w-80 flex-col sm:w-96">
+    <div className="flex w-[calc(100vw-2rem)] max-w-96 flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h3 className="text-sm font-semibold">Notifications</h3>
         {notifications.some((n) => !n.is_read) && (
           <button
             type="button"
-            className="text-xs text-blue-600 hover:text-blue-800"
+            className="shrink-0 text-xs text-blue-600 hover:text-blue-800"
             onClick={() => void markAllRead()}
           >
             Mark all read

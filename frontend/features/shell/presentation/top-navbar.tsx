@@ -11,6 +11,8 @@ import { DashboardNavbar } from "./dashboard-navbar";
 
 const PAGE_TITLES: Record<string, string> = {
   "/friends": "Friends",
+  "/friends/requests": "Friend Requests",
+  "/friends/add": "Add Friend",
   "/profile": "Profile",
   "/settings": "Settings",
 };

@@ -176,13 +176,18 @@ export async function protectedUpstreamCall(
 
 /**
  * Wrap response data as NextResponse, attaching X-Access-Token header if BFF refreshed.
+ * Safe for no-body status codes (204, 205) — uses `new NextResponse(null)` instead of `.json()`.
  */
+const NO_BODY_STATUS_CODES = new Set([204, 205]);
+
 export function buildProtectedResponse(
   data: unknown,
   refreshedAccessToken?: string,
   status = 200,
 ): NextResponse {
-  const response = NextResponse.json(data, { status });
+  const response = NO_BODY_STATUS_CODES.has(status)
+    ? new NextResponse(null, { status })
+    : NextResponse.json(data, { status });
   if (refreshedAccessToken) {
     response.headers.set("X-Access-Token", refreshedAccessToken);
   }

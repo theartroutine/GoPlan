@@ -25,8 +25,20 @@ class WebSocketManager {
   /** Prevents refresh storm: only one fallback refresh per reconnect cycle. */
   private refreshFallbackUsed = false;
 
+  /** Prevents token refresh during page unload — avoids blacklisting the current token
+   *  when the response (with the rotated token) will never be processed by the browser. */
+  private pageUnloading = false;
+
   private messageListeners = new Map<string, Set<MessageListener>>();
   private statusListeners = new Set<StatusListener>();
+
+  constructor() {
+    if (typeof window !== "undefined") {
+      window.addEventListener("beforeunload", () => {
+        this.pageUnloading = true;
+      });
+    }
+  }
 
   // -------- Public API --------
 
@@ -67,6 +79,11 @@ class WebSocketManager {
 
     this.ws.onclose = (event: CloseEvent) => {
       this.stopHeartbeat();
+
+      // Page is unloading (refresh/navigate away) — do NOT attempt token refresh.
+      // The refresh request could blacklist the current token while the response
+      // (carrying the rotated token cookie) is discarded by the browser.
+      if (this.pageUnloading) return;
 
       // If auth_error was already handled via onmessage, skip to avoid double handling
       if (this.authErrorHandled) return;

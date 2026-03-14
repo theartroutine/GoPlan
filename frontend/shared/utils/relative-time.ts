@@ -3,8 +3,8 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
 
-const rtf = new Intl.RelativeTimeFormat("vi", { numeric: "auto" });
-const dtf = new Intl.DateTimeFormat("vi", {
+const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+const dtf = new Intl.DateTimeFormat("en", {
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
@@ -17,7 +17,7 @@ export function formatRelativeTime(dateString: string): string {
   const now = Date.now();
   const diff = now - date.getTime();
 
-  if (diff < MINUTE) return "vừa xong";
+  if (diff < MINUTE) return "just now";
   if (diff < HOUR) return rtf.format(-Math.floor(diff / MINUTE), "minute");
   if (diff < DAY) return rtf.format(-Math.floor(diff / HOUR), "hour");
   if (diff < WEEK) return rtf.format(-Math.floor(diff / DAY), "day");
