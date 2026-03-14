@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'api',
     'accounts',
     'realtime',
+    'notifications',
 
 ]
 
@@ -145,6 +146,10 @@ REST_FRAMEWORK = {
         'auth_resend_verification': '5/hour',
         'auth_password_reset_request': '5/hour',
         'auth_password_reset_confirm': '10/hour',
+        'notifications_list': '120/hour',
+        'notifications_unread_count': '300/hour',
+        'notifications_mark_read': '120/hour',
+        'notifications_mark_all_read': '60/hour',
     },
 }
 

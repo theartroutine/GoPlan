@@ -37,7 +37,7 @@ class WebSocketManager {
     this.authErrorHandled = false;
     this.setStatus("connecting");
 
-    const url = `${WS_BASE_URL}/ws/connect?token=${encodeURIComponent(token)}`;
+    const url = `${WS_BASE_URL}/ws/realtime?token=${encodeURIComponent(token)}`;
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {

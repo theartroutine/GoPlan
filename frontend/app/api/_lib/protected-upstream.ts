@@ -1,0 +1,190 @@
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+
+import { refreshWithSingleFlight } from "@/app/api/auth/_lib/refresh";
+import {
+  HARD_AUTH_ERROR_CODE,
+  REFRESH_COOKIE_NAME,
+  clearRefreshAuthErrorMarker,
+  clearRefreshSession,
+  handleRefreshFailure,
+  setRefreshToken,
+} from "@/app/api/auth/_lib/session-state";
+import {
+  callAuthUpstream,
+  extractDetail,
+  normalizeErrorPayload,
+} from "@/app/api/auth/_lib/upstream";
+
+type ProtectedCallOptions = {
+  path: string;
+  method: "GET" | "POST" | "PATCH" | "DELETE";
+  body?: string;
+  query?: string;
+  authorization?: string | null;
+};
+
+type ProtectedCallSuccess = {
+  ok: true;
+  data: unknown;
+  refreshedAccessToken?: string;
+};
+
+type ProtectedCallFailure = {
+  ok: false;
+  response: NextResponse;
+};
+
+export type ProtectedCallResult = ProtectedCallSuccess | ProtectedCallFailure;
+
+export async function protectedUpstreamCall(
+  options: ProtectedCallOptions,
+): Promise<ProtectedCallResult> {
+  const jar = await cookies();
+  const refreshToken = jar.get(REFRESH_COOKIE_NAME)?.value;
+
+  const fullPath = options.query
+    ? `${options.path}?${options.query}`
+    : options.path;
+
+  const buildHeaders = (token: string): Record<string, string> => {
+    const h: Record<string, string> = { Authorization: `Bearer ${token}` };
+    if (options.body) h["Content-Type"] = "application/json";
+    return h;
+  };
+
+  // Attempt 1: Use client's access token if available
+  if (options.authorization) {
+    const upstream = await callAuthUpstream(fullPath, {
+      method: options.method,
+      headers: {
+        ...buildHeaders(""),
+        Authorization: options.authorization,
+      },
+      body: options.body,
+    });
+
+    if (upstream.kind !== "network_error" && upstream.ok) {
+      clearRefreshAuthErrorMarker(jar);
+      return { ok: true, data: upstream.data };
+    }
+
+    if (upstream.kind === "network_error") {
+      clearRefreshAuthErrorMarker(jar);
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { detail: upstream.detail },
+          { status: 503 },
+        ),
+      };
+    }
+
+    if (upstream.status !== 401) {
+      clearRefreshAuthErrorMarker(jar);
+      return {
+        ok: false,
+        response: NextResponse.json(
+          normalizeErrorPayload(
+            upstream.data,
+            extractDetail(upstream.data, "Request failed."),
+          ),
+          { status: upstream.status },
+        ),
+      };
+    }
+    // 401 → fall through to refresh
+  }
+
+  // Attempt 2: Refresh token → get new access token → retry
+  if (!refreshToken) {
+    clearRefreshAuthErrorMarker(jar);
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { detail: "Not authenticated." },
+        { status: 401 },
+      ),
+    };
+  }
+
+  const refreshResult = await refreshWithSingleFlight(refreshToken);
+  const failureResponse = handleRefreshFailure(jar, refreshResult);
+  if (failureResponse) return { ok: false, response: failureResponse };
+
+  if (refreshResult.kind !== "success") {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { detail: "Auth failed." },
+        { status: 401 },
+      ),
+    };
+  }
+
+  setRefreshToken(jar, refreshResult.refreshToken);
+
+  const retryUpstream = await callAuthUpstream(fullPath, {
+    method: options.method,
+    headers: buildHeaders(refreshResult.accessToken),
+    body: options.body,
+  });
+
+  if (retryUpstream.kind === "network_error") {
+    clearRefreshAuthErrorMarker(jar);
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { detail: retryUpstream.detail },
+        { status: 503 },
+      ),
+    };
+  }
+
+  if (!retryUpstream.ok) {
+    if (retryUpstream.status === 401) {
+      clearRefreshSession(jar);
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { detail: "Session expired.", code: HARD_AUTH_ERROR_CODE },
+          { status: 401 },
+        ),
+      };
+    }
+
+    clearRefreshAuthErrorMarker(jar);
+    return {
+      ok: false,
+      response: NextResponse.json(
+        normalizeErrorPayload(
+          retryUpstream.data,
+          extractDetail(retryUpstream.data, "Request failed."),
+        ),
+        { status: retryUpstream.status },
+      ),
+    };
+  }
+
+  clearRefreshAuthErrorMarker(jar);
+  return {
+    ok: true,
+    data: retryUpstream.data,
+    refreshedAccessToken: refreshResult.accessToken,
+  };
+}
+
+/**
+ * Wrap response data as NextResponse, attaching X-Access-Token header if BFF refreshed.
+ */
+export function buildProtectedResponse(
+  data: unknown,
+  refreshedAccessToken?: string,
+  status = 200,
+): NextResponse {
+  const response = NextResponse.json(data, { status });
+  if (refreshedAccessToken) {
+    response.headers.set("X-Access-Token", refreshedAccessToken);
+  }
+  return response;
+}

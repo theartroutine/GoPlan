@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import logging
+
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 class BaseConsumer(AsyncJsonWebsocketConsumer):
     """Abstract base consumer — auth check, heartbeat pong.
 
-    Subclasses (ConnectionConsumer, NotificationConsumer, etc.) inherit
-    auth enforcement and ping/pong handling.
+    Subclasses (RealtimeConsumer, etc.) inherit auth enforcement and
+    ping/pong handling.
 
     Auth rejection flow (accept-then-close trade-off):
         If the user is anonymous, we accept() first then send an auth_error
@@ -45,12 +49,40 @@ class BaseConsumer(AsyncJsonWebsocketConsumer):
         pass
 
 
-class ConnectionConsumer(BaseConsumer):
-    """Concrete consumer routed at /ws/connect — verifies connection works.
+class RealtimeConsumer(BaseConsumer):
+    """Multiplexed consumer at /ws/realtime — notifications + future features.
 
-    Inherits ping/pong and auth check from BaseConsumer.
-    Future consumers (NotificationConsumer, ChatConsumer) will also
-    extend BaseConsumer.
+    Joins user-specific notification group on connect so the service layer
+    can push notifications via channel_layer.group_send().
     """
 
-    pass
+    async def connect(self):
+        await super().connect()
+
+        if self.scope["user"].is_anonymous:
+            return
+
+        self.notification_group = f"notifications_{self.user.id}"
+        try:
+            await self.channel_layer.group_add(
+                self.notification_group, self.channel_name
+            )
+        except Exception:
+            logger.exception(
+                "Failed to join notification group for user %s", self.user.id
+            )
+            self.notification_group = None
+
+    async def disconnect(self, close_code):
+        if getattr(self, "notification_group", None):
+            try:
+                await self.channel_layer.group_discard(
+                    self.notification_group, self.channel_name
+                )
+            except Exception:
+                logger.exception("Failed to leave notification group")
+        await super().disconnect(close_code)
+
+    async def notification_push(self, event):
+        """Channel layer handler — forward notification to WebSocket client."""
+        await self.send_json(event["data"])

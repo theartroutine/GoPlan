@@ -11,7 +11,7 @@ from django.urls import re_path
 from django.utils import timezone
 
 from accounts.tokens import AccessToken
-from realtime.consumers import ConnectionConsumer
+from realtime.consumers import RealtimeConsumer
 from realtime.middleware import WebSocketJWTMiddleware
 
 User = get_user_model()
@@ -26,7 +26,7 @@ TEST_CHANNEL_LAYERS = {
 def _build_application():
     return WebSocketJWTMiddleware(
         URLRouter([
-            re_path(r"ws/connect$", ConnectionConsumer.as_asgi()),
+            re_path(r"ws/realtime$", RealtimeConsumer.as_asgi()),
         ])
     )
 
@@ -41,12 +41,12 @@ def _create_user(email="consumer@example.com", password="testpass123!"):
 
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
-class ConnectionConsumerTests(TransactionTestCase):
+class RealtimeConsumerTests(TransactionTestCase):
 
     async def test_authenticated_connect(self):
         user = await _create_user()
         token = str(AccessToken.for_user(user))
-        path = f"ws/connect?{urlencode({'token': token})}"
+        path = f"ws/realtime?{urlencode({'token': token})}"
 
         communicator = WebsocketCommunicator(_build_application(), path)
         connected, _ = await communicator.connect()
@@ -61,7 +61,7 @@ class ConnectionConsumerTests(TransactionTestCase):
     async def test_ping_pong(self):
         user = await _create_user(email="pingpong@example.com")
         token = str(AccessToken.for_user(user))
-        path = f"ws/connect?{urlencode({'token': token})}"
+        path = f"ws/realtime?{urlencode({'token': token})}"
 
         communicator = WebsocketCommunicator(_build_application(), path)
         await communicator.connect()
@@ -76,7 +76,7 @@ class ConnectionConsumerTests(TransactionTestCase):
     async def test_disconnect_clean(self):
         user = await _create_user(email="disconnect@example.com")
         token = str(AccessToken.for_user(user))
-        path = f"ws/connect?{urlencode({'token': token})}"
+        path = f"ws/realtime?{urlencode({'token': token})}"
 
         communicator = WebsocketCommunicator(_build_application(), path)
         connected, _ = await communicator.connect()

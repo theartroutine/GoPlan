@@ -12,7 +12,7 @@ from django.urls import re_path
 from django.utils import timezone
 
 from accounts.tokens import AccessToken
-from realtime.consumers import ConnectionConsumer
+from realtime.consumers import RealtimeConsumer
 from realtime.middleware import WebSocketJWTMiddleware
 
 User = get_user_model()
@@ -28,14 +28,14 @@ def _build_application():
     """Build a minimal ASGI application for testing (no OriginValidator)."""
     return WebSocketJWTMiddleware(
         URLRouter([
-            re_path(r"ws/connect$", ConnectionConsumer.as_asgi()),
+            re_path(r"ws/realtime$", RealtimeConsumer.as_asgi()),
         ])
     )
 
 
 def _make_communicator(token=None):
     """Create a WebsocketCommunicator with optional token query param."""
-    path = "ws/connect"
+    path = "ws/realtime"
     if token is not None:
         path += f"?{urlencode({'token': token})}"
     return WebsocketCommunicator(_build_application(), path)

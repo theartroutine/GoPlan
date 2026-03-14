@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 
+import { NotificationBell } from "@/features/notifications/presentation/notification-bell";
 import { useSidebar } from "@/features/shell/application/sidebar-context";
 import { Button } from "@/shared/ui/button";
 
@@ -38,6 +39,10 @@ export function TopNavbar() {
             {PAGE_TITLES[pathname] ?? ""}
           </h1>
         )}
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <NotificationBell />
       </div>
     </header>
   );
