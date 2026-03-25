@@ -11,8 +11,11 @@ function renderNotificationText(notification: Notification): string {
       return `${actorName} sent you a friend request`;
     case "FRIEND_ACCEPTED":
       return `${actorName} accepted your friend request`;
-    default:
+    default: {
+      const _exhaustive: never = notification.notification_type;
+      void _exhaustive;
       return `${actorName} sent you a notification`;
+    }
   }
 }
 

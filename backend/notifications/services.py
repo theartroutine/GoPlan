@@ -75,20 +75,20 @@ def create_notification(recipient, notification_type, payload=None, actor=None):
             payload=payload or {},
         )
 
-    def _push_ws():
-        try:
-            channel_layer = get_channel_layer()
-            message = build_ws_notification_message(notification)
-            async_to_sync(channel_layer.group_send)(
-                f"notifications_{recipient.id}",
-                {"type": "notification_push", "data": message},
-            )
-        except Exception:
-            logger.exception(
-                "Failed to push notification %s via WebSocket", notification.id
-            )
+        def _push_ws():
+            try:
+                channel_layer = get_channel_layer()
+                message = build_ws_notification_message(notification)
+                async_to_sync(channel_layer.group_send)(
+                    f"notifications_{recipient.id}",
+                    {"type": "notification_push", "data": message},
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to push notification %s via WebSocket", notification.id
+                )
 
-    transaction.on_commit(_push_ws)
+        transaction.on_commit(_push_ws)
     return notification
 
 
@@ -149,21 +149,22 @@ def mark_all_notifications_read(user):
         recipient=user, read_at__isnull=True
     ).update(read_at=timezone.now())
 
-    def _push_read_all():
-        try:
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                f"notifications_{user.id}",
-                {
-                    "type": "notification_push",
-                    "data": {
-                        "type": "notification",
-                        "event": "read_all",
+    if count > 0:
+        def _push_read_all():
+            try:
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    f"notifications_{user.id}",
+                    {
+                        "type": "notification_push",
+                        "data": {
+                            "type": "notification",
+                            "event": "read_all",
+                        },
                     },
-                },
-            )
-        except Exception:
-            logger.exception("Failed to push read_all event via WebSocket")
+                )
+            except Exception:
+                logger.exception("Failed to push read_all event via WebSocket")
 
-    transaction.on_commit(_push_read_all)
+        transaction.on_commit(_push_read_all)
     return count

@@ -1,3 +1,4 @@
+from django.db.models import Q
 from rest_framework import permissions, status
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
@@ -194,8 +195,6 @@ class FriendListAPIView(APIView):
     throttle_scope = "friends_list"
 
     def get(self, request):
-        from django.db.models import Q
-
         queryset = Friendship.objects.filter(
             Q(user_low=request.user) | Q(user_high=request.user)
         ).select_related("user_low", "user_high")

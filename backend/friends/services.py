@@ -278,14 +278,17 @@ def cancel_friend_request(friend_request_id, actor):
 
 def remove_friendship(friendship_id, actor):
     """Remove an existing friendship."""
-    try:
-        friendship = Friendship.objects.get(pk=friendship_id)
-    except Friendship.DoesNotExist:
-        raise FriendshipNotFoundError("Friendship not found.")
+    with transaction.atomic():
+        try:
+            friendship = Friendship.objects.select_for_update().get(
+                pk=friendship_id
+            )
+        except Friendship.DoesNotExist:
+            raise FriendshipNotFoundError("Friendship not found.")
 
-    if actor != friendship.user_low and actor != friendship.user_high:
-        raise NotFriendshipParticipantError(
-            "You are not part of this friendship."
-        )
+        if actor != friendship.user_low and actor != friendship.user_high:
+            raise NotFriendshipParticipantError(
+                "You are not part of this friendship."
+            )
 
-    friendship.delete()
+        friendship.delete()

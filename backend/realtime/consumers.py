@@ -85,4 +85,8 @@ class RealtimeConsumer(BaseConsumer):
 
     async def notification_push(self, event):
         """Channel layer handler — forward notification to WebSocket client."""
-        await self.send_json(event["data"])
+        data = event.get("data")
+        if data is None:
+            logger.warning("notification_push received event without 'data' key")
+            return
+        await self.send_json(data)

@@ -11,10 +11,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type {
-  Notification,
-  WsNotificationMessage,
-} from "@/features/notifications/domain/types";
+import type { Notification } from "@/features/notifications/domain/types";
 import {
   bffMarkAllRead,
   bffMarkRead,
@@ -327,15 +324,28 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   // Subscribe to WS notifications
   useEffect(() => {
     return wsManager.on("notification", (data: WsMessage) => {
-      const msg = data as unknown as WsNotificationMessage;
+      const event = data.event as string | undefined;
+      if (!event) return;
 
-      switch (msg.event) {
-        case "created":
-          dispatch({ type: "NOTIFICATION_RECEIVED", notification: msg.notification });
+      switch (event) {
+        case "created": {
+          const notification = data.notification;
+          if (!notification || typeof notification !== "object") return;
+          dispatch({
+            type: "NOTIFICATION_RECEIVED",
+            notification: notification as Notification,
+          });
           break;
-        case "read":
-          dispatch({ type: "NOTIFICATION_READ_SYNC", notificationIds: msg.notification_ids });
+        }
+        case "read": {
+          const ids = data.notification_ids;
+          if (!Array.isArray(ids)) return;
+          dispatch({
+            type: "NOTIFICATION_READ_SYNC",
+            notificationIds: ids as string[],
+          });
           break;
+        }
         case "read_all":
           dispatch({ type: "NOTIFICATION_READ_ALL_SYNC" });
           break;
@@ -418,7 +428,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       markRead,
       markAllRead,
     }),
-    [state, fetchNotifications, loadMore, markRead, markAllRead],
+    [state.unreadCount, state.notifications, state.isLoading, state.hasMore, state.isListLoaded, fetchNotifications, loadMore, markRead, markAllRead],
   );
 
   return (

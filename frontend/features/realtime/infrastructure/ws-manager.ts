@@ -60,7 +60,13 @@ class WebSocketManager {
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
-      const data = JSON.parse(event.data as string) as WsMessage;
+      let data: WsMessage;
+      try {
+        data = JSON.parse(event.data as string) as WsMessage;
+      } catch {
+        console.warn("[WS] Failed to parse message:", event.data);
+        return;
+      }
 
       if (data.type === "auth_error") {
         this.authErrorHandled = true;
