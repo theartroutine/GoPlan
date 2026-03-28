@@ -23,8 +23,10 @@ class BaseConsumer(AsyncJsonWebsocketConsumer):
     """
 
     async def connect(self):
+        selected_subprotocol = self.scope.get("ws_subprotocol")
+
         if self.scope["user"].is_anonymous:
-            await self.accept()
+            await self.accept(subprotocol=selected_subprotocol)
             auth_error = self.scope.get("auth_error", "auth_failed")
             close_code = settings.WS_CLOSE_CODES.get(
                 'TOKEN_EXPIRED' if auth_error == 'token_expired' else 'AUTH_FAILED'
@@ -34,7 +36,7 @@ class BaseConsumer(AsyncJsonWebsocketConsumer):
             return
 
         self.user = self.scope["user"]
-        await self.accept()
+        await self.accept(subprotocol=selected_subprotocol)
 
     async def receive_json(self, content, **kwargs):
         if self.scope["user"].is_anonymous:

@@ -12,13 +12,13 @@ from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
 from channels.security.websocket import OriginValidator  # noqa: E402
 from django.conf import settings  # noqa: E402
 
-from realtime.middleware import WebSocketJWTMiddleware  # noqa: E402
+from realtime.middleware import WebSocketAuthMiddleware  # noqa: E402
 from realtime.routing import websocket_urlpatterns  # noqa: E402
 
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
     "websocket": OriginValidator(
-        WebSocketJWTMiddleware(
+        WebSocketAuthMiddleware(
             URLRouter(websocket_urlpatterns)
         ),
         allowed_origins=settings.CORS_ALLOWED_ORIGINS,

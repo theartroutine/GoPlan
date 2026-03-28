@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-from urllib.parse import urlencode
-
-from asgiref.sync import async_to_sync
 from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 from django.urls import re_path
 from django.utils import timezone
 
-from accounts.tokens import AccessToken
 from realtime.consumers import RealtimeConsumer
-from realtime.middleware import WebSocketJWTMiddleware
+from realtime.middleware import WebSocketAuthMiddleware
+from realtime.services import issue_ws_ticket
 
 User = get_user_model()
 
@@ -26,7 +24,7 @@ TEST_CHANNEL_LAYERS = {
 
 
 def _build_application():
-    return WebSocketJWTMiddleware(
+    return WebSocketAuthMiddleware(
         URLRouter([
             re_path(r"ws/realtime$", RealtimeConsumer.as_asgi()),
         ])
@@ -47,10 +45,13 @@ class NotificationConsumerTests(TransactionTestCase):
 
     async def test_authenticated_user_joins_notification_group(self):
         user = await _create_user()
-        token = str(AccessToken.for_user(user))
-        path = f"ws/realtime?{urlencode({'token': token})}"
+        ticket = issue_ws_ticket(user)
 
-        communicator = WebsocketCommunicator(_build_application(), path)
+        communicator = WebsocketCommunicator(
+            _build_application(),
+            "ws/realtime",
+            subprotocols=[settings.WS_SUBPROTOCOL, ticket],
+        )
         connected, _ = await communicator.connect()
 
         self.assertTrue(connected)
@@ -75,10 +76,13 @@ class NotificationConsumerTests(TransactionTestCase):
 
     async def test_receives_notification_push(self):
         user = await _create_user(email="push@example.com")
-        token = str(AccessToken.for_user(user))
-        path = f"ws/realtime?{urlencode({'token': token})}"
+        ticket = issue_ws_ticket(user)
 
-        communicator = WebsocketCommunicator(_build_application(), path)
+        communicator = WebsocketCommunicator(
+            _build_application(),
+            "ws/realtime",
+            subprotocols=[settings.WS_SUBPROTOCOL, ticket],
+        )
         await communicator.connect()
 
         channel_layer = get_channel_layer()

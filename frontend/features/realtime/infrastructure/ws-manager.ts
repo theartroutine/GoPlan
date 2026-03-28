@@ -1,12 +1,15 @@
+import axios from "axios";
+
 import type { WsConnectionStatus, WsMessage } from "@/features/realtime/domain/types";
-import { bffRefresh } from "@/features/auth/infrastructure/auth-api";
-import { tokenManager } from "@/features/auth/infrastructure/token-manager";
+import { bffWsTicket } from "@/features/realtime/infrastructure/realtime-api";
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
+const WS_SUBPROTOCOL = "goplan.realtime.v1";
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const MAX_BACKOFF_MS = 30_000;
+const SOFT_AUTH_ERROR_CODE = "refresh_auth_soft_failed";
 
 type MessageListener = (data: WsMessage) => void;
 type StatusListener = (status: WsConnectionStatus) => void;
@@ -18,15 +21,13 @@ class WebSocketManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectRequestId = 0;
+  private isConnecting = false;
 
-  /** Prevents double handling when server sends auth_error message + close code. */
-  private authErrorHandled = false;
+  /** Try one immediate ticket re-issue before falling back to backoff reconnect. */
+  private reconnectBootstrapUsed = false;
 
-  /** Prevents refresh storm: only one fallback refresh per reconnect cycle. */
-  private refreshFallbackUsed = false;
-
-  /** Prevents token refresh during page unload — avoids blacklisting the current token
-   *  when the response (with the rotated token) will never be processed by the browser. */
+  /** Prevents reconnect work during page unload/navigation. */
   private pageUnloading = false;
 
   private messageListeners = new Map<string, Set<MessageListener>>();
@@ -43,77 +44,22 @@ class WebSocketManager {
   // -------- Public API --------
 
   connect(): void {
-    const token = tokenManager.get();
-    if (!token) return;
+    if (this.isConnecting) return;
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
 
-    this.authErrorHandled = false;
-    this.setStatus("connecting");
+    this.clearReconnectTimer();
+    this.setStatus(this.reconnectAttempt > 0 ? "reconnecting" : "connecting");
 
-    const url = `${WS_BASE_URL}/ws/realtime?token=${encodeURIComponent(token)}`;
-    this.ws = new WebSocket(url);
-
-    this.ws.onopen = () => {
-      this.setStatus("connected");
-      this.reconnectAttempt = 0;
-      this.refreshFallbackUsed = false;
-      this.startHeartbeat();
-    };
-
-    this.ws.onmessage = (event: MessageEvent) => {
-      let data: WsMessage;
-      try {
-        data = JSON.parse(event.data as string) as WsMessage;
-      } catch {
-        console.warn("[WS] Failed to parse message:", event.data);
-        return;
-      }
-
-      if (data.type === "auth_error") {
-        this.authErrorHandled = true;
-        this.stopHeartbeat();
-        void this.handleAuthError(data.code as string);
-        return;
-      }
-
-      if (data.type === "pong") {
-        this.clearHeartbeatTimeout();
-        return;
-      }
-
-      this.emit(data.type, data);
-    };
-
-    this.ws.onclose = (event: CloseEvent) => {
-      this.stopHeartbeat();
-
-      // Page is unloading (refresh/navigate away) — do NOT attempt token refresh.
-      // The refresh request could blacklist the current token while the response
-      // (carrying the rotated token cookie) is discarded by the browser.
-      if (this.pageUnloading) return;
-
-      // If auth_error was already handled via onmessage, skip to avoid double handling
-      if (this.authErrorHandled) return;
-
-      // Fallback: honor auth close codes even if the auth_error message was missed
-      if (event.code === 4002) {
-        void this.handleAuthError("token_expired");
-        return;
-      }
-      if (event.code === 4001) {
-        void this.handleAuthError("auth_failed");
-        return;
-      }
-
-      // Network/abnormal close — try fallback refresh then backoff
-      void this.handleNetworkClose();
-    };
-
-    this.ws.onerror = () => {
-      // Errors always precede close events; actual handling happens in onclose
-    };
+    const requestId = ++this.connectRequestId;
+    this.isConnecting = true;
+    void this.openSocket(requestId);
   }
 
   disconnect(): void {
+    this.connectRequestId += 1;
+    this.isConnecting = false;
     this.cancelReconnect();
     this.stopHeartbeat();
 
@@ -158,37 +104,123 @@ class WebSocketManager {
 
   // -------- Auth Error Handling --------
 
-  private async handleAuthError(code: string): Promise<void> {
+  private handleAuthError(code: string): void {
     if (code === "token_expired") {
-      const refreshed = await this.tryRefreshAndReconnect();
-      if (!refreshed) {
-        this.setStatus("disconnected");
-      }
+      this.connect();
       return;
     }
 
     // "auth_failed" (revoked, invalid, etc.) — do not retry
-    this.setStatus("disconnected");
+    this.transitionToDisconnected();
   }
 
-  private async handleNetworkClose(): Promise<void> {
-    if (!this.refreshFallbackUsed) {
-      this.refreshFallbackUsed = true;
-      const refreshed = await this.tryRefreshAndReconnect();
-      if (refreshed) return;
+  private handleNetworkClose(): void {
+    if (!this.reconnectBootstrapUsed) {
+      this.reconnectBootstrapUsed = true;
+      this.connect();
+      return;
     }
 
     this.scheduleReconnect();
   }
 
-  private async tryRefreshAndReconnect(): Promise<boolean> {
+  private async openSocket(requestId: number): Promise<void> {
+    let socketAuthHandled = false;
+
     try {
-      const data = await bffRefresh();
-      tokenManager.set(data.access_token);
-      this.connect();
-      return true;
-    } catch {
-      return false;
+      // The ticket endpoint goes through BFF, so it can reuse access-token forwarding
+      // and refresh-cookie fallback without exposing bearer tokens in the WS URL.
+      const { ticket } = await bffWsTicket();
+
+      if (!this.isCurrentConnectRequest(requestId) || this.pageUnloading) {
+        this.isConnecting = false;
+        return;
+      }
+
+      const ws = new WebSocket(`${WS_BASE_URL}/ws/realtime`, [WS_SUBPROTOCOL, ticket]);
+      this.ws = ws;
+
+      ws.onopen = () => {
+        if (!this.isActiveSocket(ws, requestId)) {
+          ws.close();
+          return;
+        }
+
+        this.clearReconnectTimer();
+        this.isConnecting = false;
+        this.setStatus("connected");
+        this.reconnectAttempt = 0;
+        this.reconnectBootstrapUsed = false;
+        this.startHeartbeat();
+      };
+
+      ws.onmessage = (event: MessageEvent) => {
+        if (!this.isActiveSocket(ws, requestId)) return;
+
+        let data: WsMessage;
+        try {
+          data = JSON.parse(event.data as string) as WsMessage;
+        } catch {
+          console.warn("[WS] Failed to parse message:", event.data);
+          return;
+        }
+
+        if (data.type === "auth_error") {
+          socketAuthHandled = true;
+          this.releaseSocketReference(ws);
+          this.stopHeartbeat();
+          this.handleAuthError(data.code as string);
+          return;
+        }
+
+        if (data.type === "pong") {
+          this.clearHeartbeatTimeout();
+          return;
+        }
+
+        this.emit(data.type, data);
+      };
+
+      ws.onclose = (event: CloseEvent) => {
+        if (socketAuthHandled) return;
+        if (!this.isActiveSocket(ws, requestId)) return;
+
+        this.isConnecting = false;
+        this.releaseSocketReference(ws);
+        this.stopHeartbeat();
+
+        if (this.pageUnloading) return;
+
+        if (event.code === 4002) {
+          this.handleAuthError("token_expired");
+          return;
+        }
+        if (event.code === 4001) {
+          this.handleAuthError("auth_failed");
+          return;
+        }
+
+        this.handleNetworkClose();
+      };
+
+      ws.onerror = () => {
+        // Errors always precede close events; actual handling happens in onclose
+      };
+    } catch (error) {
+      if (!this.isCurrentConnectRequest(requestId) || this.pageUnloading) {
+        this.isConnecting = false;
+        return;
+      }
+
+      this.isConnecting = false;
+      this.ws = null;
+
+      if (this.isHardAuthFailure(error)) {
+        this.transitionToDisconnected();
+        return;
+      }
+
+      this.scheduleReconnect();
     }
   }
 
@@ -196,10 +228,11 @@ class WebSocketManager {
 
   private scheduleReconnect(): void {
     if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-      this.setStatus("disconnected");
+      this.transitionToDisconnected();
       return;
     }
 
+    this.clearReconnectTimer();
     this.setStatus("reconnecting");
 
     const baseDelay = Math.min(1000 * 2 ** this.reconnectAttempt, MAX_BACKOFF_MS);
@@ -214,13 +247,17 @@ class WebSocketManager {
     }, delay);
   }
 
-  private cancelReconnect(): void {
+  private clearReconnectTimer(): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+  }
+
+  private cancelReconnect(): void {
+    this.clearReconnectTimer();
     this.reconnectAttempt = 0;
-    this.refreshFallbackUsed = false;
+    this.reconnectBootstrapUsed = false;
   }
 
   // -------- Heartbeat --------
@@ -258,6 +295,48 @@ class WebSocketManager {
   }
 
   // -------- Internal --------
+
+  private isCurrentConnectRequest(requestId: number): boolean {
+    return requestId === this.connectRequestId;
+  }
+
+  private isActiveSocket(ws: WebSocket, requestId: number): boolean {
+    return this.ws === ws && this.isCurrentConnectRequest(requestId);
+  }
+
+  private releaseSocketReference(ws: WebSocket): void {
+    if (this.ws === ws) {
+      this.ws = null;
+    }
+  }
+
+  private transitionToDisconnected(): void {
+    this.cancelReconnect();
+    this.isConnecting = false;
+    this.setStatus("disconnected");
+  }
+
+  private isHardAuthFailure(error: unknown): boolean {
+    if (!axios.isAxiosError(error)) {
+      return false;
+    }
+
+    const status = error.response?.status;
+    if (status === 403) return true;
+    if (status !== 401) return false;
+
+    const code = this.extractErrorCode(error.response?.data);
+    return code !== SOFT_AUTH_ERROR_CODE;
+  }
+
+  private extractErrorCode(data: unknown): string | null {
+    if (typeof data !== "object" || data === null || Array.isArray(data)) {
+      return null;
+    }
+
+    const code = (data as { code?: unknown }).code;
+    return typeof code === "string" ? code : null;
+  }
 
   private setStatus(newStatus: WsConnectionStatus): void {
     if (this.status === newStatus) return;

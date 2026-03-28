@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from urllib.parse import urlencode
 
+import jwt as pyjwt
 from channels.db import database_sync_to_async
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 from django.urls import re_path
 from django.utils import timezone
 
-from accounts.tokens import AccessToken
 from realtime.consumers import RealtimeConsumer
-from realtime.middleware import WebSocketJWTMiddleware
+from realtime.middleware import WebSocketAuthMiddleware
+from realtime.services import issue_ws_ticket
 
 User = get_user_model()
 
@@ -26,19 +27,23 @@ TEST_CHANNEL_LAYERS = {
 
 def _build_application():
     """Build a minimal ASGI application for testing (no OriginValidator)."""
-    return WebSocketJWTMiddleware(
+    return WebSocketAuthMiddleware(
         URLRouter([
             re_path(r"ws/realtime$", RealtimeConsumer.as_asgi()),
         ])
     )
 
 
-def _make_communicator(token=None):
-    """Create a WebsocketCommunicator with optional token query param."""
-    path = "ws/realtime"
-    if token is not None:
-        path += f"?{urlencode({'token': token})}"
-    return WebsocketCommunicator(_build_application(), path)
+def _make_communicator(ticket=None):
+    """Create a WebsocketCommunicator with optional WebSocket ticket."""
+    subprotocols = None
+    if ticket is not None:
+        subprotocols = [settings.WS_SUBPROTOCOL, ticket]
+    return WebsocketCommunicator(
+        _build_application(),
+        "ws/realtime",
+        subprotocols=subprotocols,
+    )
 
 
 @database_sync_to_async
@@ -52,21 +57,29 @@ def _create_user(email="test@example.com", password="testpass123!", **kwargs):
     return user
 
 
-def _issue_access_token(user):
-    return str(AccessToken.for_user(user))
+def _issue_ws_ticket(user):
+    return issue_ws_ticket(user)
 
 
-def _issue_expired_access_token(user):
-    """Issue an access token that is already expired."""
-    token = AccessToken.for_user(user)
-    # Override exp to the past
-    token.set_exp(from_time=timezone.now() - timedelta(hours=1))
-    return str(token)
+def _issue_expired_ws_ticket(user):
+    """Issue a WebSocket ticket that is already expired."""
+    now = timezone.now()
+    return pyjwt.encode(
+        {
+            "sub": str(user.id),
+            "auth_version": user.auth_version,
+            "scope": "realtime:connect",
+            "iat": int((now - timedelta(hours=1)).timestamp()),
+            "exp": int((now - timedelta(minutes=1)).timestamp()),
+        },
+        settings.SECRET_KEY,
+        algorithm="HS256",
+    )
 
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
 class WebSocketAuthMiddlewareTests(TransactionTestCase):
-    """Tests for WebSocketJWTMiddleware.
+    """Tests for WebSocketAuthMiddleware.
 
     Each unauthorized test asserts the full accept-then-close contract:
     (1) connect accepted, (2) receive auth_error message, (3) close with correct code.
@@ -76,18 +89,18 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
     TestCase's uncommitted transaction.
     """
 
-    async def test_valid_token_connects(self):
+    async def test_valid_ticket_connects(self):
         user = await _create_user()
-        token = _issue_access_token(user)
+        ticket = _issue_ws_ticket(user)
 
-        communicator = _make_communicator(token=token)
+        communicator = _make_communicator(ticket=ticket)
         connected, _ = await communicator.connect()
 
         self.assertTrue(connected)
         await communicator.disconnect()
 
-    async def test_missing_token_closes_4001(self):
-        communicator = _make_communicator(token=None)
+    async def test_missing_ticket_closes_4001(self):
+        communicator = _make_communicator(ticket=None)
         connected, _ = await communicator.connect()
 
         # (1) Connection accepted (for reliable close code delivery)
@@ -103,11 +116,11 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
         self.assertEqual(close["type"], "websocket.close")
         self.assertEqual(close["code"], 4001)
 
-    async def test_expired_token_closes_4002(self):
+    async def test_expired_ticket_closes_4002(self):
         user = await _create_user(email="expired@example.com")
-        token = _issue_expired_access_token(user)
+        ticket = _issue_expired_ws_ticket(user)
 
-        communicator = _make_communicator(token=token)
+        communicator = _make_communicator(ticket=ticket)
         connected, _ = await communicator.connect()
 
         self.assertTrue(connected)
@@ -122,7 +135,7 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
     async def test_revoked_auth_version_closes_4001(self):
         user = await _create_user(email="revoked@example.com")
-        token = _issue_access_token(user)
+        ticket = _issue_ws_ticket(user)
 
         # Simulate password change — increment auth_version
         @database_sync_to_async
@@ -132,7 +145,7 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
         await increment_auth_version()
 
-        communicator = _make_communicator(token=token)
+        communicator = _make_communicator(ticket=ticket)
         connected, _ = await communicator.connect()
 
         self.assertTrue(connected)
@@ -145,8 +158,8 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
         self.assertEqual(close["type"], "websocket.close")
         self.assertEqual(close["code"], 4001)
 
-    async def test_invalid_token_closes_4001(self):
-        communicator = _make_communicator(token="not-a-valid-jwt-at-all")
+    async def test_invalid_ticket_closes_4001(self):
+        communicator = _make_communicator(ticket="not-a-valid-jwt-at-all")
         connected, _ = await communicator.connect()
 
         self.assertTrue(connected)
@@ -161,17 +174,19 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
     async def test_malformed_exp_claim_closes_4001(self):
         """Crafted JWT with non-numeric exp must not crash the middleware."""
-        import jwt as pyjwt
-
-        # Build a JWT with exp="abc" — SimpleJWT will reject it, then
-        # _classify_token_error must handle the non-numeric exp gracefully.
+        # Build a JWT with exp="abc" — ticket validation must fail cleanly.
         malformed_token = pyjwt.encode(
-            {"exp": "abc", "token_type": "access"},
-            "wrong-secret",
+            {
+                "sub": "test-user",
+                "auth_version": 1,
+                "scope": "realtime:connect",
+                "exp": "abc",
+            },
+            settings.SECRET_KEY,
             algorithm="HS256",
         )
 
-        communicator = _make_communicator(token=malformed_token)
+        communicator = _make_communicator(ticket=malformed_token)
         connected, _ = await communicator.connect()
 
         self.assertTrue(connected)
@@ -186,12 +201,12 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
     async def test_nonexistent_user_closes_4001(self):
         user = await _create_user(email="deleted@example.com")
-        token = _issue_access_token(user)
+        ticket = _issue_ws_ticket(user)
 
         # Delete the user after issuing token
         await database_sync_to_async(user.delete)()
 
-        communicator = _make_communicator(token=token)
+        communicator = _make_communicator(ticket=ticket)
         connected, _ = await communicator.connect()
 
         self.assertTrue(connected)
@@ -206,9 +221,9 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
     async def test_inactive_user_closes_4001(self):
         user = await _create_user(email="inactive@example.com", is_active=False)
-        token = _issue_access_token(user)
+        ticket = _issue_ws_ticket(user)
 
-        communicator = _make_communicator(token=token)
+        communicator = _make_communicator(ticket=ticket)
         connected, _ = await communicator.connect()
 
         self.assertTrue(connected)

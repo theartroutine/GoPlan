@@ -147,6 +147,7 @@ REST_FRAMEWORK = {
         'auth_resend_verification': '5/hour',
         'auth_password_reset_request': '5/hour',
         'auth_password_reset_confirm': '10/hour',
+        'realtime_ws_ticket': '120/hour',
         'notifications_list': '120/hour',
         'notifications_unread_count': '300/hour',
         'notifications_mark_read': '120/hour',
@@ -213,6 +214,8 @@ CHANNEL_LAYERS = {
 
 # -------- WebSocket Configuration --------
 WS_HEARTBEAT_INTERVAL = 30  # seconds
+WS_TICKET_LIFETIME_SECONDS = 60
+WS_SUBPROTOCOL = 'goplan.realtime.v1'
 
 WS_CLOSE_CODES = {
     'AUTH_FAILED': 4001,      # Token invalid/revoked — client should not retry
