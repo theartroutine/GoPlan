@@ -5,16 +5,13 @@ from channels.layers import get_channel_layer
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
 from django.conf import settings
-from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 from django.urls import re_path
-from django.utils import timezone
 
 from realtime.consumers import RealtimeConsumer
 from realtime.middleware import WebSocketAuthMiddleware
 from realtime.services import issue_ws_ticket
-
-User = get_user_model()
+from test_helpers import create_verified_user
 
 TEST_CHANNEL_LAYERS = {
     "default": {
@@ -33,11 +30,7 @@ def _build_application():
 
 @database_sync_to_async
 def _create_user(email="notif@example.com", password="testpass123!"):
-    user = User.objects.create_user(email=email, password=password)
-    user.email_verified = True
-    user.email_verified_at = timezone.now()
-    user.save()
-    return user
+    return create_verified_user(email=email, password=password)
 
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)

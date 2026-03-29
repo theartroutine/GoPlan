@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import uuid
 
-from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
 from notifications.models import Notification, NotificationType
-
-User = get_user_model()
+from test_helpers import create_verified_user
 
 LIST_URL = "/api/notifications/"
 UNREAD_COUNT_URL = "/api/notifications/unread-count"
@@ -20,14 +18,6 @@ def _mark_read_url(notification_id):
     return f"/api/notifications/{notification_id}/read"
 
 
-def _create_verified_user(email="user@example.com", password="testpass123!"):
-    user = User.objects.create_user(email=email, password=password)
-    user.email_verified = True
-    user.email_verified_at = timezone.now()
-    user.save(update_fields=["email_verified", "email_verified_at"])
-    return user
-
-
 def _auth_header(user):
     token = AccessToken.for_user(user)
     return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
@@ -36,8 +26,8 @@ def _auth_header(user):
 class NotificationListTests(APITestCase):
 
     def test_list_returns_only_own_notifications(self):
-        user1 = _create_verified_user()
-        user2 = _create_verified_user(email="other@example.com")
+        user1 = create_verified_user()
+        user2 = create_verified_user(email="other@example.com")
         Notification.objects.create(
             recipient=user1, type=NotificationType.FRIEND_REQUEST
         )
@@ -51,7 +41,7 @@ class NotificationListTests(APITestCase):
         self.assertEqual(len(response.data["results"]), 1)
 
     def test_list_paginated_newest_first(self):
-        user = _create_verified_user()
+        user = create_verified_user()
         for i in range(25):
             Notification.objects.create(
                 recipient=user, type=NotificationType.FRIEND_REQUEST
@@ -71,7 +61,7 @@ class NotificationListTests(APITestCase):
 class NotificationUnreadCountTests(APITestCase):
 
     def test_unread_count_correct(self):
-        user = _create_verified_user()
+        user = create_verified_user()
         Notification.objects.create(
             recipient=user, type=NotificationType.FRIEND_REQUEST
         )
@@ -93,7 +83,7 @@ class NotificationUnreadCountTests(APITestCase):
 class NotificationMarkReadTests(APITestCase):
 
     def test_mark_read_success_200(self):
-        user = _create_verified_user()
+        user = create_verified_user()
         notification = Notification.objects.create(
             recipient=user, type=NotificationType.FRIEND_REQUEST
         )
@@ -107,8 +97,8 @@ class NotificationMarkReadTests(APITestCase):
         self.assertIsNotNone(notification.read_at)
 
     def test_mark_read_wrong_user_404(self):
-        owner = _create_verified_user()
-        other = _create_verified_user(email="other@example.com")
+        owner = create_verified_user()
+        other = create_verified_user(email="other@example.com")
         notification = Notification.objects.create(
             recipient=owner, type=NotificationType.FRIEND_REQUEST
         )
@@ -121,7 +111,7 @@ class NotificationMarkReadTests(APITestCase):
         self.assertEqual(response.data["error_code"], "NOTIFICATION_NOT_FOUND")
 
     def test_mark_read_nonexistent_404(self):
-        user = _create_verified_user()
+        user = create_verified_user()
         fake_id = uuid.uuid4()
 
         response = self.client.post(
@@ -134,7 +124,7 @@ class NotificationMarkReadTests(APITestCase):
 class NotificationMarkAllReadTests(APITestCase):
 
     def test_mark_all_read_returns_count(self):
-        user = _create_verified_user()
+        user = create_verified_user()
         Notification.objects.create(
             recipient=user, type=NotificationType.FRIEND_REQUEST
         )

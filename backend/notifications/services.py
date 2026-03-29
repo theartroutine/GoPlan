@@ -107,35 +107,37 @@ def mark_notification_read(notification_id, user):
     if notification.read_at is not None:
         return notification
 
-    # Atomic: only one concurrent request will match the filter
-    updated = Notification.objects.filter(
-        pk=notification_id, read_at__isnull=True
-    ).update(read_at=timezone.now())
+    # Keep the write and commit hook registration in one transaction boundary.
+    with transaction.atomic():
+        # Atomic: only one concurrent request will match the filter
+        updated = Notification.objects.filter(
+            pk=notification_id, read_at__isnull=True
+        ).update(read_at=timezone.now())
 
-    notification.refresh_from_db()
+        notification.refresh_from_db()
 
-    if updated == 0:
-        # Another request already marked it — return idempotent, no WS push
-        return notification
+        if updated == 0:
+            # Another request already marked it — return idempotent, no WS push
+            return notification
 
-    def _push_read():
-        try:
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                f"notifications_{user.id}",
-                {
-                    "type": "notification_push",
-                    "data": {
-                        "type": "notification",
-                        "event": "read",
-                        "notification_ids": [str(notification.id)],
+        def _push_read():
+            try:
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    f"notifications_{user.id}",
+                    {
+                        "type": "notification_push",
+                        "data": {
+                            "type": "notification",
+                            "event": "read",
+                            "notification_ids": [str(notification.id)],
+                        },
                     },
-                },
-            )
-        except Exception:
-            logger.exception("Failed to push read event via WebSocket")
+                )
+            except Exception:
+                logger.exception("Failed to push read event via WebSocket")
 
-    transaction.on_commit(_push_read)
+        transaction.on_commit(_push_read)
     return notification
 
 
@@ -145,26 +147,27 @@ def mark_all_notifications_read(user):
     Pushes a WS event so other connected clients sync read state.
     Returns the number of notifications updated.
     """
-    count = Notification.objects.filter(
-        recipient=user, read_at__isnull=True
-    ).update(read_at=timezone.now())
+    with transaction.atomic():
+        count = Notification.objects.filter(
+            recipient=user, read_at__isnull=True
+        ).update(read_at=timezone.now())
 
-    if count > 0:
-        def _push_read_all():
-            try:
-                channel_layer = get_channel_layer()
-                async_to_sync(channel_layer.group_send)(
-                    f"notifications_{user.id}",
-                    {
-                        "type": "notification_push",
-                        "data": {
-                            "type": "notification",
-                            "event": "read_all",
+        if count > 0:
+            def _push_read_all():
+                try:
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f"notifications_{user.id}",
+                        {
+                            "type": "notification_push",
+                            "data": {
+                                "type": "notification",
+                                "event": "read_all",
+                            },
                         },
-                    },
-                )
-            except Exception:
-                logger.exception("Failed to push read_all event via WebSocket")
+                    )
+                except Exception:
+                    logger.exception("Failed to push read_all event via WebSocket")
 
-        transaction.on_commit(_push_read_all)
+            transaction.on_commit(_push_read_all)
     return count

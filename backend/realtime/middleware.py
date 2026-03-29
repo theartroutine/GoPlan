@@ -35,5 +35,3 @@ class WebSocketAuthMiddleware(BaseMiddleware):
     def _authenticate(self, raw_ticket):
         return authenticate_ws_ticket(raw_ticket)
 
-
-WebSocketJWTMiddleware = WebSocketAuthMiddleware

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from channels.db import database_sync_to_async
-from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -15,8 +13,7 @@ from notifications.services import (
     mark_all_notifications_read,
     mark_notification_read,
 )
-
-User = get_user_model()
+from test_helpers import create_verified_user
 
 TEST_CHANNEL_LAYERS = {
     "default": {
@@ -25,21 +22,13 @@ TEST_CHANNEL_LAYERS = {
 }
 
 
-def _create_verified_user(email="user@example.com", password="testpass123!"):
-    user = User.objects.create_user(email=email, password=password)
-    user.email_verified = True
-    user.email_verified_at = timezone.now()
-    user.save(update_fields=["email_verified", "email_verified_at"])
-    return user
-
-
 # -------- create_notification --------
 
 
 class CreateNotificationTests(APITestCase):
 
     def test_create_notification_persists_record(self):
-        recipient = _create_verified_user()
+        recipient = create_verified_user()
         notification = create_notification(
             recipient=recipient,
             notification_type=NotificationType.FRIEND_REQUEST,
@@ -55,8 +44,8 @@ class CreateNotificationTests(APITestCase):
         self.assertEqual(Notification.objects.count(), 1)
 
     def test_create_notification_with_actor(self):
-        recipient = _create_verified_user()
-        actor = _create_verified_user(email="actor@example.com")
+        recipient = create_verified_user()
+        actor = create_verified_user(email="actor@example.com")
         notification = create_notification(
             recipient=recipient,
             notification_type=NotificationType.FRIEND_ACCEPTED,
@@ -70,7 +59,7 @@ class CreateNotificationTests(APITestCase):
 class CreateNotificationWSTests(TransactionTestCase):
 
     def test_create_notification_handles_channel_layer_failure(self):
-        recipient = _create_verified_user()
+        recipient = create_verified_user()
 
         with patch(
             "notifications.services.get_channel_layer",
@@ -85,8 +74,8 @@ class CreateNotificationWSTests(TransactionTestCase):
         self.assertTrue(Notification.objects.filter(pk=notification.id).exists())
 
     def test_create_notification_pushes_after_commit(self):
-        recipient = _create_verified_user()
-        actor = _create_verified_user(email="actor@example.com")
+        recipient = create_verified_user()
+        actor = create_verified_user(email="actor@example.com")
 
         with patch(
             "notifications.services.async_to_sync"
@@ -123,7 +112,7 @@ class CreateNotificationWSTests(TransactionTestCase):
 class MarkNotificationReadTests(APITestCase):
 
     def test_mark_read_success(self):
-        user = _create_verified_user()
+        user = create_verified_user()
         notification = Notification.objects.create(
             recipient=user,
             type=NotificationType.FRIEND_REQUEST,
@@ -136,7 +125,7 @@ class MarkNotificationReadTests(APITestCase):
         self.assertEqual(result.id, notification.id)
 
     def test_mark_read_idempotent(self):
-        user = _create_verified_user()
+        user = create_verified_user()
         notification = Notification.objects.create(
             recipient=user,
             type=NotificationType.FRIEND_REQUEST,
@@ -151,8 +140,8 @@ class MarkNotificationReadTests(APITestCase):
         self.assertEqual(result.id, notification.id)
 
     def test_mark_read_wrong_user_raises(self):
-        owner = _create_verified_user()
-        other = _create_verified_user(email="other@example.com")
+        owner = create_verified_user()
+        other = create_verified_user(email="other@example.com")
         notification = Notification.objects.create(
             recipient=owner,
             type=NotificationType.FRIEND_REQUEST,
@@ -160,6 +149,26 @@ class MarkNotificationReadTests(APITestCase):
 
         with self.assertRaises(NotificationNotFoundError):
             mark_notification_read(notification.id, other)
+
+
+class MarkNotificationReadTransactionTests(APITestCase):
+
+    def test_mark_read_rolls_back_when_commit_hook_registration_fails(self):
+        user = create_verified_user()
+        notification = Notification.objects.create(
+            recipient=user,
+            type=NotificationType.FRIEND_REQUEST,
+        )
+
+        with patch(
+            "notifications.services.transaction.on_commit",
+            side_effect=RuntimeError("hook registration failed"),
+        ):
+            with self.assertRaises(RuntimeError):
+                mark_notification_read(notification.id, user)
+
+        notification.refresh_from_db()
+        self.assertIsNone(notification.read_at)
 
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
@@ -173,7 +182,7 @@ class MarkNotificationReadConcurrencyTests(TransactionTestCase):
         .update() returns 1. The loser gets updated=0 and must NOT push
         a WS event.
         """
-        user = _create_verified_user()
+        user = create_verified_user()
         notification = Notification.objects.create(
             recipient=user,
             type=NotificationType.FRIEND_REQUEST,
@@ -209,7 +218,7 @@ class MarkNotificationReadConcurrencyTests(TransactionTestCase):
 class MarkAllNotificationsReadTests(APITestCase):
 
     def test_mark_all_read(self):
-        user = _create_verified_user()
+        user = create_verified_user()
         Notification.objects.create(
             recipient=user, type=NotificationType.FRIEND_REQUEST
         )
@@ -230,4 +239,32 @@ class MarkAllNotificationsReadTests(APITestCase):
                 recipient=user, read_at__isnull=True
             ).count(),
             0,
+        )
+
+
+class MarkAllNotificationsReadTransactionTests(APITestCase):
+
+    def test_mark_all_read_rolls_back_when_commit_hook_registration_fails(
+        self,
+    ):
+        user = create_verified_user()
+        Notification.objects.create(
+            recipient=user, type=NotificationType.FRIEND_REQUEST
+        )
+        Notification.objects.create(
+            recipient=user, type=NotificationType.FRIEND_ACCEPTED
+        )
+
+        with patch(
+            "notifications.services.transaction.on_commit",
+            side_effect=RuntimeError("hook registration failed"),
+        ):
+            with self.assertRaises(RuntimeError):
+                mark_all_notifications_read(user)
+
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=user, read_at__isnull=True
+            ).count(),
+            2,
         )
