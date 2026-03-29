@@ -4,7 +4,6 @@ import uuid
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 from accounts.tokens import RefreshToken
@@ -14,6 +13,10 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 from accounts.services import generate_email_verification_token
+from test_helpers import (
+    create_completed_user as build_completed_user,
+    create_verified_user as build_verified_user,
+)
 
 User = get_user_model()
 
@@ -40,38 +43,18 @@ class AuthAPITestCase(APITestCase):
         }
 
     def create_verified_user(self, email: str, password: str):
-        user = User.objects.create_user(email=email, password=password)
-        user.email_verified = True
-        user.email_verified_at = timezone.now()
-        user.save(update_fields=["email_verified", "email_verified_at", "updated_at"])
-        return user
+        return build_verified_user(email=email, password=password)
 
     def create_completed_user(self, email: str, password: str, identify_code: str = "ABC123"):
-        user = User.objects.create_user(email=email, password=password)
-        user.email_verified = True
-        user.email_verified_at = timezone.now()
-        user.first_name = "Quang"
-        user.last_name = "Minh"
-        user.display_name = "Quang Minh"
-        user.identify_name = "quangminh"
-        user.identify_code = identify_code
-        user.is_profile_completed = True
-        user.profile_completed_at = timezone.now()
-        user.save(
-            update_fields=[
-                "email_verified",
-                "email_verified_at",
-                "first_name",
-                "last_name",
-                "display_name",
-                "identify_name",
-                "identify_code",
-                "is_profile_completed",
-                "profile_completed_at",
-                "updated_at",
-            ]
+        return build_completed_user(
+            email=email,
+            password=password,
+            identify_name="quangminh",
+            identify_code=identify_code,
+            first_name="Quang",
+            last_name="Minh",
+            display_name="Quang Minh",
         )
-        return user
 
     def assert_user_identity_payload(self, payload, *, expected_email: str, expected_requires_setup: bool):
         self.assertIn("id", payload)

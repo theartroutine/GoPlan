@@ -13,6 +13,8 @@ ALLOWED_HOSTS = os.environ['DJANGO_ALLOWED_HOSTS'].split(',')
 
 # -------- Installed Apps --------
 INSTALLED_APPS = [
+    'daphne',
+
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -25,10 +27,14 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'channels',
 
     # Local apps
     'api',
     'accounts',
+    'realtime',
+    'notifications',
+    'friends',
 
 ]
 
@@ -50,7 +56,7 @@ ROOT_URLCONF = 'configs.urls'
 WSGI_APPLICATION = 'configs.wsgi.application'
 
 # ASGI entrypoint (HTTP + WebSocket via Channels/Daphne)
-# ASGI_APPLICATION = 'configs.asgi.application'
+ASGI_APPLICATION = 'configs.asgi.application'
 
 # -------- Templates --------
 TEMPLATES = [
@@ -141,6 +147,17 @@ REST_FRAMEWORK = {
         'auth_resend_verification': '5/hour',
         'auth_password_reset_request': '5/hour',
         'auth_password_reset_confirm': '10/hour',
+        'realtime_ws_ticket': '120/hour',
+        'notifications_list': '120/hour',
+        'notifications_unread_count': '300/hour',
+        'notifications_mark_read': '120/hour',
+        'notifications_mark_all_read': '60/hour',
+        'friends_send_request': '30/hour',
+        'friends_requests_list': '120/hour',
+        'friends_respond': '60/hour',
+        'friends_list': '120/hour',
+        'friends_remove': '30/hour',
+        'friends_search': '60/hour',
     },
 }
 
@@ -183,12 +200,25 @@ FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:3000')
 # MONGO_URL = os.environ.get('MONGO_URL')
 # MONGO_DB = os.environ.get('MONGO_DB')
 
-# Channels Configuration
-# CHANNEL_LAYERS = {
-#     'default': {
-#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
-#         'CONFIG': {
-#             'hosts': [('redis-messaging', 6379)],
-#         },
-#     }
-# }
+# -------- Channels Configuration --------
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [REDIS_URL],
+        },
+    },
+}
+
+# -------- WebSocket Configuration --------
+WS_HEARTBEAT_INTERVAL = 30  # seconds
+WS_TICKET_LIFETIME_SECONDS = 60
+WS_SUBPROTOCOL = 'goplan.realtime.v1'
+
+WS_CLOSE_CODES = {
+    'AUTH_FAILED': 4001,      # Token invalid/revoked — client should not retry
+    'TOKEN_EXPIRED': 4002,    # Token expired — client should refresh then retry
+    'SERVER_ERROR': 4500,
+}

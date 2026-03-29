@@ -32,8 +32,8 @@ export async function bffLogout(): Promise<void> {
   });
 }
 
-export async function bffMe(): Promise<BffAuthResponse> {
-  const res = await bff.get<BffAuthResponse>("/api/auth/me");
+export async function bffMe(signal?: AbortSignal): Promise<BffAuthResponse> {
+  const res = await bff.get<BffAuthResponse>("/api/auth/me", { signal });
   return res.data;
 }
 

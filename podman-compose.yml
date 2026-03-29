@@ -1,5 +1,4 @@
-version: "3.9"
-name: goplan # TODO: Replace with the project slug (keep consistent across services and backend/.env)
+name: goplan
 
 services:
   # -------- Database Service --------
@@ -22,29 +21,17 @@ services:
       timeout: 3s
       retries: 10
 
-  # mongo:
-  #   image: mongo:7
-  #   container_name: mongodb
-  #   ports:
-  #     - "27017:27017"
-  #   volumes:
-  #     - mongodata:/data/db
-  #   healthcheck:
-  #     test: ["CMD", "mongosh --eval 'db.adminCommand({ ping: 1 })' || exit 1"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 10
-
-  # redis-skeleton:
-  #   image: redis:7-alpine
-  #   container_name: redis-skeleton
-  #   volumes:
-  #     - redisdata:/data
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 10
+  # -------- Redis (Channel Layer) --------
+  redis-messaging:
+    image: redis:7-alpine
+    container_name: redis-messaging-goplan
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # -------- Mailpit (Dev Email) --------
   mailpit:
@@ -62,7 +49,7 @@ services:
       dockerfile: Containerfile
     image: backend:latest
     container_name: backend-goplan
-    command: bash -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000" # Run "podman compose exec backend python manage.py makemigrations" when schema changes; swap the runserver part for "daphne -b 0.0.0.0 -p 8000 configs.asgi:application" if using ASGI
+    command: bash -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
     ports:
       - "8000:8000"
     volumes:
@@ -72,12 +59,9 @@ services:
     depends_on:
       postgresql-goplan:
         condition: service_healthy
-      # mongo:
-      #   condition: service_healthy
-      # redis-skeleton:
-      #   condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
 
 volumes:
   pgdata: {}
-  # mongodata: {}
-  # redisdata: {}
+  redisdata: {}

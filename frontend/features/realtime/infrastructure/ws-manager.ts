@@ -1,0 +1,359 @@
+import axios from "axios";
+
+import type { WsConnectionStatus, WsMessage } from "@/features/realtime/domain/types";
+import { bffWsTicket } from "@/features/realtime/infrastructure/realtime-api";
+
+const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
+const WS_SUBPROTOCOL = "goplan.realtime.v1";
+const HEARTBEAT_INTERVAL_MS = 25_000;
+const HEARTBEAT_TIMEOUT_MS = 10_000;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const MAX_BACKOFF_MS = 30_000;
+const SOFT_AUTH_ERROR_CODE = "refresh_auth_soft_failed";
+
+type MessageListener = (data: WsMessage) => void;
+type StatusListener = (status: WsConnectionStatus) => void;
+
+class WebSocketManager {
+  private ws: WebSocket | null = null;
+  private status: WsConnectionStatus = "disconnected";
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectRequestId = 0;
+  private isConnecting = false;
+
+  /** Try one immediate ticket re-issue before falling back to backoff reconnect. */
+  private reconnectBootstrapUsed = false;
+
+  /** Prevents reconnect work during page unload/navigation. */
+  private pageUnloading = false;
+
+  private messageListeners = new Map<string, Set<MessageListener>>();
+  private statusListeners = new Set<StatusListener>();
+
+  constructor() {
+    if (typeof window !== "undefined") {
+      window.addEventListener("beforeunload", () => {
+        this.pageUnloading = true;
+      });
+    }
+  }
+
+  // -------- Public API --------
+
+  connect(): void {
+    if (this.isConnecting) return;
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
+    this.clearReconnectTimer();
+    this.setStatus(this.reconnectAttempt > 0 ? "reconnecting" : "connecting");
+
+    const requestId = ++this.connectRequestId;
+    this.isConnecting = true;
+    void this.openSocket(requestId);
+  }
+
+  disconnect(): void {
+    this.connectRequestId += 1;
+    this.isConnecting = false;
+    this.cancelReconnect();
+    this.stopHeartbeat();
+
+    if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.close();
+      this.ws = null;
+    }
+
+    this.setStatus("disconnected");
+  }
+
+  on(type: string, callback: MessageListener): () => void {
+    let listeners = this.messageListeners.get(type);
+    if (!listeners) {
+      listeners = new Set();
+      this.messageListeners.set(type, listeners);
+    }
+    listeners.add(callback);
+
+    return () => {
+      listeners!.delete(callback);
+      if (listeners!.size === 0) {
+        this.messageListeners.delete(type);
+      }
+    };
+  }
+
+  onStatusChange(callback: StatusListener): () => void {
+    this.statusListeners.add(callback);
+    return () => {
+      this.statusListeners.delete(callback);
+    };
+  }
+
+  getStatus(): WsConnectionStatus {
+    return this.status;
+  }
+
+  // -------- Auth Error Handling --------
+
+  private handleAuthError(code: string): void {
+    if (code === "token_expired") {
+      this.connect();
+      return;
+    }
+
+    // "auth_failed" (revoked, invalid, etc.) — do not retry
+    this.transitionToDisconnected();
+  }
+
+  private handleNetworkClose(): void {
+    if (!this.reconnectBootstrapUsed) {
+      this.reconnectBootstrapUsed = true;
+      this.connect();
+      return;
+    }
+
+    this.scheduleReconnect();
+  }
+
+  private async openSocket(requestId: number): Promise<void> {
+    let socketAuthHandled = false;
+
+    try {
+      // The ticket endpoint goes through BFF, so it can reuse access-token forwarding
+      // and refresh-cookie fallback without exposing bearer tokens in the WS URL.
+      const { ticket } = await bffWsTicket();
+
+      if (!this.isCurrentConnectRequest(requestId) || this.pageUnloading) {
+        this.isConnecting = false;
+        return;
+      }
+
+      const ws = new WebSocket(`${WS_BASE_URL}/ws/realtime`, [WS_SUBPROTOCOL, ticket]);
+      this.ws = ws;
+
+      ws.onopen = () => {
+        if (!this.isActiveSocket(ws, requestId)) {
+          ws.close();
+          return;
+        }
+
+        this.clearReconnectTimer();
+        this.isConnecting = false;
+        this.setStatus("connected");
+        this.reconnectAttempt = 0;
+        this.reconnectBootstrapUsed = false;
+        this.startHeartbeat();
+      };
+
+      ws.onmessage = (event: MessageEvent) => {
+        if (!this.isActiveSocket(ws, requestId)) return;
+
+        let data: WsMessage;
+        try {
+          data = JSON.parse(event.data as string) as WsMessage;
+        } catch {
+          console.warn("[WS] Failed to parse message:", event.data);
+          return;
+        }
+
+        if (data.type === "auth_error") {
+          socketAuthHandled = true;
+          this.releaseSocketReference(ws);
+          this.stopHeartbeat();
+          this.handleAuthError(data.code as string);
+          return;
+        }
+
+        if (data.type === "pong") {
+          this.clearHeartbeatTimeout();
+          return;
+        }
+
+        this.emit(data.type, data);
+      };
+
+      ws.onclose = (event: CloseEvent) => {
+        if (socketAuthHandled) return;
+        if (!this.isActiveSocket(ws, requestId)) return;
+
+        this.isConnecting = false;
+        this.releaseSocketReference(ws);
+        this.stopHeartbeat();
+
+        if (this.pageUnloading) return;
+
+        if (event.code === 4002) {
+          this.handleAuthError("token_expired");
+          return;
+        }
+        if (event.code === 4001) {
+          this.handleAuthError("auth_failed");
+          return;
+        }
+
+        this.handleNetworkClose();
+      };
+
+      ws.onerror = () => {
+        // Errors always precede close events; actual handling happens in onclose
+      };
+    } catch (error) {
+      if (!this.isCurrentConnectRequest(requestId) || this.pageUnloading) {
+        this.isConnecting = false;
+        return;
+      }
+
+      this.isConnecting = false;
+      this.ws = null;
+
+      if (this.isHardAuthFailure(error)) {
+        this.transitionToDisconnected();
+        return;
+      }
+
+      this.scheduleReconnect();
+    }
+  }
+
+  // -------- Reconnect --------
+
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      this.transitionToDisconnected();
+      return;
+    }
+
+    this.clearReconnectTimer();
+    this.setStatus("reconnecting");
+
+    const baseDelay = Math.min(1000 * 2 ** this.reconnectAttempt, MAX_BACKOFF_MS);
+    const jitter = Math.random() * 1000;
+    const delay = baseDelay + jitter;
+
+    this.reconnectAttempt += 1;
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  private cancelReconnect(): void {
+    this.clearReconnectTimer();
+    this.reconnectAttempt = 0;
+    this.reconnectBootstrapUsed = false;
+  }
+
+  // -------- Heartbeat --------
+
+  private startHeartbeat(): void {
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: "ping" }));
+        this.setHeartbeatTimeout();
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.clearHeartbeatTimeout();
+  }
+
+  private setHeartbeatTimeout(): void {
+    this.clearHeartbeatTimeout();
+    this.heartbeatTimeoutTimer = setTimeout(() => {
+      // No pong received — assume dead connection
+      this.ws?.close();
+    }, HEARTBEAT_TIMEOUT_MS);
+  }
+
+  private clearHeartbeatTimeout(): void {
+    if (this.heartbeatTimeoutTimer) {
+      clearTimeout(this.heartbeatTimeoutTimer);
+      this.heartbeatTimeoutTimer = null;
+    }
+  }
+
+  // -------- Internal --------
+
+  private isCurrentConnectRequest(requestId: number): boolean {
+    return requestId === this.connectRequestId;
+  }
+
+  private isActiveSocket(ws: WebSocket, requestId: number): boolean {
+    return this.ws === ws && this.isCurrentConnectRequest(requestId);
+  }
+
+  private releaseSocketReference(ws: WebSocket): void {
+    if (this.ws === ws) {
+      this.ws = null;
+    }
+  }
+
+  private transitionToDisconnected(): void {
+    this.cancelReconnect();
+    this.isConnecting = false;
+    this.setStatus("disconnected");
+  }
+
+  private isHardAuthFailure(error: unknown): boolean {
+    if (!axios.isAxiosError(error)) {
+      return false;
+    }
+
+    const status = error.response?.status;
+    if (status === 403) return true;
+    if (status !== 401) return false;
+
+    const code = this.extractErrorCode(error.response?.data);
+    return code !== SOFT_AUTH_ERROR_CODE;
+  }
+
+  private extractErrorCode(data: unknown): string | null {
+    if (typeof data !== "object" || data === null || Array.isArray(data)) {
+      return null;
+    }
+
+    const code = (data as { code?: unknown }).code;
+    return typeof code === "string" ? code : null;
+  }
+
+  private setStatus(newStatus: WsConnectionStatus): void {
+    if (this.status === newStatus) return;
+    this.status = newStatus;
+    for (const listener of this.statusListeners) {
+      listener(newStatus);
+    }
+  }
+
+  private emit(type: string, data: WsMessage): void {
+    const listeners = this.messageListeners.get(type);
+    if (listeners) {
+      for (const listener of listeners) {
+        listener(data);
+      }
+    }
+  }
+}
+
+export const wsManager = new WebSocketManager();

@@ -88,15 +88,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Bootstrap session on mount
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
 
     async function bootstrap() {
       dispatch({ type: "AUTH_LOADING" });
 
       for (let attempt = 0; attempt <= BOOTSTRAP_RETRY_DELAYS_MS.length; attempt += 1) {
         try {
-          const data = await bffMe();
-          if (cancelled) return;
+          const data = await bffMe(controller.signal);
+          if (controller.signal.aborted) return;
           tokenManager.set(data.access_token);
 
           const status = resolveAuthStatus(data.user);
@@ -107,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           return;
         } catch (error) {
-          if (cancelled) return;
+          if (controller.signal.aborted) return;
 
           const shouldRetry =
             attempt < BOOTSTRAP_RETRY_DELAYS_MS.length &&
@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           await sleep(BOOTSTRAP_RETRY_DELAYS_MS[attempt]);
-          if (cancelled) return;
+          if (controller.signal.aborted) return;
         }
       }
 
@@ -127,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     void bootstrap();
-    return () => { cancelled = true; };
+    return () => { controller.abort(); };
   }, []);
 
   // Multi-tab sync

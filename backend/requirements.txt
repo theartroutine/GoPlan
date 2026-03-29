@@ -6,4 +6,8 @@ djangorestframework-simplejwt==5.5.1
 
 psycopg[binary]==3.2.9
 
-# daphne==4.1.2
+# -------- ASGI + Real-time --------
+daphne==4.1.2
+channels==4.3.2
+channels-redis==4.3.0
+PyJWT==2.12.1
