@@ -4,6 +4,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from friends.models import FriendRequest, FriendRequestStatus, Friendship
+from friends.validators import parse_identify_tag
 from notifications.models import NotificationType
 from notifications.services import create_notification
 
@@ -98,15 +99,9 @@ def _lock_user_pair(user_a, user_b):
 
 def _resolve_user_by_identify_tag(query):
     """Resolve a user by identify_tag string. Returns User or None."""
-    stripped = query.strip()
-    parts = stripped.split("#")
-    if len(parts) != 2:
-        return None
-
-    identify_name = parts[0].strip().lower()
-    identify_code = parts[1].strip().upper()
-
-    if not identify_name or not identify_code:
+    try:
+        identify_name, identify_code = parse_identify_tag(query)
+    except ValueError:
         return None
 
     return User.objects.filter(

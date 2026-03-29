@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 from accounts.tokens import AccessToken
 from friends.models import FriendRequest, FriendRequestStatus, Friendship
 from friends.services import send_friend_request
+from test_helpers import create_completed_user
 
 User = get_user_model()
 
@@ -35,21 +36,6 @@ def _remove_url(friendship_id):
     return f"/api/friends/{friendship_id}"
 
 
-def _create_completed_user(email, identify_name, identify_code):
-    user = User.objects.create_user(email=email, password="testpass123!")
-    user.email_verified = True
-    user.email_verified_at = timezone.now()
-    user.first_name = "Test"
-    user.last_name = "User"
-    user.display_name = "Test User"
-    user.identify_name = identify_name
-    user.identify_code = identify_code
-    user.is_profile_completed = True
-    user.profile_completed_at = timezone.now()
-    user.save()
-    return user
-
-
 def _auth_header(user):
     token = AccessToken.for_user(user)
     return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
@@ -58,8 +44,8 @@ def _auth_header(user):
 class SendRequestTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
 
     def test_send_request_201(self):
         response = self.client.post(
@@ -121,13 +107,26 @@ class SendRequestTests(APITestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_send_request_normalizes_identify_tag(self):
+        response = self.client.post(
+            SEND_REQUEST_URL,
+            {"identify_tag": "  BoB # def456  "},
+            format="json",
+            **_auth_header(self.alice),
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            response.data["friend_request"]["receiver"]["identify_tag"],
+            "bob#DEF456",
+        )
+
 
 class RespondToRequestTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
-        self.charlie = _create_completed_user("charlie@example.com", "charlie", "GHI789")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
+        self.charlie = create_completed_user("charlie@example.com", "charlie", "GHI789")
 
     def test_accept_200(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
@@ -170,9 +169,9 @@ class RespondToRequestTests(APITestCase):
 class ListTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
-        self.charlie = _create_completed_user("charlie@example.com", "charlie", "GHI789")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
+        self.charlie = create_completed_user("charlie@example.com", "charlie", "GHI789")
 
     def test_incoming_list(self):
         send_friend_request(self.alice, "bob#DEF456")
@@ -207,9 +206,9 @@ class ListTests(APITestCase):
 class RemoveFriendTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
-        self.charlie = _create_completed_user("charlie@example.com", "charlie", "GHI789")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
+        self.charlie = create_completed_user("charlie@example.com", "charlie", "GHI789")
 
     def test_unfriend_204(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
@@ -237,12 +236,21 @@ class RemoveFriendTests(APITestCase):
 class SearchViewTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
 
     def test_search_found(self):
         response = self.client.get(
             f"{SEARCH_URL}?q=bob%23DEF456", **_auth_header(self.alice)
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.data["user"])
+        self.assertEqual(response.data["user"]["identify_tag"], "bob#DEF456")
+
+    def test_search_normalizes_query(self):
+        response = self.client.get(
+            f"{SEARCH_URL}?q=%20BoB%20%23%20def456%20",
+            **_auth_header(self.alice),
         )
         self.assertEqual(response.status_code, 200)
         self.assertIsNotNone(response.data["user"])

@@ -1,10 +1,6 @@
-import re
-
 from rest_framework import serializers
 
-
-IDENTIFY_NAME_PATTERN = re.compile(r"^[a-z]{3,24}$")
-IDENTIFY_CODE_PATTERN = re.compile(r"^[A-Z0-9]{6}$")
+from friends.validators import normalize_identify_tag
 
 
 # -------- Helpers --------
@@ -26,27 +22,7 @@ class SendFriendRequestSerializer(serializers.Serializer):
     identify_tag = serializers.CharField(required=True, max_length=31)
 
     def validate_identify_tag(self, value):
-        stripped = value.strip()
-        parts = stripped.split("#")
-        if len(parts) != 2:
-            raise serializers.ValidationError(
-                "Invalid format. Use name#CODE (e.g. johndoe#ABC123)."
-            )
-
-        name = parts[0].strip().lower()
-        code = parts[1].strip().upper()
-
-        if not IDENTIFY_NAME_PATTERN.fullmatch(name):
-            raise serializers.ValidationError(
-                "Name part must be 3-24 lowercase letters."
-            )
-
-        if not IDENTIFY_CODE_PATTERN.fullmatch(code):
-            raise serializers.ValidationError(
-                "Code part must be exactly 6 uppercase alphanumeric characters."
-            )
-
-        return f"{name}#{code}"
+        return normalize_identify_tag(value)
 
 
 # -------- Output Serializers --------

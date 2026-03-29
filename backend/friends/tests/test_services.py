@@ -24,23 +24,9 @@ from friends.services import (
     send_friend_request,
 )
 from notifications.models import Notification, NotificationType
+from test_helpers import create_completed_user
 
 User = get_user_model()
-
-
-def _create_completed_user(email, identify_name, identify_code):
-    user = User.objects.create_user(email=email, password="testpass123!")
-    user.email_verified = True
-    user.email_verified_at = timezone.now()
-    user.first_name = "Test"
-    user.last_name = "User"
-    user.display_name = "Test User"
-    user.identify_name = identify_name
-    user.identify_code = identify_code
-    user.is_profile_completed = True
-    user.profile_completed_at = timezone.now()
-    user.save()
-    return user
 
 
 # -------- Lifecycle Tests --------
@@ -49,8 +35,8 @@ def _create_completed_user(email, identify_name, identify_code):
 class FriendRequestLifecycleTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
 
     def test_send_accept_creates_friendship(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
@@ -92,8 +78,8 @@ class FriendRequestLifecycleTests(APITestCase):
 class FriendRequestBusinessRuleTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
 
     def test_send_self_request_raises(self):
         with self.assertRaises(SelfRequestError):
@@ -123,7 +109,7 @@ class FriendRequestBusinessRuleTests(APITestCase):
     def test_accept_friend_limit_receiver(self):
         # Create 500 friends for bob
         for i in range(FRIEND_LIMIT):
-            other = _create_completed_user(
+            other = create_completed_user(
                 f"other{i}@example.com", f"other{i:04d}", f"{i:06d}"[-6:]
             )
             low, high = sorted([self.bob.pk, other.pk])
@@ -138,7 +124,7 @@ class FriendRequestBusinessRuleTests(APITestCase):
     def test_accept_friend_limit_sender(self):
         # Create 500 friends for alice
         for i in range(FRIEND_LIMIT):
-            other = _create_completed_user(
+            other = create_completed_user(
                 f"other{i}@example.com", f"other{i:04d}", f"{i:06d}"[-6:]
             )
             low, high = sorted([self.alice.pk, other.pk])
@@ -157,9 +143,9 @@ class FriendRequestBusinessRuleTests(APITestCase):
 class FriendRequestPermissionTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
-        self.charlie = _create_completed_user("charlie@example.com", "charlie", "GHI789")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
+        self.charlie = create_completed_user("charlie@example.com", "charlie", "GHI789")
 
     def test_accept_by_non_receiver_raises(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
@@ -189,8 +175,8 @@ class FriendRequestPermissionTests(APITestCase):
 class BilateralPendingConstraintTests(TransactionTestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
 
     def test_db_rejects_bilateral_pending_via_orm(self):
         FriendRequest.objects.create(
@@ -230,8 +216,8 @@ class BilateralPendingConstraintTests(TransactionTestCase):
 class SearchTests(APITestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
 
     def test_search_exact_match(self):
         result = search_user_by_identify_tag("bob#DEF456", self.alice)
@@ -267,8 +253,8 @@ class SearchTests(APITestCase):
 class NotificationIntegrationTests(TransactionTestCase):
 
     def setUp(self):
-        self.alice = _create_completed_user("alice@example.com", "alice", "ABC123")
-        self.bob = _create_completed_user("bob@example.com", "bob", "DEF456")
+        self.alice = create_completed_user("alice@example.com", "alice", "ABC123")
+        self.bob = create_completed_user("bob@example.com", "bob", "DEF456")
 
     def test_send_creates_friend_request_notification(self):
         send_friend_request(self.alice, "bob#DEF456")

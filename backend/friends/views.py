@@ -1,5 +1,5 @@
 from django.db.models import Q
-from rest_framework import permissions, status
+from rest_framework import permissions, serializers, status
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -30,6 +30,7 @@ from friends.services import (
     search_user_by_identify_tag,
     send_friend_request,
 )
+from friends.validators import normalize_identify_tag
 
 
 # -------- Error Mapping --------
@@ -225,21 +226,11 @@ class UserSearchAPIView(APIView):
     throttle_scope = "friends_search"
 
     def get(self, request):
-        query = request.query_params.get("q", "").strip()
-        if not query or "#" not in query:
-            return Response(
-                {
-                    "detail": "Invalid search query. Use format name#CODE.",
-                    "error_code": "INVALID_SEARCH_QUERY",
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        query = request.query_params.get("q", "")
 
-        # Validate format before hitting service — reuse serializer validation
-        serializer = SendFriendRequestSerializer(
-            data={"identify_tag": query}
-        )
-        if not serializer.is_valid():
+        try:
+            identify_tag = normalize_identify_tag(query)
+        except serializers.ValidationError:
             return Response(
                 {
                     "detail": "Invalid search query. Use format name#CODE.",
@@ -249,6 +240,6 @@ class UserSearchAPIView(APIView):
             )
 
         result = search_user_by_identify_tag(
-            serializer.validated_data["identify_tag"], request.user
+            identify_tag, request.user
         )
         return Response({"user": result}, status=status.HTTP_200_OK)
