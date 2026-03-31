@@ -218,6 +218,27 @@ class RefreshTokenSerializer(serializers.Serializer):
     refresh = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
+        try:
+            token = RefreshToken(attrs["refresh"])
+        except TokenError as exc:
+            raise InvalidToken(exc.args[0]) from exc
+
+        user_id = token.payload.get("user_id")
+        token_auth_version = token.payload.get("auth_version")
+        if user_id is None or token_auth_version is None:
+            raise InvalidToken("Token is invalid.")
+
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            raise InvalidToken("Token is invalid.")
+
+        if not user.is_active:
+            raise InvalidToken("User account is disabled.")
+
+        if token_auth_version != user.auth_version:
+            raise InvalidToken("Token has been revoked.")
+
         token_serializer = TokenRefreshSerializer(data={"refresh": attrs["refresh"]})
         try:
             token_serializer.is_valid(raise_exception=True)
@@ -303,7 +324,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         except (ValueError, TypeError, OverflowError, User.DoesNotExist):
             raise serializers.ValidationError(self.INVALID_RESET_LINK_ERROR)
 
-        if user.is_staff or user.is_superuser:
+        if not user.is_active or user.is_staff or user.is_superuser:
             raise serializers.ValidationError(self.INVALID_RESET_LINK_ERROR)
 
         if not default_token_generator.check_token(user, attrs["token"]):

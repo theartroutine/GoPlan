@@ -26,7 +26,7 @@ import type { WsMessage } from "@/features/realtime/domain/types";
 type NotificationsState = {
   unreadCount: number;
   unreadCountHydrated: boolean;
-  needsUnreadReconcile: boolean;
+  pendingReconcile: "none" | "count_only" | "snapshot_on_open";
   notifications: Notification[];
   hasMore: boolean;
   cursor: string | null;
@@ -40,7 +40,7 @@ type NotificationsState = {
 const initialState: NotificationsState = {
   unreadCount: 0,
   unreadCountHydrated: false,
-  needsUnreadReconcile: false,
+  pendingReconcile: "none",
   notifications: [],
   hasMore: false,
   cursor: null,
@@ -62,7 +62,8 @@ type Action =
   | { type: "MARK_READ"; notificationId: string }
   | { type: "MARK_ALL_READ" }
   | { type: "MARK_READ_ROLLBACK"; notificationId: string }
-  | { type: "MARK_ALL_READ_FAILED"; count: number; notifications: Notification[]; nextCursor: string | null };
+  | { type: "MARK_ALL_READ_RECONCILE" }
+  | { type: "RECONCILE_APPLIED"; count: number; notifications: Notification[]; nextCursor: string | null };
 
 // -------- Helpers --------
 
@@ -97,6 +98,16 @@ function upsertMany(
   return result;
 }
 
+function mergePendingReconcile(
+  current: NotificationsState["pendingReconcile"],
+  requested: NotificationsState["pendingReconcile"],
+): NotificationsState["pendingReconcile"] {
+  if (current === "snapshot_on_open" || requested === "none") {
+    return current;
+  }
+  return requested;
+}
+
 // -------- Reducer --------
 
 function reducer(state: NotificationsState, action: Action): NotificationsState {
@@ -106,7 +117,8 @@ function reducer(state: NotificationsState, action: Action): NotificationsState 
         ...state,
         unreadCount: action.count,
         unreadCountHydrated: true,
-        needsUnreadReconcile: state.needsUnreadReconcile,
+        pendingReconcile:
+          state.pendingReconcile === "count_only" ? "none" : state.pendingReconcile,
       };
 
     case "SET_LOADING":
@@ -139,7 +151,10 @@ function reducer(state: NotificationsState, action: Action): NotificationsState 
         return {
           ...state,
           notifications,
-          needsUnreadReconcile: true,
+          pendingReconcile: mergePendingReconcile(
+            state.pendingReconcile,
+            "count_only",
+          ),
         };
       }
 
@@ -180,7 +195,15 @@ function reducer(state: NotificationsState, action: Action): NotificationsState 
       );
 
       if (!state.unreadCountHydrated) {
-        return { ...state, notifications, optimisticReadIds, needsUnreadReconcile: true };
+        return {
+          ...state,
+          notifications,
+          optimisticReadIds,
+          pendingReconcile: mergePendingReconcile(
+            state.pendingReconcile,
+            "count_only",
+          ),
+        };
       }
 
       return {
@@ -197,7 +220,14 @@ function reducer(state: NotificationsState, action: Action): NotificationsState 
       );
 
       if (!state.unreadCountHydrated) {
-        return { ...state, notifications, needsUnreadReconcile: true };
+        return {
+          ...state,
+          notifications,
+          pendingReconcile: mergePendingReconcile(
+            state.pendingReconcile,
+            "count_only",
+          ),
+        };
       }
 
       return { ...state, notifications, unreadCount: 0 };
@@ -238,14 +268,24 @@ function reducer(state: NotificationsState, action: Action): NotificationsState 
       };
     }
 
-    case "MARK_ALL_READ_FAILED":
+    case "MARK_ALL_READ_RECONCILE":
+      return {
+        ...state,
+        pendingReconcile: "snapshot_on_open",
+      };
+
+    case "RECONCILE_APPLIED":
       return {
         ...state,
         unreadCount: action.count,
-        notifications: upsertMany([], action.notifications),
+        unreadCountHydrated: true,
+        pendingReconcile: "none",
+        notifications: action.notifications,
         hasMore: action.nextCursor !== null,
         cursor: action.nextCursor,
         isListLoaded: true,
+        isLoading: false,
+        optimisticReadIds: [],
       };
   }
 }
@@ -303,7 +343,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   // Reconcile if WS events arrived before hydration
   useEffect(() => {
-    if (!state.unreadCountHydrated || !state.needsUnreadReconcile) return;
+    if (!state.unreadCountHydrated || state.pendingReconcile !== "count_only") return;
 
     let cancelled = false;
 
@@ -319,7 +359,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
     void reconcile();
     return () => { cancelled = true; };
-  }, [state.unreadCountHydrated, state.needsUnreadReconcile]);
+  }, [state.unreadCountHydrated, state.pendingReconcile]);
 
   // Subscribe to WS notifications
   useEffect(() => {
@@ -357,12 +397,25 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     if (stateRef.current.isLoading) return;
     dispatch({ type: "SET_LOADING", loading: true });
     try {
-      const data = await bffNotificationsList();
-      dispatch({
-        type: "NOTIFICATIONS_LOADED",
-        notifications: data.results,
-        nextCursor: data.next_cursor,
-      });
+      if (stateRef.current.pendingReconcile === "snapshot_on_open") {
+        const [countData, listData] = await Promise.all([
+          bffUnreadCount(),
+          bffNotificationsList(),
+        ]);
+        dispatch({
+          type: "RECONCILE_APPLIED",
+          count: countData.unread_count,
+          notifications: listData.results,
+          nextCursor: listData.next_cursor,
+        });
+      } else {
+        const data = await bffNotificationsList();
+        dispatch({
+          type: "NOTIFICATIONS_LOADED",
+          notifications: data.results,
+          nextCursor: data.next_cursor,
+        });
+      }
     } catch {
       dispatch({ type: "SET_LOADING", loading: false });
     }
@@ -405,13 +458,14 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           bffNotificationsList(),
         ]);
         dispatch({
-          type: "MARK_ALL_READ_FAILED",
+          type: "RECONCILE_APPLIED",
           count: countData.unread_count,
           notifications: listData.results,
           nextCursor: listData.next_cursor,
         });
       } catch {
-        // Double failure — user can refresh manually
+        // Double failure — flag for reconcile on next opportunity
+        dispatch({ type: "MARK_ALL_READ_RECONCILE" });
       }
     }
   }, []);

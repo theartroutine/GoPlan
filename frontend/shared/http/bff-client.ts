@@ -17,12 +17,27 @@ bff.interceptors.request.use((config) => {
   return config;
 });
 
-bff.interceptors.response.use((response) => {
-  const newToken = response.headers["x-access-token"];
+function captureAccessToken(headers: Record<string, unknown>) {
+  const newToken = headers["x-access-token"];
   if (typeof newToken === "string" && newToken.length > 0) {
     tokenManager.set(newToken);
   }
-  return response;
-});
+}
+
+bff.interceptors.response.use(
+  (response) => {
+    captureAccessToken(response.headers);
+    return response;
+  },
+  (error: unknown) => {
+    if (error && typeof error === "object" && "response" in error) {
+      const axiosError = error as { response?: { headers?: Record<string, unknown> } };
+      if (axiosError.response?.headers) {
+        captureAccessToken(axiosError.response.headers);
+      }
+    }
+    return Promise.reject(error);
+  },
+);
 
 export { bff };

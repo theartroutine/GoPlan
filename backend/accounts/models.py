@@ -16,7 +16,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_name = models.CharField(max_length=80, blank=True, default="")
     display_name = models.CharField(max_length=161, blank=True, default="", db_index=True)
     identify_name = models.CharField(max_length=24, null=True, blank=True, db_index=True)
-    identify_code = models.CharField(max_length=6, null=True, blank=True, unique=True)
+    identify_code = models.CharField(max_length=6, null=True, blank=True)
     is_profile_completed = models.BooleanField(default=False, db_index=True)
     profile_completed_at = models.DateTimeField(null=True, blank=True)
     email_verified = models.BooleanField(default=False, db_index=True)
@@ -52,7 +52,12 @@ class User(AbstractBaseUser, PermissionsMixin):
                         & models.Q(profile_completed_at__isnull=False)
                     )
                 ),
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["identify_code"],
+                condition=models.Q(identify_code__isnull=False),
+                name="unique_identify_code",
+            ),
         ]
 
     def save(self, *args, **kwargs):

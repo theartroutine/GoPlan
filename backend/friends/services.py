@@ -152,6 +152,15 @@ def send_friend_request(sender, identify_tag):
                 "A pending friend request already exists between you and this user."
             )
 
+        if _friend_count(sender) >= FRIEND_LIMIT:
+            raise FriendLimitReachedError(
+                "You have reached the maximum number of friends."
+            )
+        if _friend_count(receiver) >= FRIEND_LIMIT:
+            raise FriendLimitReachedError(
+                "This user has reached the maximum number of friends."
+            )
+
         friend_request = FriendRequest.objects.create(
             sender=sender,
             receiver=receiver,

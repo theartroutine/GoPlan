@@ -8,6 +8,8 @@ class JWTAuthentication(BaseJWTAuthentication):
 
     def get_user(self, validated_token):
         user = super().get_user(validated_token)
+        if not user.is_active:
+            raise InvalidToken("User account is disabled.")
         token_auth_version = validated_token.get("auth_version")
         if token_auth_version is None or token_auth_version != user.auth_version:
             raise InvalidToken("Token has been revoked.")
