@@ -13,6 +13,7 @@ type FriendCardProps = {
 export function FriendCard({ user, actions }: FriendCardProps) {
   const initials = user.display_name
     .split(" ")
+    .filter(Boolean)
     .map((w) => w[0])
     .join("")
     .slice(0, 2)

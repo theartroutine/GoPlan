@@ -21,7 +21,7 @@ function renderNotificationText(notification: Notification): string {
 
 type NotificationItemProps = {
   notification: Notification;
-  onMarkRead: (id: string) => void;
+  onMarkRead: (id: string) => void | Promise<void>;
 };
 
 export function NotificationItem({ notification, onMarkRead }: NotificationItemProps) {
@@ -33,7 +33,7 @@ export function NotificationItem({ notification, onMarkRead }: NotificationItemP
       }`}
       onClick={() => {
         if (!notification.is_read) {
-          onMarkRead(notification.id);
+          void onMarkRead(notification.id);
         }
       }}
     >

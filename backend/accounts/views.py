@@ -190,6 +190,11 @@ class VerifyEmailAPIView(APIView):
                 {"detail": "Verification link is invalid or expired.", "error_code": "INVALID_OR_EXPIRED_TOKEN"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if not user.is_active:
+            return Response(
+                {"detail": "Verification link is invalid or expired.", "error_code": "INVALID_OR_EXPIRED_TOKEN"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         user = confirm_email(user)
         payload = build_auth_response(user)
         return Response(payload, status=status.HTTP_200_OK)

@@ -14,7 +14,7 @@ const SOFT_AUTH_ERROR_CODE = "refresh_auth_soft_failed";
 type MessageListener = (data: WsMessage) => void;
 type StatusListener = (status: WsConnectionStatus) => void;
 
-class WebSocketManager {
+export class WebSocketManager {
   private ws: WebSocket | null = null;
   private status: WsConnectionStatus = "disconnected";
   private reconnectAttempt = 0;
@@ -33,11 +33,13 @@ class WebSocketManager {
   private messageListeners = new Map<string, Set<MessageListener>>();
   private statusListeners = new Set<StatusListener>();
 
+  private readonly onBeforeUnload = () => {
+    this.pageUnloading = true;
+  };
+
   constructor() {
     if (typeof window !== "undefined") {
-      window.addEventListener("beforeunload", () => {
-        this.pageUnloading = true;
-      });
+      window.addEventListener("beforeunload", this.onBeforeUnload);
     }
   }
 
@@ -161,7 +163,6 @@ class WebSocketManager {
         try {
           data = JSON.parse(event.data as string) as WsMessage;
         } catch {
-          console.warn("[WS] Failed to parse message:", event.data);
           return;
         }
 

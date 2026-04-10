@@ -117,7 +117,10 @@ class FriendRequestBusinessRuleTests(APITestCase):
             u_high = other if self.bob.pk == low else self.bob
             Friendship.objects.create(user_low=u_low, user_high=u_high)
 
-        fr = send_friend_request(self.alice, "bob#DEF456")
+        # Create request directly — send_friend_request also checks limits now
+        fr = FriendRequest.objects.create(
+            sender=self.alice, receiver=self.bob, status=FriendRequestStatus.PENDING
+        )
         with self.assertRaises(FriendLimitReachedError):
             accept_friend_request(fr.id, self.bob)
 
@@ -132,7 +135,10 @@ class FriendRequestBusinessRuleTests(APITestCase):
             u_high = other if self.alice.pk == low else self.alice
             Friendship.objects.create(user_low=u_low, user_high=u_high)
 
-        fr = send_friend_request(self.alice, "bob#DEF456")
+        # Create request directly — send_friend_request also checks limits now
+        fr = FriendRequest.objects.create(
+            sender=self.alice, receiver=self.bob, status=FriendRequestStatus.PENDING
+        )
         with self.assertRaises(FriendLimitReachedError):
             accept_friend_request(fr.id, self.bob)
 
