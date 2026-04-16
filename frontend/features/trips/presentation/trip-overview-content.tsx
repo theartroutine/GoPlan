@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-import type { TripDetailResponse, TripMemberItem } from "@/features/trips/domain/types";
-import { bffGetTrip } from "@/features/trips/infrastructure/trips-api";
+import type { TripDetailResponse, TripInvitation, TripMemberItem } from "@/features/trips/domain/types";
+import { bffGetInvitations, bffGetTrip } from "@/features/trips/infrastructure/trips-api";
+import { InviteMembersModal } from "@/features/trips/presentation/invite-members-modal";
 import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge";
+import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
 function MemberRow({ member }: { member: TripMemberItem }) {
@@ -28,6 +30,8 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [pendingInvitations, setPendingInvitations] = useState<TripInvitation[]>([]);
 
   useEffect(() => {
     bffGetTrip(tripId)
@@ -42,6 +46,12 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
       })
       .finally(() => setLoading(false));
   }, [tripId]);
+
+  useEffect(() => {
+    if (data?.my_membership.role === "CAPTAIN") {
+      bffGetInvitations(tripId).then((d) => setPendingInvitations(d.invitations));
+    }
+  }, [data, tripId]);
 
   if (loading) {
     return (
@@ -135,10 +145,36 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
         </div>
       </div>
 
-      {/* Captain-only placeholder */}
+      {/* Captain actions */}
       {isCaptain && (
-        <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-          Captain actions coming in Issues 5&ndash;7
+        <div className="mb-6">
+          <Button size="sm" onClick={() => setShowInvite(true)}>+ Invite members</Button>
+          {showInvite && (
+            <InviteMembersModal
+              tripId={trip.id}
+              onClose={() => setShowInvite(false)}
+              onInvited={() => {
+                bffGetInvitations(tripId).then((d) => setPendingInvitations(d.invitations));
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Pending invitations (captain only) */}
+      {isCaptain && pendingInvitations.length > 0 && (
+        <div className="mb-6 rounded-xl border border-border bg-card p-4">
+          <h2 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Pending invitations ({pendingInvitations.length})
+          </h2>
+          <ul className="space-y-2">
+            {pendingInvitations.map((inv) => (
+              <li key={inv.id} className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
+                <span>{inv.invitee.display_name}</span>
+                <span className="text-xs text-muted-foreground">Pending</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

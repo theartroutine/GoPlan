@@ -87,3 +87,16 @@ export type UpdateTripPayload = Partial<{
   currency_code: string;
   budget_estimate: string | null;
 }>;
+
+export type TripInvitation = {
+  id: string;
+  invitee: { id: string; display_name: string; identify_tag: string | null };
+  status: "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED";
+  created_at: string;
+};
+
+export type InvitableFriend = {
+  id: string;
+  display_name: string;
+  identify_tag: string | null;
+};

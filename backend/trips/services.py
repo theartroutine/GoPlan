@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 
-from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
+from friends.models import Friendship
+from notifications.models import NotificationType
+from notifications.services import create_notification
+from trips.models import InvitationStatus, MemberStatus, Trip, TripInvitation, TripMember, TripRole, TripStatus
+
+User = get_user_model()
 
 
 # -------- Exceptions --------
@@ -87,3 +94,96 @@ def update_trip(trip, *, name=None, destination=None, start_date=None,
     if budget_estimate is not None: trip.budget_estimate = budget_estimate
     trip.save()
     return trip
+
+
+# -------- Exceptions --------
+
+class InviteError(TripServiceError):
+    pass
+
+
+# -------- Invite helpers --------
+
+def _are_friends(user_a, user_b) -> bool:
+    """Check if two users are friends (canonical pair order)."""
+    low, high = (user_a, user_b) if str(user_a.pk) < str(user_b.pk) else (user_b, user_a)
+    return Friendship.objects.filter(user_low=low, user_high=high).exists()
+
+
+def get_invitable_friends(trip, captain):
+    """Return friends of captain who are not ACTIVE members and have no PENDING invitation."""
+    active_member_ids = trip.memberships.filter(
+        status=MemberStatus.ACTIVE
+    ).values_list("user_id", flat=True)
+
+    pending_invitee_ids = trip.invitations.filter(
+        status=InvitationStatus.PENDING
+    ).values_list("invitee_id", flat=True)
+
+    excluded_ids = set(list(active_member_ids) + list(pending_invitee_ids))
+
+    friend_ids = Friendship.objects.filter(
+        Q(user_low=captain) | Q(user_high=captain)
+    ).values_list("user_low_id", "user_high_id")
+
+    eligible = []
+    for low_id, high_id in friend_ids:
+        fid = high_id if low_id == captain.pk else low_id
+        if fid not in excluded_ids:
+            eligible.append(fid)
+
+    return User.objects.filter(pk__in=eligible, is_profile_completed=True)
+
+
+def get_pending_invitations(trip):
+    """Return PENDING invitations for a trip."""
+    return trip.invitations.filter(status=InvitationStatus.PENDING).select_related("invitee")
+
+
+def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
+    """Send invitations to a list of user IDs. Validates each and sends realtime notification."""
+    if not invitee_ids:
+        raise InviteError("No invitee IDs provided.")
+
+    invitees = User.objects.filter(pk__in=invitee_ids, is_profile_completed=True)
+    if len(invitees) != len(invitee_ids):
+        raise InviteError("One or more users not found.")
+
+    created = []
+    with transaction.atomic():
+        for invitee in invitees:
+            if invitee == captain:
+                raise InviteError("Cannot invite yourself.")
+
+            if not _are_friends(captain, invitee):
+                raise InviteError(f"{invitee.display_name} is not in your friends list.")
+
+            if trip.memberships.filter(user=invitee, status=MemberStatus.ACTIVE).exists():
+                raise InviteError(f"{invitee.display_name} is already a member.")
+
+            if trip.invitations.filter(invitee=invitee, status=InvitationStatus.PENDING).exists():
+                raise InviteError(f"{invitee.display_name} already has a pending invitation.")
+
+            inv = TripInvitation.objects.create(
+                trip=trip,
+                inviter=captain,
+                invitee=invitee,
+                status=InvitationStatus.PENDING,
+            )
+            created.append(inv)
+
+            create_notification(
+                recipient=invitee,
+                notification_type=NotificationType.TRIP_INVITATION,
+                actor=captain,
+                payload={
+                    "trip_id": str(trip.id),
+                    "trip_name": trip.name,
+                    "destination": trip.destination,
+                    "start_date": str(trip.start_date),
+                    "end_date": str(trip.end_date),
+                    "invitation_id": str(inv.id),
+                },
+            )
+
+    return created

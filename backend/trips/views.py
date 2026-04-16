@@ -9,13 +9,24 @@ from trips.models import MemberStatus, TripRole
 from trips.permissions import IsProfileCompleted
 from trips.serializers import (
     CreateTripSerializer,
+    SendInvitationsSerializer,
     TripDetailSerializer,
+    TripInvitationSerializer,
     TripListItemSerializer,
     TripMemberSerializer,
     TripResponseSerializer,
     UpdateTripSerializer,
 )
-from trips.services import create_trip, get_trip_detail, get_user_trips, update_trip
+from trips.services import (
+    InviteError,
+    create_trip,
+    get_invitable_friends,
+    get_pending_invitations,
+    get_trip_detail,
+    get_user_trips,
+    send_trip_invitations,
+    update_trip,
+)
 
 TRIP_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 
@@ -83,3 +94,57 @@ class TripDetailUpdateAPIView(APIView):
         d = serializer.validated_data
         updated = update_trip(trip, **d)
         return Response({"trip": TripDetailSerializer(updated).data}, status=status.HTTP_200_OK)
+
+
+class TripInvitationsAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def get(self, request, trip_id):
+        trip, membership = get_trip_detail(trip_id, request.user)
+        if membership.role != TripRole.CAPTAIN:
+            return Response(
+                {"detail": "Only the captain can view invitations.", "error_code": "NOT_CAPTAIN"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        invitations = get_pending_invitations(trip)
+        return Response({"invitations": TripInvitationSerializer(invitations, many=True).data})
+
+    def post(self, request, trip_id):
+        trip, membership = get_trip_detail(trip_id, request.user)
+        if membership.role != TripRole.CAPTAIN:
+            return Response(
+                {"detail": "Only the captain can send invitations.", "error_code": "NOT_CAPTAIN"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = SendInvitationsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            invitations = send_trip_invitations(
+                trip=trip,
+                captain=request.user,
+                invitee_ids=serializer.validated_data["invitee_ids"],
+            )
+        except InviteError as exc:
+            return Response({"detail": str(exc), "error_code": "INVITE_ERROR"}, status=400)
+        return Response(
+            {"invitations": TripInvitationSerializer(invitations, many=True).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class InvitableFriendsAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def get(self, request, trip_id):
+        trip, membership = get_trip_detail(trip_id, request.user)
+        if membership.role != TripRole.CAPTAIN:
+            return Response(
+                {"detail": "Only the captain can view invitable friends.", "error_code": "NOT_CAPTAIN"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        users = get_invitable_friends(trip, request.user)
+        data = [
+            {"id": str(u.id), "display_name": u.display_name, "identify_tag": u.identify_tag}
+            for u in users
+        ]
+        return Response({"users": data})

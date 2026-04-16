@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from trips.models import MemberStatus, Trip, TripMember
+from trips.models import MemberStatus, Trip, TripInvitation, TripMember
 
 
 class CreateTripSerializer(serializers.Serializer):
@@ -95,3 +95,24 @@ class UpdateTripSerializer(serializers.Serializer):
         if start is not None and end is not None and end < start:
             raise serializers.ValidationError({"end_date": "end_date must be on or after start_date."})
         return data
+
+
+class SendInvitationsSerializer(serializers.Serializer):
+    invitee_ids = serializers.ListField(
+        child=serializers.UUIDField(), min_length=1, max_length=20
+    )
+
+
+class TripInvitationSerializer(serializers.ModelSerializer):
+    invitee = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TripInvitation
+        fields = ["id", "invitee", "status", "created_at"]
+
+    def get_invitee(self, obj):
+        return {
+            "id": str(obj.invitee.id),
+            "display_name": obj.invitee.display_name,
+            "identify_tag": obj.invitee.identify_tag,
+        }
