@@ -10,7 +10,7 @@ import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
-function MemberRow({ member, onRemove }: { member: TripMemberItem; onRemove?: () => void }) {
+function MemberRow({ member, onRemove, removeDisabled }: { member: TripMemberItem; onRemove?: () => void; removeDisabled?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2">
       <div className="min-w-0">
@@ -24,7 +24,7 @@ function MemberRow({ member, onRemove }: { member: TripMemberItem; onRemove?: ()
           {member.role === "CAPTAIN" ? "Captain" : "Member"}
         </span>
         {onRemove && (
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-destructive hover:text-destructive" onClick={onRemove}>
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-destructive hover:text-destructive" disabled={removeDisabled} onClick={onRemove}>
             Remove
           </Button>
         )}
@@ -40,6 +40,8 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
   const [notFound, setNotFound] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [pendingInvitations, setPendingInvitations] = useState<TripInvitation[]>([]);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -97,20 +99,52 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
   const isTerminal = trip.status === "COMPLETED" || trip.status === "CANCELLED";
 
   async function handleStartTrip() {
-    await bffStartTrip(trip.id);
-    router.refresh();
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      await bffStartTrip(trip.id);
+      router.refresh();
+    } catch {
+      setActionError("Could not start trip. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
   }
   async function handleCompleteTrip() {
-    await bffCompleteTrip(trip.id);
-    router.refresh();
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      await bffCompleteTrip(trip.id);
+      router.refresh();
+    } catch {
+      setActionError("Could not complete trip. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
   }
   async function handleCancelTrip() {
-    await bffCancelTrip(trip.id);
-    router.refresh();
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      await bffCancelTrip(trip.id);
+      router.refresh();
+    } catch {
+      setActionError("Could not cancel trip. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
   }
   async function handleRemoveMember(userId: string) {
-    await bffRemoveMember(trip.id, userId);
-    router.refresh();
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      await bffRemoveMember(trip.id, userId);
+      router.refresh();
+    } catch {
+      setActionError("Could not remove member. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
   }
 
   return (
@@ -175,6 +209,7 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
                   ? () => handleRemoveMember(m.user.id)
                   : undefined
               }
+              removeDisabled={actionLoading}
             />
           ))}
         </div>
@@ -182,19 +217,24 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
 
       {/* Captain status actions */}
       {isCaptain && !isTerminal && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {trip.status === "PLANNING" && (
-            <Button size="sm" onClick={handleStartTrip}>Start Trip</Button>
+        <>
+          {actionError && (
+            <p className="mb-2 text-sm text-destructive">{actionError}</p>
           )}
-          {trip.status === "ONGOING" && (
-            <Button size="sm" onClick={handleCompleteTrip}>Complete Trip</Button>
-          )}
-          <Button size="sm" variant="destructive" onClick={handleCancelTrip}>Cancel Trip</Button>
-        </div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {trip.status === "PLANNING" && (
+              <Button size="sm" disabled={actionLoading} onClick={handleStartTrip}>Start Trip</Button>
+            )}
+            {trip.status === "ONGOING" && (
+              <Button size="sm" disabled={actionLoading} onClick={handleCompleteTrip}>Complete Trip</Button>
+            )}
+            <Button size="sm" variant="destructive" disabled={actionLoading} onClick={handleCancelTrip}>Cancel Trip</Button>
+          </div>
+        </>
       )}
 
       {/* Captain actions */}
-      {isCaptain && (
+      {isCaptain && !isTerminal && (
         <div className="mb-6">
           <Button size="sm" onClick={() => setShowInvite(true)}>+ Invite members</Button>
           {showInvite && (
