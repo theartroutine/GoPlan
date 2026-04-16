@@ -1,5 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
+import { bffAcceptInvitation, bffDeclineInvitation } from "@/features/trips/infrastructure/trips-api";
 import { useNotifications } from "@/features/notifications/application/notifications-context";
 import { NotificationItem } from "@/features/notifications/presentation/notification-item";
 import { Spinner } from "@/shared/ui/spinner";
@@ -15,6 +18,19 @@ export function NotificationDropdown() {
     markRead,
     markAllRead,
   } = useNotifications();
+  const router = useRouter();
+
+  async function handleAcceptInvitation(invitationId: string, notificationId: string) {
+    await bffAcceptInvitation(invitationId);
+    markRead(notificationId);
+    router.refresh();
+  }
+
+  async function handleDeclineInvitation(invitationId: string, notificationId: string) {
+    await bffDeclineInvitation(invitationId);
+    markRead(notificationId);
+  }
+
   const canMarkAllRead =
     unreadCount > 0 || notifications.some((notification) => !notification.is_read);
 
@@ -51,6 +67,8 @@ export function NotificationDropdown() {
             key={notification.id}
             notification={notification}
             onMarkRead={markRead}
+            onAcceptInvitation={handleAcceptInvitation}
+            onDeclineInvitation={handleDeclineInvitation}
           />
         ))}
 

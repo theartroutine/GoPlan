@@ -18,8 +18,11 @@ from trips.serializers import (
     UpdateTripSerializer,
 )
 from trips.services import (
+    InvitationError,
     InviteError,
+    accept_invitation,
     create_trip,
+    decline_invitation,
     get_invitable_friends,
     get_pending_invitations,
     get_trip_detail,
@@ -148,3 +151,25 @@ class InvitableFriendsAPIView(APIView):
             for u in users
         ]
         return Response({"users": data})
+
+
+class AcceptInvitationAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def post(self, request, inv_id):
+        try:
+            membership = accept_invitation(invitation_id=inv_id, actor=request.user)
+        except InvitationError as exc:
+            return Response({"detail": str(exc), "error_code": "INVITATION_NOT_PENDING"}, status=409)
+        return Response({"membership_id": str(membership.id)}, status=200)
+
+
+class DeclineInvitationAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def post(self, request, inv_id):
+        try:
+            invitation = decline_invitation(invitation_id=inv_id, actor=request.user)
+        except InvitationError as exc:
+            return Response({"detail": str(exc), "error_code": "INVITATION_NOT_PENDING"}, status=409)
+        return Response({"invitation_id": str(invitation.id)}, status=200)

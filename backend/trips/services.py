@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from friends.models import Friendship
 from notifications.models import NotificationType
@@ -19,6 +20,10 @@ class TripServiceError(Exception):
 
 
 class InviteError(TripServiceError):
+    pass
+
+
+class InvitationError(TripServiceError):
     pass
 
 
@@ -185,3 +190,78 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
             )
 
     return created
+
+
+def accept_invitation(invitation_id, actor) -> TripMember:
+    """Accept a PENDING invitation. Creates ACTIVE TripMember for invitee."""
+    from rest_framework.exceptions import NotFound, PermissionDenied
+
+    try:
+        invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
+    except TripInvitation.DoesNotExist:
+        raise NotFound("Invitation not found.")
+
+    if invitation.invitee != actor:
+        raise PermissionDenied("Only the invitee can accept this invitation.")
+
+    if invitation.status != InvitationStatus.PENDING:
+        raise InvitationError("This invitation is no longer pending.")
+
+    with transaction.atomic():
+        invitation.status = InvitationStatus.ACCEPTED
+        invitation.responded_at = timezone.now()
+        invitation.save(update_fields=["status", "responded_at"])
+
+        membership = TripMember.objects.create(
+            trip=invitation.trip,
+            user=actor,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+
+        create_notification(
+            recipient=invitation.inviter,
+            notification_type=NotificationType.TRIP_INVITATION_ACCEPTED,
+            actor=actor,
+            payload={
+                "trip_id": str(invitation.trip_id),
+                "trip_name": invitation.trip.name,
+                "accepted_by_name": actor.display_name,
+            },
+        )
+
+    return membership
+
+
+def decline_invitation(invitation_id, actor) -> TripInvitation:
+    """Decline a PENDING invitation."""
+    from rest_framework.exceptions import NotFound, PermissionDenied
+
+    try:
+        invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
+    except TripInvitation.DoesNotExist:
+        raise NotFound("Invitation not found.")
+
+    if invitation.invitee != actor:
+        raise PermissionDenied("Only the invitee can decline this invitation.")
+
+    if invitation.status != InvitationStatus.PENDING:
+        raise InvitationError("This invitation is no longer pending.")
+
+    with transaction.atomic():
+        invitation.status = InvitationStatus.DECLINED
+        invitation.responded_at = timezone.now()
+        invitation.save(update_fields=["status", "responded_at"])
+
+        create_notification(
+            recipient=invitation.inviter,
+            notification_type=NotificationType.TRIP_INVITATION_DECLINED,
+            actor=actor,
+            payload={
+                "trip_id": str(invitation.trip_id),
+                "trip_name": invitation.trip.name,
+                "declined_by_name": actor.display_name,
+            },
+        )
+
+    return invitation

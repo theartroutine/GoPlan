@@ -35,3 +35,11 @@ export async function bffGetInvitableFriends(tripId: string): Promise<{ users: I
   const res = await bff.get<{ users: InvitableFriend[] }>(`/api/trips/${tripId}/invitations/invitable-friends`);
   return res.data;
 }
+
+export async function bffAcceptInvitation(invitationId: string): Promise<void> {
+  await bff.post(`/api/invitations/${invitationId}/accept`);
+}
+
+export async function bffDeclineInvitation(invitationId: string): Promise<void> {
+  await bff.post(`/api/invitations/${invitationId}/decline`);
+}
