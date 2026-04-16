@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from rest_framework.permissions import BasePermission
 
-from trips.models import MemberStatus, TripMember
+from trips.models import MemberStatus, TripMember, TripRole
 
 
 class IsProfileCompleted(BasePermission):
@@ -35,7 +37,6 @@ class IsTripCaptain(BasePermission):
         trip = getattr(view, "trip", None)
         if trip is None:
             return False
-        from trips.models import TripRole
         return TripMember.objects.filter(
             trip=trip, user=request.user, role=TripRole.CAPTAIN, status=MemberStatus.ACTIVE
         ).exists()

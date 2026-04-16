@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from rest_framework import permissions, status
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
@@ -5,7 +7,7 @@ from rest_framework.views import APIView
 
 from trips.permissions import IsProfileCompleted
 from trips.serializers import CreateTripSerializer, TripListItemSerializer, TripResponseSerializer
-from trips.services import TripServiceError, create_trip, get_user_trips
+from trips.services import create_trip, get_user_trips
 
 TRIP_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 

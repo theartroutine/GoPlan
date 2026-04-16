@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from rest_framework import serializers
 
-from trips.models import Trip, TripStatus
+from trips.models import MemberStatus, Trip
 
 
 class CreateTripSerializer(serializers.Serializer):
@@ -31,14 +33,12 @@ class TripListItemSerializer(serializers.ModelSerializer):
         ]
 
     def get_member_count(self, obj) -> int:
-        from trips.models import MemberStatus
         return obj.memberships.filter(status=MemberStatus.ACTIVE).count()
 
     def get_my_role(self, obj) -> str | None:
         request_user = self.context.get("request_user")
         if request_user is None:
             return None
-        from trips.models import MemberStatus
         m = obj.memberships.filter(user=request_user, status=MemberStatus.ACTIVE).first()
         return m.role if m else None
 

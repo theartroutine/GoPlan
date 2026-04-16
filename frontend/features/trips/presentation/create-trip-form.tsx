@@ -22,11 +22,11 @@ export function CreateTripForm() {
 
     const form = new FormData(e.currentTarget);
     const payload: CreateTripPayload = {
-      name:        form.get("name") as string,
-      destination: form.get("destination") as string,
-      start_date:  form.get("start_date") as string,
-      end_date:    form.get("end_date") as string,
-      description: form.get("description") as string || undefined,
+      name:        (form.get("name") as string | null) ?? "",
+      destination: (form.get("destination") as string | null) ?? "",
+      start_date:  (form.get("start_date") as string | null) ?? "",
+      end_date:    (form.get("end_date") as string | null) ?? "",
+      description: (form.get("description") as string | null) || undefined,
     };
 
     try {
