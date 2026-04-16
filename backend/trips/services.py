@@ -415,3 +415,45 @@ def remove_member(trip_id, target_user_id, actor) -> TripMember:
         )
 
     return membership
+
+
+# -------- Member leave helpers --------
+
+def leave_trip(trip_id, actor) -> TripMember:
+    """Actor voluntarily leaves the trip. Sets membership status to LEFT, records left_at.
+    Captain cannot leave (no transfer mechanism in Phase 1).
+    Only allowed when trip is PLANNING or ONGOING.
+    Actor must be an ACTIVE member.
+    """
+    from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+
+    with transaction.atomic():
+        try:
+            trip = Trip.objects.select_for_update().get(pk=trip_id)
+        except Trip.DoesNotExist:
+            raise NotFound("Trip not found.")
+
+        # Check actor is an active member of this trip
+        try:
+            membership = TripMember.objects.select_for_update().get(
+                trip=trip, user=actor, status=MemberStatus.ACTIVE
+            )
+        except TripMember.DoesNotExist:
+            raise PermissionDenied("You are not an active member of this trip.")
+
+        # Captain cannot leave
+        if membership.role == TripRole.CAPTAIN:
+            raise ValidationError(
+                {"detail": "Captain cannot leave the trip. Transfer captaincy first (not available in Phase 1).",
+                 "error_code": "CAPTAIN_CANNOT_LEAVE"}
+            )
+
+        # Terminal state guard
+        if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+            raise StatusTransitionError("Cannot leave a trip that is completed or cancelled.")
+
+        membership.status = MemberStatus.LEFT
+        membership.left_at = timezone.now()
+        membership.save(update_fields=["status", "left_at"])
+
+    return membership

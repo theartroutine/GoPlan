@@ -59,3 +59,7 @@ export async function bffCancelTrip(tripId: string): Promise<void> {
 export async function bffRemoveMember(tripId: string, userId: string): Promise<void> {
   await bff.delete(`/api/trips/${tripId}/members/${userId}`);
 }
+
+export async function bffLeaveTrip(tripId: string): Promise<void> {
+  await bff.post(`/api/trips/${tripId}/leave`);
+}

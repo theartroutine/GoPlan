@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { TripDetailResponse, TripInvitation, TripMemberItem } from "@/features/trips/domain/types";
-import { bffCancelTrip, bffCompleteTrip, bffGetInvitations, bffGetTrip, bffRemoveMember, bffStartTrip } from "@/features/trips/infrastructure/trips-api";
+import { bffCancelTrip, bffCompleteTrip, bffGetInvitations, bffGetTrip, bffLeaveTrip, bffRemoveMember, bffStartTrip } from "@/features/trips/infrastructure/trips-api";
 import { InviteMembersModal } from "@/features/trips/presentation/invite-members-modal";
 import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge";
 import { Button } from "@/shared/ui/button";
@@ -146,6 +146,18 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
       setActionLoading(false);
     }
   }
+  async function handleLeaveTrip() {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      await bffLeaveTrip(trip.id);
+      router.push("/");  // redirect to dashboard; trip is no longer in their list
+    } catch {
+      setActionError("Could not leave trip. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl p-4 sm:p-6">
@@ -263,6 +275,21 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Leave trip (non-captain members only) */}
+      {!isCaptain && !isTerminal && (
+        <div className="pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive border-destructive hover:bg-destructive/10"
+            disabled={actionLoading}
+            onClick={handleLeaveTrip}
+          >
+            Leave Trip
+          </Button>
         </div>
       )}
     </div>

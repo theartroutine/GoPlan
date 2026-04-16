@@ -6,6 +6,7 @@ from trips.views import (
     CancelTripAPIView,
     CompleteTripAPIView,
     InvitableFriendsAPIView,
+    LeaveTripAPIView,
     RemoveMemberAPIView,
     StartTripAPIView,
     TripDetailUpdateAPIView,
@@ -24,4 +25,5 @@ urlpatterns = [
     path("/<uuid:trip_id>/complete", CompleteTripAPIView.as_view(), name="trip-complete"),
     path("/<uuid:trip_id>/cancel", CancelTripAPIView.as_view(), name="trip-cancel"),
     path("/<uuid:trip_id>/members/<uuid:user_id>", RemoveMemberAPIView.as_view(), name="trip-remove-member"),
+    path("/<uuid:trip_id>/leave", LeaveTripAPIView.as_view(), name="trip-leave"),
 ]

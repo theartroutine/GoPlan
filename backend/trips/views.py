@@ -30,6 +30,7 @@ from trips.services import (
     get_pending_invitations,
     get_trip_detail,
     get_user_trips,
+    leave_trip,
     remove_member,
     send_trip_invitations,
     start_trip,
@@ -220,6 +221,23 @@ class RemoveMemberAPIView(APIView):
         from rest_framework.exceptions import ValidationError as DRFValidationError
         try:
             remove_member(trip_id=trip_id, target_user_id=user_id, actor=request.user)
+        except DRFValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, dict):
+                return Response(detail, status=400)
+            return Response({"detail": str(exc)}, status=400)
+        except StatusTransitionError as exc:
+            return Response({"detail": str(exc), "error_code": "TRIP_TERMINAL"}, status=409)
+        return Response({}, status=200)
+
+
+class LeaveTripAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def post(self, request, trip_id):
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        try:
+            leave_trip(trip_id=trip_id, actor=request.user)
         except DRFValidationError as exc:
             detail = exc.detail
             if isinstance(detail, dict):
