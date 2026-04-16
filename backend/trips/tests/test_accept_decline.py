@@ -104,3 +104,9 @@ class DeclineInvitationTests(APITestCase):
         other = create_completed_user("other@example.com", "other", "OTH001")
         res = self.client.post(_decline_url(self.invitation.id), **_auth(other))
         self.assertEqual(res.status_code, 403)
+
+    def test_cannot_decline_non_pending_409(self):
+        self.invitation.status = InvitationStatus.ACCEPTED
+        self.invitation.save()
+        res = self.client.post(_decline_url(self.invitation.id), **_auth(self.invitee))
+        self.assertEqual(res.status_code, 409)

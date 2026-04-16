@@ -196,18 +196,18 @@ def accept_invitation(invitation_id, actor) -> TripMember:
     """Accept a PENDING invitation. Creates ACTIVE TripMember for invitee."""
     from rest_framework.exceptions import NotFound, PermissionDenied
 
-    try:
-        invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
-    except TripInvitation.DoesNotExist:
-        raise NotFound("Invitation not found.")
-
-    if invitation.invitee != actor:
-        raise PermissionDenied("Only the invitee can accept this invitation.")
-
-    if invitation.status != InvitationStatus.PENDING:
-        raise InvitationError("This invitation is no longer pending.")
-
     with transaction.atomic():
+        try:
+            invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
+        except TripInvitation.DoesNotExist:
+            raise NotFound("Invitation not found.")
+
+        if invitation.invitee != actor:
+            raise PermissionDenied("Only the invitee can accept this invitation.")
+
+        if invitation.status != InvitationStatus.PENDING:
+            raise InvitationError("This invitation is no longer pending.")
+
         invitation.status = InvitationStatus.ACCEPTED
         invitation.responded_at = timezone.now()
         invitation.save(update_fields=["status", "responded_at"])
@@ -237,18 +237,18 @@ def decline_invitation(invitation_id, actor) -> TripInvitation:
     """Decline a PENDING invitation."""
     from rest_framework.exceptions import NotFound, PermissionDenied
 
-    try:
-        invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
-    except TripInvitation.DoesNotExist:
-        raise NotFound("Invitation not found.")
-
-    if invitation.invitee != actor:
-        raise PermissionDenied("Only the invitee can decline this invitation.")
-
-    if invitation.status != InvitationStatus.PENDING:
-        raise InvitationError("This invitation is no longer pending.")
-
     with transaction.atomic():
+        try:
+            invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
+        except TripInvitation.DoesNotExist:
+            raise NotFound("Invitation not found.")
+
+        if invitation.invitee != actor:
+            raise PermissionDenied("Only the invitee can decline this invitation.")
+
+        if invitation.status != InvitationStatus.PENDING:
+            raise InvitationError("This invitation is no longer pending.")
+
         invitation.status = InvitationStatus.DECLINED
         invitation.responded_at = timezone.now()
         invitation.save(update_fields=["status", "responded_at"])
