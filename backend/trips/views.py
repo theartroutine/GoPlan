@@ -20,14 +20,19 @@ from trips.serializers import (
 from trips.services import (
     InvitationError,
     InviteError,
+    StatusTransitionError,
     accept_invitation,
+    cancel_trip,
+    complete_trip,
     create_trip,
     decline_invitation,
     get_invitable_friends,
     get_pending_invitations,
     get_trip_detail,
     get_user_trips,
+    remove_member,
     send_trip_invitations,
+    start_trip,
     update_trip,
 )
 
@@ -173,3 +178,53 @@ class DeclineInvitationAPIView(APIView):
         except InvitationError as exc:
             return Response({"detail": str(exc), "error_code": "INVITATION_NOT_PENDING"}, status=409)
         return Response({"invitation_id": str(invitation.id)}, status=200)
+
+
+class StartTripAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def post(self, request, trip_id):
+        try:
+            trip = start_trip(trip_id=trip_id, actor=request.user)
+        except StatusTransitionError as exc:
+            return Response({"detail": str(exc), "error_code": "INVALID_STATUS_TRANSITION"}, status=409)
+        return Response({"status": trip.status}, status=200)
+
+
+class CompleteTripAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def post(self, request, trip_id):
+        try:
+            trip = complete_trip(trip_id=trip_id, actor=request.user)
+        except StatusTransitionError as exc:
+            return Response({"detail": str(exc), "error_code": "INVALID_STATUS_TRANSITION"}, status=409)
+        return Response({"status": trip.status}, status=200)
+
+
+class CancelTripAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def post(self, request, trip_id):
+        try:
+            trip = cancel_trip(trip_id=trip_id, actor=request.user)
+        except StatusTransitionError as exc:
+            return Response({"detail": str(exc), "error_code": "TRIP_TERMINAL"}, status=409)
+        return Response({"status": trip.status}, status=200)
+
+
+class RemoveMemberAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+
+    def delete(self, request, trip_id, user_id):
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        try:
+            remove_member(trip_id=trip_id, target_user_id=user_id, actor=request.user)
+        except DRFValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, dict):
+                return Response(detail, status=400)
+            return Response({"detail": str(exc)}, status=400)
+        except StatusTransitionError as exc:
+            return Response({"detail": str(exc), "error_code": "TRIP_TERMINAL"}, status=409)
+        return Response({}, status=200)

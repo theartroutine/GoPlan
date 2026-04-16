@@ -43,3 +43,19 @@ export async function bffAcceptInvitation(invitationId: string): Promise<void> {
 export async function bffDeclineInvitation(invitationId: string): Promise<void> {
   await bff.post(`/api/invitations/${invitationId}/decline`);
 }
+
+export async function bffStartTrip(tripId: string): Promise<void> {
+  await bff.post(`/api/trips/${tripId}/start`);
+}
+
+export async function bffCompleteTrip(tripId: string): Promise<void> {
+  await bff.post(`/api/trips/${tripId}/complete`);
+}
+
+export async function bffCancelTrip(tripId: string): Promise<void> {
+  await bff.post(`/api/trips/${tripId}/cancel`);
+}
+
+export async function bffRemoveMember(tripId: string, userId: string): Promise<void> {
+  await bff.delete(`/api/trips/${tripId}/members/${userId}`);
+}

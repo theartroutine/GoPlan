@@ -27,6 +27,10 @@ class InvitationError(TripServiceError):
     pass
 
 
+class StatusTransitionError(TripServiceError):
+    pass
+
+
 # -------- Services --------
 
 def create_trip(
@@ -265,3 +269,149 @@ def decline_invitation(invitation_id, actor) -> TripInvitation:
         )
 
     return invitation
+
+
+# -------- Captain action helpers --------
+
+def _assert_captain(trip, actor):
+    """Raise PermissionDenied if actor is not ACTIVE captain of trip."""
+    from rest_framework.exceptions import PermissionDenied
+    if not TripMember.objects.filter(trip=trip, user=actor, role=TripRole.CAPTAIN, status=MemberStatus.ACTIVE).exists():
+        raise PermissionDenied("Only the trip captain can perform this action.")
+
+
+def _assert_not_terminal(trip):
+    """Raise StatusTransitionError if trip is in a terminal state."""
+    if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+        raise StatusTransitionError("This trip is in a terminal state. No further changes are allowed.")
+
+
+def start_trip(trip_id, actor) -> Trip:
+    """Transition PLANNING → ONGOING. Captain only."""
+    from rest_framework.exceptions import NotFound
+
+    with transaction.atomic():
+        try:
+            trip = Trip.objects.select_for_update().get(pk=trip_id)
+        except Trip.DoesNotExist:
+            raise NotFound("Trip not found.")
+
+        _assert_captain(trip, actor)
+
+        if trip.status != TripStatus.PLANNING:
+            raise StatusTransitionError("Trip must be in PLANNING status to start.")
+
+        trip.status = TripStatus.ONGOING
+        trip.save(update_fields=["status", "updated_at"])
+
+    return trip
+
+
+def complete_trip(trip_id, actor) -> Trip:
+    """Transition ONGOING → COMPLETED. Captain only."""
+    from rest_framework.exceptions import NotFound
+
+    with transaction.atomic():
+        try:
+            trip = Trip.objects.select_for_update().get(pk=trip_id)
+        except Trip.DoesNotExist:
+            raise NotFound("Trip not found.")
+
+        _assert_captain(trip, actor)
+
+        if trip.status != TripStatus.ONGOING:
+            raise StatusTransitionError("Trip must be in ONGOING status to complete.")
+
+        trip.status = TripStatus.COMPLETED
+        trip.save(update_fields=["status", "updated_at"])
+
+    return trip
+
+
+def cancel_trip(trip_id, actor) -> Trip:
+    """Transition PLANNING/ONGOING → CANCELLED. Captain only.
+    Auto-cancels all PENDING invitations.
+    Sends TRIP_CANCELLED notification to all ACTIVE members (excluding captain).
+    """
+    from rest_framework.exceptions import NotFound
+
+    with transaction.atomic():
+        try:
+            trip = Trip.objects.select_for_update().get(pk=trip_id)
+        except Trip.DoesNotExist:
+            raise NotFound("Trip not found.")
+
+        _assert_captain(trip, actor)
+
+        if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+            raise StatusTransitionError("This trip is already in a terminal state and cannot be cancelled.")
+
+        trip.status = TripStatus.CANCELLED
+        trip.cancelled_at = timezone.now()
+        trip.save(update_fields=["status", "cancelled_at", "updated_at"])
+
+        # Auto-cancel pending invitations
+        TripInvitation.objects.filter(trip=trip, status=InvitationStatus.PENDING).update(
+            status=InvitationStatus.CANCELLED
+        )
+
+        # Notify all active members (except captain)
+        active_members = TripMember.objects.filter(
+            trip=trip, status=MemberStatus.ACTIVE
+        ).exclude(user=actor).select_related("user")
+
+        for membership in active_members:
+            create_notification(
+                recipient=membership.user,
+                notification_type=NotificationType.TRIP_CANCELLED,
+                actor=actor,
+                payload={
+                    "trip_id": str(trip.id),
+                    "trip_name": trip.name,
+                },
+            )
+
+    return trip
+
+
+def remove_member(trip_id, target_user_id, actor) -> TripMember:
+    """Captain removes an ACTIVE member. Sets status to REMOVED, records left_at.
+    Sends TRIP_MEMBER_REMOVED notification to the removed user.
+    """
+    from rest_framework.exceptions import NotFound, ValidationError
+
+    with transaction.atomic():
+        try:
+            trip = Trip.objects.select_for_update().get(pk=trip_id)
+        except Trip.DoesNotExist:
+            raise NotFound("Trip not found.")
+
+        _assert_captain(trip, actor)
+        _assert_not_terminal(trip)
+
+        # Captain cannot remove themselves
+        if str(target_user_id) == str(actor.id):
+            raise ValidationError({"detail": "You cannot remove yourself from the trip.", "error_code": "CANNOT_REMOVE_SELF"})
+
+        try:
+            membership = TripMember.objects.select_for_update().get(
+                trip=trip, user_id=target_user_id, status=MemberStatus.ACTIVE
+            )
+        except TripMember.DoesNotExist:
+            raise NotFound("Active member not found.")
+
+        membership.status = MemberStatus.REMOVED
+        membership.left_at = timezone.now()
+        membership.save(update_fields=["status", "left_at"])
+
+        create_notification(
+            recipient=membership.user,
+            notification_type=NotificationType.TRIP_MEMBER_REMOVED,
+            actor=actor,
+            payload={
+                "trip_id": str(trip.id),
+                "trip_name": trip.name,
+            },
+        )
+
+    return membership
