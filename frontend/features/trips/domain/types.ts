@@ -46,3 +46,44 @@ export type CreateTripResponse = {
     created_at: string;
   };
 };
+
+export type TripMemberItem = {
+  membership_id: string;
+  user: {
+    id: string;
+    display_name: string;
+    identify_tag: string | null;
+  };
+  role: TripRole;
+  joined_at: string;
+};
+
+export type TripDetail = {
+  id: string;
+  name: string;
+  destination: string;
+  start_date: string;
+  end_date: string;
+  description: string;
+  status: TripStatus;
+  currency_code: string;
+  budget_estimate: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+};
+
+export type TripDetailResponse = {
+  trip: TripDetail;
+  my_membership: { role: TripRole; status: string; joined_at: string };
+  members: TripMemberItem[];
+};
+
+export type UpdateTripPayload = Partial<{
+  name: string;
+  destination: string;
+  start_date: string;
+  end_date: string;
+  description: string;
+  currency_code: string;
+  budget_estimate: string | null;
+}>;
