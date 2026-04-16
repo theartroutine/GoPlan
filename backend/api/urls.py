@@ -6,4 +6,5 @@ urlpatterns = [
     path("realtime/", include("realtime.urls")),
     path("notifications/", include("notifications.urls")),
     path("friends/", include("friends.urls")),
+    path("trips", include("trips.urls")),
 ]
