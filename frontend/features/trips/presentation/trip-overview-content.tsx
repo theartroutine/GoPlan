@@ -151,10 +151,10 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
     setActionError(null);
     try {
       await bffLeaveTrip(trip.id);
-      router.push("/");  // redirect to dashboard; trip is no longer in their list
+      router.push("/");
+      return; // navigation takes over; don't touch loading state
     } catch {
       setActionError("Could not leave trip. Please try again.");
-    } finally {
       setActionLoading(false);
     }
   }
@@ -281,6 +281,9 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
       {/* Leave trip (non-captain members only) */}
       {!isCaptain && !isTerminal && (
         <div className="pt-2">
+          {actionError && (
+            <p className="mb-2 text-sm text-destructive">{actionError}</p>
+          )}
           <Button
             variant="outline"
             size="sm"

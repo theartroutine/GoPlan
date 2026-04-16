@@ -1,4 +1,3 @@
-from django.utils import timezone
 from rest_framework.test import APITestCase
 from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
