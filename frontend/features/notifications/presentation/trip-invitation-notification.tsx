@@ -12,19 +12,26 @@ type Props = {
   onDecline: (invitationId: string, notificationId: string) => Promise<void>;
 };
 
-export function TripInvitationNotification({ notification, onMarkRead, onAccept, onDecline }: Props) {
+// onMarkRead is kept in Props for shared use by plain-text notifications in NotificationItem.
+// TripInvitationNotification does not call it — the dropdown's accept/decline handlers already
+// call markRead, so invoking it here would result in a duplicate HTTP request.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function TripInvitationNotification({ notification, onMarkRead: _onMarkRead, onAccept, onDecline }: Props) {
   const [loading, setLoading] = useState<"accept" | "decline" | null>(null);
   const [responded, setResponded] = useState<"accepted" | "declined" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const payload = notification.payload as unknown as TripInvitationPayload;
   const actorName = notification.actor?.display_name ?? "Someone";
 
   async function handleAccept() {
     setLoading("accept");
+    setActionError(null);
     try {
       await onAccept(payload.invitation_id, notification.id);
       setResponded("accepted");
-      onMarkRead(notification.id);
+    } catch {
+      setActionError("Failed to accept invitation. Please try again.");
     } finally {
       setLoading(null);
     }
@@ -32,10 +39,12 @@ export function TripInvitationNotification({ notification, onMarkRead, onAccept,
 
   async function handleDecline() {
     setLoading("decline");
+    setActionError(null);
     try {
       await onDecline(payload.invitation_id, notification.id);
       setResponded("declined");
-      onMarkRead(notification.id);
+    } catch {
+      setActionError("Failed to decline invitation. Please try again.");
     } finally {
       setLoading(null);
     }
@@ -61,25 +70,30 @@ export function TripInvitationNotification({ notification, onMarkRead, onAccept,
               {responded === "accepted" ? "✓ You joined the trip" : "Invitation declined"}
             </p>
           ) : (
-            <div className="mt-2 flex gap-2">
-              <Button
-                size="sm"
-                className="h-7 flex-1 text-xs"
-                disabled={loading !== null}
-                onClick={handleAccept}
-              >
-                {loading === "accept" ? "..." : "Accept"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 flex-1 text-xs"
-                disabled={loading !== null}
-                onClick={handleDecline}
-              >
-                {loading === "decline" ? "..." : "Decline"}
-              </Button>
-            </div>
+            <>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  size="sm"
+                  className="h-7 flex-1 text-xs"
+                  disabled={loading !== null}
+                  onClick={handleAccept}
+                >
+                  {loading === "accept" ? "..." : "Accept"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 flex-1 text-xs"
+                  disabled={loading !== null}
+                  onClick={handleDecline}
+                >
+                  {loading === "decline" ? "..." : "Decline"}
+                </Button>
+              </div>
+              {actionError && (
+                <p className="mt-1 text-xs text-destructive">{actionError}</p>
+              )}
+            </>
           )}
         </div>
       </div>
