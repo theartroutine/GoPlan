@@ -27,6 +27,8 @@ function renderSimpleText(notification: Notification): string {
       const tripName = (notification.payload as { trip_name?: string }).trip_name ?? "A trip";
       return `You were removed from ${tripName}`;
     }
+    case "TRIP_INVITATION":
+      return "";
     default: {
       const _exhaustive: never = notification.notification_type;
       void _exhaustive;

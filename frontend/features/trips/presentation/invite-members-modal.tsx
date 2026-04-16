@@ -12,9 +12,12 @@ export function InviteMembersModal({ tripId, onClose, onInvited }: Props) {
   const [friends, setFriends] = useState<InvitableFriend[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
-    bffGetInvitableFriends(tripId).then((d) => setFriends(d.users));
+    bffGetInvitableFriends(tripId)
+      .then((d) => setFriends(d.users))
+      .catch(() => setFetchError("Failed to load friends. Please try again."));
   }, [tripId]);
 
   function toggleSelect(id: string) {
@@ -36,6 +39,8 @@ export function InviteMembersModal({ tripId, onClose, onInvited }: Props) {
       await bffSendInvitations(tripId, [...selected]);
       onInvited();
       onClose();
+    } catch {
+      setFetchError("Failed to send invitations. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -67,6 +72,9 @@ export function InviteMembersModal({ tripId, onClose, onInvited }: Props) {
               </li>
             ))}
           </ul>
+        )}
+        {fetchError && (
+          <p className="mt-3 text-sm text-destructive">{fetchError}</p>
         )}
         <div className="mt-4 flex gap-2">
           <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>

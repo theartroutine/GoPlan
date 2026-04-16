@@ -18,6 +18,10 @@ class TripServiceError(Exception):
     pass
 
 
+class InviteError(TripServiceError):
+    pass
+
+
 # -------- Services --------
 
 def create_trip(
@@ -94,12 +98,6 @@ def update_trip(trip, *, name=None, destination=None, start_date=None,
     if budget_estimate is not None: trip.budget_estimate = budget_estimate
     trip.save()
     return trip
-
-
-# -------- Exceptions --------
-
-class InviteError(TripServiceError):
-    pass
 
 
 # -------- Invite helpers --------
