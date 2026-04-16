@@ -5,8 +5,15 @@ from django.db import models
 
 
 class NotificationType(models.TextChoices):
+    # Friend notifications
     FRIEND_REQUEST = "FRIEND_REQUEST", "Friend Request"
     FRIEND_ACCEPTED = "FRIEND_ACCEPTED", "Friend Accepted"
+    # Trip notifications
+    TRIP_INVITATION = "TRIP_INVITATION", "Trip Invitation"
+    TRIP_INVITATION_ACCEPTED = "TRIP_INVITATION_ACCEPTED", "Trip Invitation Accepted"
+    TRIP_INVITATION_DECLINED = "TRIP_INVITATION_DECLINED", "Trip Invitation Declined"
+    TRIP_CANCELLED = "TRIP_CANCELLED", "Trip Cancelled"
+    TRIP_MEMBER_REMOVED = "TRIP_MEMBER_REMOVED", "Trip Member Removed"
 
 
 class Notification(models.Model):
