@@ -5,7 +5,7 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from trips.models import MemberStatus, Trip, TripMember, TripRole
+from trips.models import MemberStatus, TripRole
 from trips.permissions import IsProfileCompleted
 from trips.serializers import (
     CreateTripSerializer,
@@ -15,7 +15,7 @@ from trips.serializers import (
     TripResponseSerializer,
     UpdateTripSerializer,
 )
-from trips.services import create_trip, get_user_trips, update_trip
+from trips.services import create_trip, get_trip_detail, get_user_trips, update_trip
 
 TRIP_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 
@@ -58,21 +58,8 @@ class TripListCreateAPIView(APIView):
 class TripDetailUpdateAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
 
-    def _get_trip_and_membership(self, request, trip_id):
-        from rest_framework.exceptions import NotFound, PermissionDenied
-        try:
-            trip = Trip.objects.get(pk=trip_id)
-        except Trip.DoesNotExist:
-            raise NotFound("Trip not found.")
-        membership = TripMember.objects.filter(
-            trip=trip, user=request.user, status=MemberStatus.ACTIVE
-        ).first()
-        if not membership:
-            raise PermissionDenied("You are not a member of this trip.")
-        return trip, membership
-
     def get(self, request, trip_id):
-        trip, my_membership = self._get_trip_and_membership(request, trip_id)
+        trip, my_membership = get_trip_detail(trip_id, request.user)
         members = trip.memberships.filter(status=MemberStatus.ACTIVE).select_related("user")
         return Response({
             "trip": TripDetailSerializer(trip).data,
@@ -85,7 +72,7 @@ class TripDetailUpdateAPIView(APIView):
         })
 
     def patch(self, request, trip_id):
-        trip, my_membership = self._get_trip_and_membership(request, trip_id)
+        trip, my_membership = get_trip_detail(trip_id, request.user)
         if my_membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can edit trip info.", "error_code": "NOT_CAPTAIN"},
@@ -95,4 +82,4 @@ class TripDetailUpdateAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         d = serializer.validated_data
         updated = update_trip(trip, **d)
-        return Response({"trip": TripDetailSerializer(updated).data})
+        return Response({"trip": TripDetailSerializer(updated).data}, status=status.HTTP_200_OK)

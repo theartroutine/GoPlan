@@ -92,6 +92,6 @@ class UpdateTripSerializer(serializers.Serializer):
         trip = self.context.get("trip")
         start = data.get("start_date", trip.start_date if trip else None)
         end   = data.get("end_date",   trip.end_date   if trip else None)
-        if start and end and end < start:
+        if start is not None and end is not None and end < start:
             raise serializers.ValidationError({"end_date": "end_date must be on or after start_date."})
         return data
