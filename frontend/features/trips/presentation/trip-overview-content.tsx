@@ -103,7 +103,8 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
     setActionError(null);
     try {
       await bffStartTrip(trip.id);
-      router.refresh();
+      const freshData = await bffGetTrip(tripId);
+      setData(freshData);
     } catch {
       setActionError("Could not start trip. Please try again.");
     } finally {
@@ -115,7 +116,8 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
     setActionError(null);
     try {
       await bffCompleteTrip(trip.id);
-      router.refresh();
+      const freshData = await bffGetTrip(tripId);
+      setData(freshData);
     } catch {
       setActionError("Could not complete trip. Please try again.");
     } finally {
@@ -127,7 +129,8 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
     setActionError(null);
     try {
       await bffCancelTrip(trip.id);
-      router.refresh();
+      const freshData = await bffGetTrip(tripId);
+      setData(freshData);
     } catch {
       setActionError("Could not cancel trip. Please try again.");
     } finally {
@@ -139,7 +142,8 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
     setActionError(null);
     try {
       await bffRemoveMember(trip.id, userId);
-      router.refresh();
+      const freshData = await bffGetTrip(tripId);
+      setData(freshData);
     } catch {
       setActionError("Could not remove member. Please try again.");
     } finally {

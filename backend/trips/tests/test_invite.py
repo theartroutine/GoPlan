@@ -104,6 +104,30 @@ class SendInvitationTests(APITestCase):
         )
         self.assertEqual(res.status_code, 403)
 
+    def test_cannot_invite_to_cancelled_trip_400(self):
+        self.trip.status = TripStatus.CANCELLED
+        self.trip.save(update_fields=["status"])
+        res = self.client.post(
+            _invite_url(self.trip.id),
+            {"invitee_ids": [str(self.friend1.id)]},
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("error_code", res.data)
+
+    def test_cannot_invite_to_completed_trip_400(self):
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+        res = self.client.post(
+            _invite_url(self.trip.id),
+            {"invitee_ids": [str(self.friend1.id)]},
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("error_code", res.data)
+
 
 class InvitableFriendsTests(APITestCase):
 

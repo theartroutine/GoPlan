@@ -33,14 +33,18 @@ class TripListItemSerializer(serializers.ModelSerializer):
         ]
 
     def get_member_count(self, obj) -> int:
-        return obj.memberships.filter(status=MemberStatus.ACTIVE).count()
+        # Use prefetch cache from get_user_trips; .count() would bypass it
+        return len(obj.memberships.all())
 
     def get_my_role(self, obj) -> str | None:
         request_user = self.context.get("request_user")
         if request_user is None:
             return None
-        m = obj.memberships.filter(user=request_user, status=MemberStatus.ACTIVE).first()
-        return m.role if m else None
+        # Iterate prefetch cache instead of issuing a new filtered query per trip
+        for m in obj.memberships.all():
+            if m.user_id == request_user.pk:
+                return m.role
+        return None
 
 
 class TripResponseSerializer(serializers.ModelSerializer):

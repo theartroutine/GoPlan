@@ -95,16 +95,21 @@ def get_trip_detail(trip_id, requesting_user):
     return trip, membership
 
 
-def update_trip(trip, *, name=None, destination=None, start_date=None,
-                end_date=None, description=None, currency_code=None, budget_estimate=None):
-    """Partially update trip fields. Only updates fields that are explicitly passed (not None)."""
-    if name is not None:            trip.name = name
-    if destination is not None:     trip.destination = destination
-    if start_date is not None:      trip.start_date = start_date
-    if end_date is not None:        trip.end_date = end_date
-    if description is not None:     trip.description = description
-    if currency_code is not None:   trip.currency_code = currency_code
-    if budget_estimate is not None: trip.budget_estimate = budget_estimate
+_UNSET = object()
+
+
+def update_trip(trip, *, name=_UNSET, destination=_UNSET, start_date=_UNSET,
+                end_date=_UNSET, description=_UNSET, currency_code=_UNSET, budget_estimate=_UNSET):
+    """Partially update trip fields. Only updates fields explicitly passed.
+    Sentinel _UNSET distinguishes "not provided" from None (which clears a nullable field).
+    """
+    if name is not _UNSET:            trip.name = name
+    if destination is not _UNSET:     trip.destination = destination
+    if start_date is not _UNSET:      trip.start_date = start_date
+    if end_date is not _UNSET:        trip.end_date = end_date
+    if description is not _UNSET:     trip.description = description
+    if currency_code is not _UNSET:   trip.currency_code = currency_code
+    if budget_estimate is not _UNSET: trip.budget_estimate = budget_estimate
     trip.save()
     return trip
 
@@ -151,6 +156,9 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
     """Send invitations to a list of user IDs. Validates each and sends realtime notification."""
     if not invitee_ids:
         raise InviteError("No invitee IDs provided.")
+
+    if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+        raise InviteError("Cannot invite members to a trip that is completed or cancelled.")
 
     invitees = User.objects.filter(pk__in=invitee_ids, is_profile_completed=True)
     if len(invitees) != len(invitee_ids):

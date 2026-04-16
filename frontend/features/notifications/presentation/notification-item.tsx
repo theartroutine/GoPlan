@@ -28,6 +28,7 @@ function renderSimpleText(notification: Notification): string {
       return `You were removed from ${tripName}`;
     }
     case "TRIP_INVITATION":
+      // Handled by TripInvitationNotification before this function is called; never reached
       return "";
     default: {
       const _exhaustive: never = notification.notification_type;
