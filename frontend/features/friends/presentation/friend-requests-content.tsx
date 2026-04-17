@@ -63,6 +63,7 @@ export function FriendRequestsContent() {
     id: string,
     action: "accept" | "decline" | "cancel",
   ) => {
+    if (actionId !== null) return;
     setActionId(id);
     try {
       if (action === "accept") {
@@ -91,6 +92,7 @@ export function FriendRequestsContent() {
   };
 
   const handleLoadMore = async () => {
+    if (loadingMore) return;
     setLoadingMore(true);
     try {
       if (tab === "incoming") {

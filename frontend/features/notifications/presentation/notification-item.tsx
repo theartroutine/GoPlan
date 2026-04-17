@@ -40,7 +40,7 @@ function renderSimpleText(notification: Notification): string {
 
 type NotificationItemProps = {
   notification: Notification;
-  onMarkRead: (id: string) => void;
+  onMarkRead: (id: string) => void | Promise<void>;
   onAcceptInvitation?: (invitationId: string, notificationId: string) => Promise<void>;
   onDeclineInvitation?: (invitationId: string, notificationId: string) => Promise<void>;
 };
@@ -67,7 +67,11 @@ export function NotificationItem({
       className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
         notification.is_read ? "opacity-70" : ""
       }`}
-      onClick={() => { if (!notification.is_read) onMarkRead(notification.id); }}
+      onClick={() => {
+        if (!notification.is_read) {
+          void onMarkRead(notification.id);
+        }
+      }}
     >
       {!notification.is_read && (
         <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-500" />

@@ -111,7 +111,7 @@ def mark_notification_read(notification_id, user):
     with transaction.atomic():
         # Atomic: only one concurrent request will match the filter
         updated = Notification.objects.filter(
-            pk=notification_id, read_at__isnull=True
+            pk=notification_id, recipient=user, read_at__isnull=True
         ).update(read_at=timezone.now())
 
         notification.refresh_from_db()

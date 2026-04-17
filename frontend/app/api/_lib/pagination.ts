@@ -18,9 +18,12 @@ export function extractCursor(url: string | null): string | null {
  * Replaces next/previous URLs with cursor-only values.
  */
 export function normalizePaginatedResponse(data: unknown) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return { results: [], next_cursor: null, previous_cursor: null };
+  }
   const obj = data as Record<string, unknown>;
   return {
-    results: obj.results,
+    results: Array.isArray(obj.results) ? obj.results : [],
     next_cursor: extractCursor(obj.next as string | null),
     previous_cursor: extractCursor(obj.previous as string | null),
   };
@@ -31,9 +34,12 @@ export function normalizePaginatedResponse(data: unknown) {
  * Returns {count, results} — frontend manages offset/limit directly.
  */
 export function stripPaginationUrls(data: unknown) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return { count: 0, results: [] };
+  }
   const obj = data as Record<string, unknown>;
   return {
-    count: obj.count,
-    results: obj.results,
+    count: typeof obj.count === "number" ? obj.count : 0,
+    results: Array.isArray(obj.results) ? obj.results : [],
   };
 }

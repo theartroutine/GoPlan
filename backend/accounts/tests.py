@@ -4,6 +4,7 @@ import uuid
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from rest_framework import status
 from rest_framework.test import APITestCase
 from accounts.tokens import RefreshToken
@@ -462,6 +463,41 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["user"]["identify_code"], "BBBBBB")
+
+    def test_user_allows_duplicate_identify_name_with_different_identify_codes(self):
+        first_user = self.create_completed_user(
+            email="first@example.com",
+            password="StrongPass#2026",
+            identify_code="ABC123",
+        )
+        second_user = self.create_completed_user(
+            email="second@example.com",
+            password="StrongPass#2026",
+            identify_code="DEF456",
+        )
+
+        self.assertEqual(first_user.identify_name, "quangminh")
+        self.assertEqual(second_user.identify_name, "quangminh")
+        self.assertEqual(User.objects.filter(identify_name="quangminh").count(), 2)
+
+    def test_user_rejects_duplicate_identify_code_even_with_different_identify_names(self):
+        self.create_completed_user(
+            email="first@example.com",
+            password="StrongPass#2026",
+            identify_code="ABC123",
+        )
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                build_completed_user(
+                    email="second@example.com",
+                    password="StrongPass#2026",
+                    identify_name="anhnhi",
+                    identify_code="ABC123",
+                    first_name="Anh",
+                    last_name="Nhi",
+                    display_name="Anh Nhi",
+                )
 
     def test_profile_setup_returns_identify_code_generation_failed(self):
         self.create_completed_user(email="existing@example.com", password="StrongPass#2026", identify_code="AAAAAA")
