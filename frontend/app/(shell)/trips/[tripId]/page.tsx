@@ -1,6 +1,10 @@
-import { TripOverviewContent } from "@/features/trips/presentation/trip-overview-content";
+import { redirect } from "next/navigation";
 
-export default async function TripOverviewPage({ params }: { params: Promise<{ tripId: string }> }) {
+export default async function TripRootPage({
+  params,
+}: {
+  params: Promise<{ tripId: string }>;
+}) {
   const { tripId } = await params;
-  return <TripOverviewContent tripId={tripId} />;
+  redirect(`/trips/${tripId}/overview`);
 }
