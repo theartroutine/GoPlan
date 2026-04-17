@@ -20,13 +20,6 @@ const STATUS_STEPS: { key: TripStatus; label: string }[] = [
   { key: "COMPLETED", label: "Completed" },
 ];
 
-const STATUS_ORDER: Record<TripStatus, number> = {
-  PLANNING: 0,
-  ONGOING: 1,
-  COMPLETED: 2,
-  CANCELLED: -1,
-};
-
 function StatusProgressBar({ status }: { status: TripStatus }) {
   if (status === "CANCELLED") {
     return (
