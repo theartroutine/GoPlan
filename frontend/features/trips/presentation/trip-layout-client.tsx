@@ -1,5 +1,8 @@
 "use client";
 
+import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+
 import { Spinner } from "@/shared/ui/spinner";
 import { TripProvider, useTripContext } from "@/features/trips/presentation/trip-context";
 import { TripHeader } from "@/features/trips/presentation/trip-header";
@@ -7,6 +10,11 @@ import { TripTabBar } from "@/features/trips/presentation/trip-tab-bar";
 
 function TripShell({ children }: { children: React.ReactNode }) {
   const { data, loading, error, notFound } = useTripContext();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   if (loading) {
     return (
@@ -32,12 +40,16 @@ function TripShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const portalTarget = mounted ? document.getElementById("trip-nav-portal") : null;
+
   return (
-    <div className="mx-auto max-w-2xl">
-      <TripHeader trip={data.trip} />
-      <TripTabBar />
-      <div className="p-4 sm:p-6">{children}</div>
-    </div>
+    <>
+      {portalTarget && createPortal(<TripTabBar />, portalTarget)}
+      <div>
+        <TripHeader trip={data.trip} />
+        <div className="p-4 sm:p-6">{children}</div>
+      </div>
+    </>
   );
 }
 

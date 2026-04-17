@@ -44,67 +44,65 @@ export function TripTabBar() {
   }
 
   return (
-    <div className="border-b border-border">
-      <div className="flex items-center overflow-x-auto px-2">
-        <div className="flex flex-1">
-          {TABS.map((tab) => {
-            const href = `/trips/${tripId}/${tab.path}`;
-            const isActive = pathname.startsWith(href);
-            return (
-              <Link
-                key={tab.path}
-                href={href}
-                className={`-mb-px whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-        </div>
+    <div className="flex h-full w-full items-center overflow-x-auto">
+      <div className="flex h-full flex-1">
+        {TABS.map((tab) => {
+          const href = `/trips/${tripId}/${tab.path}`;
+          const isActive = pathname.startsWith(href);
+          return (
+            <Link
+              key={tab.path}
+              href={href}
+              className={`flex h-full items-center whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors ${
+                isActive
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
 
-        {canLeave && (
-          <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
-            {leaveError && (
-              <span className="text-xs text-destructive">{leaveError}</span>
-            )}
-            {confirmLeave ? (
-              <>
-                <span className="whitespace-nowrap text-xs text-muted-foreground">
-                  Are you sure?
-                </span>
-                <button
-                  type="button"
-                  disabled={leaving}
-                  onClick={() => void handleLeave()}
-                  className="text-xs font-medium text-destructive hover:underline disabled:opacity-50"
-                >
-                  {leaving ? "Leaving…" : "Yes"}
-                </button>
-                <button
-                  type="button"
-                  disabled={leaving}
-                  onClick={() => setConfirmLeave(false)}
-                  className="text-xs text-muted-foreground hover:underline disabled:opacity-50"
-                >
-                  No
-                </button>
-              </>
-            ) : (
+      {canLeave && (
+        <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+          {leaveError && (
+            <span className="text-xs text-destructive">{leaveError}</span>
+          )}
+          {confirmLeave ? (
+            <>
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                Are you sure?
+              </span>
               <button
                 type="button"
-                onClick={() => setConfirmLeave(true)}
-                className="-mb-px border-b-2 border-transparent py-3 text-sm font-medium text-destructive/70 transition-colors hover:text-destructive"
+                disabled={leaving}
+                onClick={() => void handleLeave()}
+                className="text-xs font-medium text-destructive hover:underline disabled:opacity-50"
               >
-                Leave Trip
+                {leaving ? "Leaving…" : "Yes"}
               </button>
-            )}
-          </div>
-        )}
-      </div>
+              <button
+                type="button"
+                disabled={leaving}
+                onClick={() => setConfirmLeave(false)}
+                className="text-xs text-muted-foreground hover:underline disabled:opacity-50"
+              >
+                No
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmLeave(true)}
+              className="flex h-full items-center border-b-2 border-transparent px-3 text-sm font-medium text-destructive/70 transition-colors hover:text-destructive"
+            >
+              Leave Trip
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,14 +1,10 @@
 "use client";
 
+import { Fragment, useState } from "react";
 import Link from "next/link";
-import { useState } from "react";
 
 import type { TripStatus } from "@/features/trips/domain/types";
-import {
-  bffCancelTrip,
-  bffCompleteTrip,
-  bffStartTrip,
-} from "@/features/trips/infrastructure/trips-api";
+import { bffCancelTrip } from "@/features/trips/infrastructure/trips-api";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import { Button } from "@/shared/ui/button";
 
@@ -32,13 +28,13 @@ function StatusProgressBar({ status }: { status: TripStatus }) {
   const currentIdx = STATUS_STEPS.findIndex((s) => s.key === status);
 
   return (
-    <div className="flex items-start">
-      {STATUS_STEPS.map((step, i) => {
-        const isPast = i < currentIdx;
-        const isCurrent = i === currentIdx;
-        return (
-          <div key={step.key} className="flex flex-1 flex-col items-center">
-            <div className="flex w-full items-center">
+    <div>
+      <div className="flex items-center">
+        {STATUS_STEPS.map((step, i) => {
+          const isPast = i < currentIdx;
+          const isCurrent = i === currentIdx;
+          return (
+            <Fragment key={step.key}>
               {i > 0 && (
                 <div
                   className={`h-0.5 flex-1 ${isPast || isCurrent ? "bg-primary" : "bg-border"}`}
@@ -58,15 +54,20 @@ function StatusProgressBar({ status }: { status: TripStatus }) {
                   className={`h-0.5 flex-1 ${isPast ? "bg-primary" : "bg-border"}`}
                 />
               )}
-            </div>
-            <span
-              className={`mt-1 text-xs ${isCurrent ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-            >
-              {step.label}
-            </span>
-          </div>
-        );
-      })}
+            </Fragment>
+          );
+        })}
+      </div>
+      <div className="mt-1.5 flex justify-between text-xs">
+        {STATUS_STEPS.map((step, i) => (
+          <span
+            key={step.key}
+            className={i === currentIdx ? "font-semibold text-foreground" : "text-muted-foreground"}
+          >
+            {step.label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -75,8 +76,8 @@ function StatusProgressBar({ status }: { status: TripStatus }) {
 
 export function OverviewTab() {
   const { tripId, data, refresh } = useTripContext();
-  const [actionLoading, setActionLoading] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   if (!data) return null;
 
@@ -95,16 +96,16 @@ export function OverviewTab() {
       ? (parseFloat(trip.budget_estimate) / members.length).toLocaleString("vi-VN")
       : null;
 
-  async function runAction(action: () => Promise<void>, errMsg: string) {
-    setActionLoading(true);
-    setActionError(null);
+  async function handleCancel() {
+    setCancelLoading(true);
+    setCancelError(null);
     try {
-      await action();
+      await bffCancelTrip(trip.id);
       await refresh();
     } catch {
-      setActionError(errMsg);
+      setCancelError("Could not cancel trip.");
     } finally {
-      setActionLoading(false);
+      setCancelLoading(false);
     }
   }
 
@@ -185,58 +186,29 @@ export function OverviewTab() {
           Status
         </h2>
         <StatusProgressBar status={trip.status} />
-
-        {isCaptain && !isTerminal && (
-          <div className="mt-4 space-y-2">
-            {actionError && (
-              <p className="text-sm text-destructive">{actionError}</p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {trip.status === "PLANNING" && (
-                <Button
-                  size="sm"
-                  disabled={actionLoading}
-                  onClick={() =>
-                    void runAction(
-                      () => bffStartTrip(trip.id),
-                      "Could not start trip.",
-                    )
-                  }
-                >
-                  Start Trip
-                </Button>
-              )}
-              {trip.status === "ONGOING" && (
-                <Button
-                  size="sm"
-                  disabled={actionLoading}
-                  onClick={() =>
-                    void runAction(
-                      () => bffCompleteTrip(trip.id),
-                      "Could not complete trip.",
-                    )
-                  }
-                >
-                  Complete Trip
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={actionLoading}
-                onClick={() =>
-                  void runAction(
-                    () => bffCancelTrip(trip.id),
-                    "Could not cancel trip.",
-                  )
-                }
-              >
-                Cancel Trip
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {isCaptain && !isTerminal && (
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-destructive/60">
+            Danger Zone
+          </h2>
+          {cancelError && (
+            <p className="mb-2 text-sm text-destructive">{cancelError}</p>
+          )}
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={cancelLoading}
+            onClick={() => void handleCancel()}
+          >
+            {cancelLoading ? "Cancelling…" : "Cancel Trip"}
+          </Button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            This will cancel the trip for all members.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
