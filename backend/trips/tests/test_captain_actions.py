@@ -89,6 +89,16 @@ class CompleteTripTests(APITestCase):
         res = self.client.post(f"/api/trips/{self.trip.id}/complete", **_auth(other))
         self.assertEqual(res.status_code, 403)
 
+    def test_complete_cancels_pending_invitations(self):
+        # Regression: completing a trip must close out stale PENDING invitations
+        # so they cannot be accepted into a terminal trip.
+        invitee = create_completed_user("inv@example.com", "invitee", "INV001")
+        inv = _make_invitation(self.trip, self.captain, invitee)
+        res = self.client.post(f"/api/trips/{self.trip.id}/complete", **_auth(self.captain))
+        self.assertEqual(res.status_code, 200)
+        inv.refresh_from_db()
+        self.assertEqual(inv.status, InvitationStatus.CANCELLED)
+
 
 class CancelTripTests(APITestCase):
 

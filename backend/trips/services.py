@@ -215,6 +215,9 @@ def accept_invitation(invitation_id, actor) -> TripMember:
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationError("This invitation is no longer pending.")
 
+        if invitation.trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+            raise InvitationError("This trip is no longer open to new members.")
+
         invitation.status = InvitationStatus.ACCEPTED
         invitation.responded_at = timezone.now()
         invitation.save(update_fields=["status", "responded_at"])
@@ -306,7 +309,10 @@ def start_trip(trip_id, actor) -> Trip:
 
 
 def complete_trip(trip_id, actor) -> Trip:
-    """Transition ONGOING → COMPLETED. Captain only."""
+    """Transition ONGOING → COMPLETED. Captain only.
+    Auto-cancels any remaining PENDING invitations so a terminal trip
+    cannot acquire new members through a stale invite.
+    """
     with transaction.atomic():
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
@@ -320,6 +326,10 @@ def complete_trip(trip_id, actor) -> Trip:
 
         trip.status = TripStatus.COMPLETED
         trip.save(update_fields=["status", "updated_at"])
+
+        TripInvitation.objects.filter(trip=trip, status=InvitationStatus.PENDING).update(
+            status=InvitationStatus.CANCELLED
+        )
 
     return trip
 

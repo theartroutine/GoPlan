@@ -76,6 +76,25 @@ class AcceptInvitationTests(APITestCase):
         res = self.client.post(_accept_url(self.invitation.id), **_auth(self.invitee))
         self.assertEqual(res.status_code, 409)
 
+    def test_cannot_accept_into_completed_trip_409(self):
+        # Regression: a PENDING invitation must not grant membership to a terminal trip.
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save()
+        res = self.client.post(_accept_url(self.invitation.id), **_auth(self.invitee))
+        self.assertEqual(res.status_code, 409)
+        self.assertFalse(
+            TripMember.objects.filter(trip=self.trip, user=self.invitee).exists()
+        )
+
+    def test_cannot_accept_into_cancelled_trip_409(self):
+        self.trip.status = TripStatus.CANCELLED
+        self.trip.save()
+        res = self.client.post(_accept_url(self.invitation.id), **_auth(self.invitee))
+        self.assertEqual(res.status_code, 409)
+        self.assertFalse(
+            TripMember.objects.filter(trip=self.trip, user=self.invitee).exists()
+        )
+
     def test_trip_appears_in_invitee_list_after_accept(self):
         self.client.post(_accept_url(self.invitation.id), **_auth(self.invitee))
         list_res = self.client.get("/api/trips", **_auth(self.invitee))
