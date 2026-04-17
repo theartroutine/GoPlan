@@ -1,3 +1,5 @@
+import { OverviewTab } from "@/features/trips/presentation/overview-tab";
+
 export default function OverviewPage() {
-  return <div className="py-4 text-sm text-muted-foreground">Loading overview…</div>;
+  return <OverviewTab />;
 }
