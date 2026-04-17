@@ -7,16 +7,11 @@ import { Button } from "@/shared/ui/button";
 
 type Props = {
   notification: Notification;
-  onMarkRead: (id: string) => void;
   onAccept: (invitationId: string, notificationId: string) => Promise<void>;
   onDecline: (invitationId: string, notificationId: string) => Promise<void>;
 };
 
-// onMarkRead is kept in Props for shared use by plain-text notifications in NotificationItem.
-// TripInvitationNotification does not call it — the dropdown's accept/decline handlers already
-// call markRead, so invoking it here would result in a duplicate HTTP request.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function TripInvitationNotification({ notification, onMarkRead: _onMarkRead, onAccept, onDecline }: Props) {
+export function TripInvitationNotification({ notification, onAccept, onDecline }: Props) {
   const [loading, setLoading] = useState<"accept" | "decline" | null>(null);
   const [responded, setResponded] = useState<"accepted" | "declined" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);

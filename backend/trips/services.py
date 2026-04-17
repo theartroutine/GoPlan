@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.utils import timezone
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from friends.models import Friendship
 from notifications.models import NotificationType
@@ -68,9 +69,6 @@ def create_trip(
 
 def get_user_trips(user):
     """Return all trips where user has an ACTIVE membership."""
-    from django.db.models import Prefetch
-    from trips.models import TripMember
-
     active_memberships = TripMember.objects.filter(status=MemberStatus.ACTIVE)
     return (
         Trip.objects.filter(memberships__user=user, memberships__status=MemberStatus.ACTIVE)
@@ -82,7 +80,6 @@ def get_user_trips(user):
 
 def get_trip_detail(trip_id, requesting_user):
     """Return (trip, my_membership) or raise 404/403."""
-    from rest_framework.exceptions import NotFound, PermissionDenied
     try:
         trip = Trip.objects.get(pk=trip_id)
     except Trip.DoesNotExist:
@@ -206,8 +203,6 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
 
 def accept_invitation(invitation_id, actor) -> TripMember:
     """Accept a PENDING invitation. Creates ACTIVE TripMember for invitee."""
-    from rest_framework.exceptions import NotFound, PermissionDenied
-
     with transaction.atomic():
         try:
             invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
@@ -247,8 +242,6 @@ def accept_invitation(invitation_id, actor) -> TripMember:
 
 def decline_invitation(invitation_id, actor) -> TripInvitation:
     """Decline a PENDING invitation."""
-    from rest_framework.exceptions import NotFound, PermissionDenied
-
     with transaction.atomic():
         try:
             invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
@@ -283,7 +276,6 @@ def decline_invitation(invitation_id, actor) -> TripInvitation:
 
 def _assert_captain(trip, actor):
     """Raise PermissionDenied if actor is not ACTIVE captain of trip."""
-    from rest_framework.exceptions import PermissionDenied
     if not TripMember.objects.filter(trip=trip, user=actor, role=TripRole.CAPTAIN, status=MemberStatus.ACTIVE).exists():
         raise PermissionDenied("Only the trip captain can perform this action.")
 
@@ -296,8 +288,6 @@ def _assert_not_terminal(trip):
 
 def start_trip(trip_id, actor) -> Trip:
     """Transition PLANNING → ONGOING. Captain only."""
-    from rest_framework.exceptions import NotFound
-
     with transaction.atomic():
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
@@ -317,8 +307,6 @@ def start_trip(trip_id, actor) -> Trip:
 
 def complete_trip(trip_id, actor) -> Trip:
     """Transition ONGOING → COMPLETED. Captain only."""
-    from rest_framework.exceptions import NotFound
-
     with transaction.atomic():
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
@@ -341,8 +329,6 @@ def cancel_trip(trip_id, actor) -> Trip:
     Auto-cancels all PENDING invitations.
     Sends TRIP_CANCELLED notification to all ACTIVE members (excluding captain).
     """
-    from rest_framework.exceptions import NotFound
-
     with transaction.atomic():
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
@@ -386,8 +372,6 @@ def remove_member(trip_id, target_user_id, actor) -> TripMember:
     """Captain removes an ACTIVE member. Sets status to REMOVED, records left_at.
     Sends TRIP_MEMBER_REMOVED notification to the removed user.
     """
-    from rest_framework.exceptions import NotFound, ValidationError
-
     with transaction.atomic():
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
@@ -433,8 +417,6 @@ def leave_trip(trip_id, actor) -> TripMember:
     Only allowed when trip is PLANNING or ONGOING.
     Actor must be an ACTIVE member.
     """
-    from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
-
     with transaction.atomic():
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)

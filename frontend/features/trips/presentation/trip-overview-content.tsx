@@ -98,58 +98,28 @@ export function TripOverviewContent({ tripId }: { tripId: string }) {
   const isCaptain = my_membership.role === "CAPTAIN";
   const isTerminal = trip.status === "COMPLETED" || trip.status === "CANCELLED";
 
-  async function handleStartTrip() {
+  async function runActionWithRefetch(action: () => Promise<unknown>, errorMessage: string) {
     setActionLoading(true);
     setActionError(null);
     try {
-      await bffStartTrip(trip.id);
+      await action();
       const freshData = await bffGetTrip(tripId);
       setData(freshData);
     } catch {
-      setActionError("Could not start trip. Please try again.");
+      setActionError(errorMessage);
     } finally {
       setActionLoading(false);
     }
   }
-  async function handleCompleteTrip() {
-    setActionLoading(true);
-    setActionError(null);
-    try {
-      await bffCompleteTrip(trip.id);
-      const freshData = await bffGetTrip(tripId);
-      setData(freshData);
-    } catch {
-      setActionError("Could not complete trip. Please try again.");
-    } finally {
-      setActionLoading(false);
-    }
-  }
-  async function handleCancelTrip() {
-    setActionLoading(true);
-    setActionError(null);
-    try {
-      await bffCancelTrip(trip.id);
-      const freshData = await bffGetTrip(tripId);
-      setData(freshData);
-    } catch {
-      setActionError("Could not cancel trip. Please try again.");
-    } finally {
-      setActionLoading(false);
-    }
-  }
-  async function handleRemoveMember(userId: string) {
-    setActionLoading(true);
-    setActionError(null);
-    try {
-      await bffRemoveMember(trip.id, userId);
-      const freshData = await bffGetTrip(tripId);
-      setData(freshData);
-    } catch {
-      setActionError("Could not remove member. Please try again.");
-    } finally {
-      setActionLoading(false);
-    }
-  }
+
+  const handleStartTrip = () =>
+    runActionWithRefetch(() => bffStartTrip(trip.id), "Could not start trip. Please try again.");
+  const handleCompleteTrip = () =>
+    runActionWithRefetch(() => bffCompleteTrip(trip.id), "Could not complete trip. Please try again.");
+  const handleCancelTrip = () =>
+    runActionWithRefetch(() => bffCancelTrip(trip.id), "Could not cancel trip. Please try again.");
+  const handleRemoveMember = (userId: string) =>
+    runActionWithRefetch(() => bffRemoveMember(trip.id, userId), "Could not remove member. Please try again.");
   async function handleLeaveTrip() {
     setActionLoading(true);
     setActionError(null);

@@ -55,7 +55,6 @@ export function NotificationItem({
     return (
       <TripInvitationNotification
         notification={notification}
-        onMarkRead={onMarkRead}
         onAccept={onAcceptInvitation ?? (async () => {})}
         onDecline={onDeclineInvitation ?? (async () => {})}
       />
