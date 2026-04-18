@@ -57,6 +57,13 @@ class LeaveTripTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.data["error_code"], "CAPTAIN_CANNOT_LEAVE")
 
+    def test_captain_leave_cancelled_trip_gets_terminal_409(self):
+        self.trip.status = TripStatus.CANCELLED
+        self.trip.save()
+        res = self.client.post(_leave_url(self.trip.id), **_auth(self.captain))
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "TRIP_TERMINAL")
+
     def test_leave_completed_trip_409(self):
         self.trip.status = TripStatus.COMPLETED
         self.trip.save()
@@ -78,6 +85,6 @@ class LeaveTripTests(APITestCase):
 
     def test_trip_disappears_from_dashboard_after_leave(self):
         self.client.post(_leave_url(self.trip.id), **_auth(self.member))
-        list_res = self.client.get("/api/trips", **_auth(self.member))
+        list_res = self.client.get("/api/trips/", **_auth(self.member))
         ids = [t["id"] for t in list_res.data["results"]]
         self.assertNotIn(str(self.trip.id), ids)

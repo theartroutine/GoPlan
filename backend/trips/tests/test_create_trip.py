@@ -6,7 +6,7 @@ from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
-CREATE_URL = "/api/trips"
+CREATE_URL = "/api/trips/"
 
 
 def _auth(user):

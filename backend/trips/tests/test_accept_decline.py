@@ -97,7 +97,7 @@ class AcceptInvitationTests(APITestCase):
 
     def test_trip_appears_in_invitee_list_after_accept(self):
         self.client.post(_accept_url(self.invitation.id), **_auth(self.invitee))
-        list_res = self.client.get("/api/trips", **_auth(self.invitee))
+        list_res = self.client.get("/api/trips/", **_auth(self.invitee))
         ids = [t["id"] for t in list_res.data["results"]]
         self.assertIn(str(self.trip.id), ids)
 

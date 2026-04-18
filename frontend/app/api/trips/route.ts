@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.toString();
 
   const result = await protectedUpstreamCall({
-    path: "/api/trips",
+    path: "/api/trips/",
     method: "GET",
     authorization,
     query: query || undefined,
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   const body = await request.text();
 
   const result = await protectedUpstreamCall({
-    path: "/api/trips",
+    path: "/api/trips/",
     method: "POST",
     authorization,
     body,
