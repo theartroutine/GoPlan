@@ -242,7 +242,7 @@ DELETE /trips/{id}/members/{user_id}       Captain removes member (non-terminal)
 # Invitations — trip-scoped (Captain)
 POST   /trips/{id}/invitations             Invite friends; body: { invitee_ids: [uuid] } → 201
 GET    /trips/{id}/invitations             List PENDING invitations (Captain only) → 200
-GET    /trips/{id}/invitable-friends       Friends who can be invited (not ACTIVE, not PENDING) → 200
+GET    /trips/{id}/invitations/invitable-friends       Friends who can be invited (not ACTIVE, not PENDING) → 200
 
 # Invitations — user-scoped (invitee responds)
 POST   /invitations/{inv_id}/accept        Accept invitation → 200

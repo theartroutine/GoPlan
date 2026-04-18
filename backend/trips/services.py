@@ -441,16 +441,16 @@ def leave_trip(trip_id, actor) -> TripMember:
         except TripMember.DoesNotExist:
             raise PermissionDenied("You are not an active member of this trip.")
 
+        # Terminal state guard — checked first for consistent ordering with other services
+        if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+            raise StatusTransitionError("Cannot leave a trip that is completed or cancelled.")
+
         # Captain cannot leave
         if membership.role == TripRole.CAPTAIN:
             raise ValidationError(
                 {"detail": "Captain cannot leave the trip. Transfer captaincy first (not available in Phase 1).",
                  "error_code": "CAPTAIN_CANNOT_LEAVE"}
             )
-
-        # Terminal state guard
-        if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
-            raise StatusTransitionError("Cannot leave a trip that is completed or cancelled.")
 
         membership.status = MemberStatus.LEFT
         membership.left_at = timezone.now()
