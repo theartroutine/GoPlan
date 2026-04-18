@@ -106,6 +106,11 @@ class SendInvitationsSerializer(serializers.Serializer):
         child=serializers.UUIDField(), min_length=1, max_length=20
     )
 
+    def validate_invitee_ids(self, value):
+        if len(value) != len(set(str(v) for v in value)):
+            raise serializers.ValidationError("Duplicate user IDs are not allowed.")
+        return value
+
 
 class TripInvitationSerializer(serializers.ModelSerializer):
     invitee = serializers.SerializerMethodField()

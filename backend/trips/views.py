@@ -5,7 +5,7 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from trips.models import MemberStatus, TripRole
+from trips.models import MemberStatus, TripRole, TripStatus
 from trips.permissions import IsProfileCompleted
 from trips.serializers import (
     CreateTripSerializer,
@@ -97,6 +97,11 @@ class TripDetailUpdateAPIView(APIView):
             return Response(
                 {"detail": "Only the captain can edit trip info.", "error_code": "NOT_CAPTAIN"},
                 status=status.HTTP_403_FORBIDDEN,
+            )
+        if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+            return Response(
+                {"detail": "Cannot edit a terminal trip.", "error_code": "TRIP_TERMINAL"},
+                status=status.HTTP_409_CONFLICT,
             )
         serializer = UpdateTripSerializer(data=request.data, context={"trip": trip})
         serializer.is_valid(raise_exception=True)

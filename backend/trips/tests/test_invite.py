@@ -128,6 +128,16 @@ class SendInvitationTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("error_code", res.data)
 
+    def test_duplicate_invitee_ids_400(self):
+        res = self.client.post(
+            _invite_url(self.trip.id),
+            {"invitee_ids": [str(self.friend1.id), str(self.friend1.id)]},
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertNotIn("One or more users not found", str(res.data))
+
 
 class InvitableFriendsTests(APITestCase):
 
