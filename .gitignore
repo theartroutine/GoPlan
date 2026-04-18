@@ -30,5 +30,5 @@ report/
 # Git worktrees
 .worktrees/
 
-# Superpowers runtime files only — keep docs/superpowers/specs/ trackable
-docs/superpowers/
+# Superpowers plan output — keep docs/superpowers/specs/ trackable
+docs/superpowers/plans/
