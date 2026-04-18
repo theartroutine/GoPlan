@@ -6,26 +6,35 @@ import { useState } from "react";
 import type { CreateTripPayload } from "@/features/trips/domain/types";
 import { bffCreateTrip } from "@/features/trips/infrastructure/trips-api";
 import { Button } from "@/shared/ui/button";
+import { DatePicker } from "@/shared/ui/date-picker";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Textarea } from "@/shared/ui/textarea";
 
 export function CreateTripForm() {
   const router = useRouter();
+  const [startDate, setStartDate] = useState<string | undefined>();
+  const [endDate, setEndDate] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    if (!startDate || !endDate) {
+      setError("Please select both start and end dates.");
+      return;
+    }
+
     setLoading(true);
 
     const form = new FormData(e.currentTarget);
     const payload: CreateTripPayload = {
       name:        (form.get("name") as string | null) ?? "",
       destination: (form.get("destination") as string | null) ?? "",
-      start_date:  (form.get("start_date") as string | null) ?? "",
-      end_date:    (form.get("end_date") as string | null) ?? "",
+      start_date:  startDate,
+      end_date:    endDate,
       description: (form.get("description") as string | null) || undefined,
     };
 
@@ -38,6 +47,8 @@ export function CreateTripForm() {
       setLoading(false);
     }
   }
+
+  const endMinDate = startDate ? new Date(startDate + "T00:00:00") : undefined;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -52,11 +63,22 @@ export function CreateTripForm() {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="start_date">Start date *</Label>
-          <Input id="start_date" name="start_date" type="date" required />
+          <DatePicker
+            id="start_date"
+            value={startDate}
+            onChange={setStartDate}
+            placeholder="Pick start date"
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="end_date">End date *</Label>
-          <Input id="end_date" name="end_date" type="date" required />
+          <DatePicker
+            id="end_date"
+            value={endDate}
+            onChange={setEndDate}
+            placeholder="Pick end date"
+            minDate={endMinDate}
+          />
         </div>
       </div>
       <div className="space-y-1.5">

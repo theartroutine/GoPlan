@@ -6,12 +6,15 @@ import { useState } from "react";
 import type { TripDetail, UpdateTripPayload } from "@/features/trips/domain/types";
 import { bffUpdateTrip } from "@/features/trips/infrastructure/trips-api";
 import { Button } from "@/shared/ui/button";
+import { DatePicker } from "@/shared/ui/date-picker";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Textarea } from "@/shared/ui/textarea";
 
 export function EditTripForm({ trip }: { trip: TripDetail }) {
   const router = useRouter();
+  const [startDate, setStartDate] = useState<string>(trip.start_date);
+  const [endDate, setEndDate] = useState<string>(trip.end_date);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -24,8 +27,8 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
     const payload: UpdateTripPayload = {
       name: (form.get("name") as string) || undefined,
       destination: (form.get("destination") as string) || undefined,
-      start_date: (form.get("start_date") as string) || undefined,
-      end_date: (form.get("end_date") as string) || undefined,
+      start_date: startDate || undefined,
+      end_date: endDate || undefined,
       description: (form.get("description") as string) || undefined,
     };
 
@@ -38,6 +41,8 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
       setLoading(false);
     }
   }
+
+  const endMinDate = startDate ? new Date(startDate + "T00:00:00") : undefined;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -52,22 +57,21 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="start_date">Start date *</Label>
-          <Input
+          <DatePicker
             id="start_date"
-            name="start_date"
-            type="date"
-            defaultValue={trip.start_date}
-            required
+            value={startDate}
+            onChange={(d) => setStartDate(d ?? "")}
+            placeholder="Pick start date"
           />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="end_date">End date *</Label>
-          <Input
+          <DatePicker
             id="end_date"
-            name="end_date"
-            type="date"
-            defaultValue={trip.end_date}
-            required
+            value={endDate}
+            onChange={(d) => setEndDate(d ?? "")}
+            placeholder="Pick end date"
+            minDate={endMinDate}
           />
         </div>
       </div>
