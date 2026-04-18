@@ -23,3 +23,12 @@ next-env.d.ts
 
 # Reports
 report/
+
+# Superpowers brainstorm sessions
+.superpowers/
+
+# Git worktrees
+.worktrees/
+
+# Superpowers plan output — keep docs/superpowers/specs/ trackable
+docs/superpowers/plans/

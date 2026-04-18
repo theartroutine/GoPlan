@@ -21,6 +21,9 @@ export function TopNavbar() {
   const pathname = usePathname();
   const { openMobile } = useSidebar();
 
+  const isTripPage =
+    pathname.startsWith("/trips/") && pathname.split("/").length > 2;
+
   return (
     <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-sm lg:px-6">
       {/* Hamburger — mobile only */}
@@ -33,9 +36,11 @@ export function TopNavbar() {
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="flex-1 min-w-0">
+      <div className="flex min-w-0 flex-1 items-center">
         {pathname === "/" ? (
           <DashboardNavbar />
+        ) : isTripPage ? (
+          <div id="trip-nav-portal" className="flex h-full w-full items-center" />
         ) : (
           <h1 className="text-sm font-semibold">
             {PAGE_TITLES[pathname] ?? ""}
@@ -43,7 +48,7 @@ export function TopNavbar() {
         )}
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex shrink-0 items-center gap-2">
         <NotificationBell />
       </div>
     </header>

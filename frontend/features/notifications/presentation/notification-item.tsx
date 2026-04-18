@@ -1,16 +1,40 @@
 "use client";
 
-import type { Notification } from "@/features/notifications/domain/types";
+import type {
+  Notification,
+  TripCancelledPayload,
+  TripInvitationRespondedPayload,
+  TripMemberRemovedPayload,
+} from "@/features/notifications/domain/types";
+import { TripInvitationNotification } from "@/features/notifications/presentation/trip-invitation-notification";
 import { formatRelativeTime } from "@/shared/utils/relative-time";
 
-function renderNotificationText(notification: Notification): string {
+function renderSimpleText(notification: Notification): string {
   const actorName = notification.actor?.display_name ?? "Someone";
-
   switch (notification.notification_type) {
     case "FRIEND_REQUEST":
       return `${actorName} sent you a friend request`;
     case "FRIEND_ACCEPTED":
       return `${actorName} accepted your friend request`;
+    case "TRIP_INVITATION_ACCEPTED": {
+      const name = (notification.payload as TripInvitationRespondedPayload).accepted_by_name ?? actorName;
+      return `${name} joined your trip`;
+    }
+    case "TRIP_INVITATION_DECLINED": {
+      const name = (notification.payload as TripInvitationRespondedPayload).declined_by_name ?? actorName;
+      return `${name} declined your trip invitation`;
+    }
+    case "TRIP_CANCELLED": {
+      const tripName = (notification.payload as TripCancelledPayload).trip_name ?? "A trip";
+      return `${tripName} has been cancelled`;
+    }
+    case "TRIP_MEMBER_REMOVED": {
+      const tripName = (notification.payload as TripMemberRemovedPayload).trip_name ?? "A trip";
+      return `You were removed from ${tripName}`;
+    }
+    case "TRIP_INVITATION":
+      // Handled by TripInvitationNotification before this function is called; never reached
+      return "";
     default: {
       const _exhaustive: never = notification.notification_type;
       void _exhaustive;
@@ -22,9 +46,26 @@ function renderNotificationText(notification: Notification): string {
 type NotificationItemProps = {
   notification: Notification;
   onMarkRead: (id: string) => void | Promise<void>;
+  onAcceptInvitation?: (invitationId: string, notificationId: string) => Promise<void>;
+  onDeclineInvitation?: (invitationId: string, notificationId: string) => Promise<void>;
 };
 
-export function NotificationItem({ notification, onMarkRead }: NotificationItemProps) {
+export function NotificationItem({
+  notification,
+  onMarkRead,
+  onAcceptInvitation,
+  onDeclineInvitation,
+}: NotificationItemProps) {
+  if (notification.notification_type === "TRIP_INVITATION") {
+    return (
+      <TripInvitationNotification
+        notification={notification}
+        onAccept={onAcceptInvitation ?? (async () => {})}
+        onDecline={onDeclineInvitation ?? (async () => {})}
+      />
+    );
+  }
+
   return (
     <button
       type="button"
@@ -41,7 +82,7 @@ export function NotificationItem({ notification, onMarkRead }: NotificationItemP
         <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
       )}
       <div className={`min-w-0 flex-1 ${notification.is_read ? "pl-5" : ""}`}>
-        <p className="line-clamp-2 text-sm leading-snug">{renderNotificationText(notification)}</p>
+        <p className="line-clamp-2 text-sm leading-snug">{renderSimpleText(notification)}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {formatRelativeTime(notification.created_at)}
         </p>

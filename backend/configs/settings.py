@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'realtime',
     'notifications',
     'friends',
+    'trips',
 
 ]
 

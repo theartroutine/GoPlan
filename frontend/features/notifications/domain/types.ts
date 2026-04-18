@@ -4,9 +4,44 @@ export type NotificationActor = {
   identify_tag: string | null;
 };
 
+export type TripInvitationPayload = {
+  trip_id: string;
+  trip_name: string;
+  destination: string;
+  start_date: string;
+  end_date: string;
+  invitation_id: string;
+};
+
+export type TripCancelledPayload = {
+  trip_id: string;
+  trip_name: string;
+};
+
+export type TripMemberRemovedPayload = {
+  trip_id: string;
+  trip_name: string;
+};
+
+export type TripInvitationRespondedPayload = {
+  trip_id: string;
+  trip_name: string;
+  accepted_by_name?: string;
+  declined_by_name?: string;
+};
+
+export type NotificationType =
+  | "FRIEND_REQUEST"
+  | "FRIEND_ACCEPTED"
+  | "TRIP_INVITATION"
+  | "TRIP_INVITATION_ACCEPTED"
+  | "TRIP_INVITATION_DECLINED"
+  | "TRIP_CANCELLED"
+  | "TRIP_MEMBER_REMOVED";
+
 export type Notification = {
   id: string;
-  notification_type: "FRIEND_REQUEST" | "FRIEND_ACCEPTED";
+  notification_type: NotificationType;
   actor: NotificationActor | null;
   payload: Record<string, unknown>;
   is_read: boolean;
