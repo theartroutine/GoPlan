@@ -1,6 +1,11 @@
 "use client";
 
-import type { Notification } from "@/features/notifications/domain/types";
+import type {
+  Notification,
+  TripCancelledPayload,
+  TripInvitationRespondedPayload,
+  TripMemberRemovedPayload,
+} from "@/features/notifications/domain/types";
 import { TripInvitationNotification } from "@/features/notifications/presentation/trip-invitation-notification";
 import { formatRelativeTime } from "@/shared/utils/relative-time";
 
@@ -12,19 +17,19 @@ function renderSimpleText(notification: Notification): string {
     case "FRIEND_ACCEPTED":
       return `${actorName} accepted your friend request`;
     case "TRIP_INVITATION_ACCEPTED": {
-      const name = (notification.payload as { accepted_by_name?: string }).accepted_by_name ?? actorName;
+      const name = (notification.payload as TripInvitationRespondedPayload).accepted_by_name ?? actorName;
       return `${name} joined your trip`;
     }
     case "TRIP_INVITATION_DECLINED": {
-      const name = (notification.payload as { declined_by_name?: string }).declined_by_name ?? actorName;
+      const name = (notification.payload as TripInvitationRespondedPayload).declined_by_name ?? actorName;
       return `${name} declined your trip invitation`;
     }
     case "TRIP_CANCELLED": {
-      const tripName = (notification.payload as { trip_name?: string }).trip_name ?? "A trip";
+      const tripName = (notification.payload as TripCancelledPayload).trip_name ?? "A trip";
       return `${tripName} has been cancelled`;
     }
     case "TRIP_MEMBER_REMOVED": {
-      const tripName = (notification.payload as { trip_name?: string }).trip_name ?? "A trip";
+      const tripName = (notification.payload as TripMemberRemovedPayload).trip_name ?? "A trip";
       return `You were removed from ${tripName}`;
     }
     case "TRIP_INVITATION":
