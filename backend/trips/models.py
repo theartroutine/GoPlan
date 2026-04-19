@@ -43,6 +43,13 @@ class Trip(models.Model):
     start_date      = models.DateField()
     end_date        = models.DateField()
     description     = models.TextField(blank=True, default="")
+    # -------- Place / Cover Fields --------
+    destination_place_id     = models.CharField(max_length=255, blank=True, default="")
+    destination_lat          = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    destination_lng          = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    destination_country_code = models.CharField(max_length=2, blank=True, default="")
+    cover_image_url          = models.CharField(max_length=500, blank=True, default="")
+    # -------- End Place Fields --------
     currency_code   = models.CharField(max_length=3, default="VND")
     budget_estimate = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     status          = models.CharField(
