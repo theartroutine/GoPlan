@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'notifications',
     'friends',
     'trips',
+    'media',
 
 ]
 
@@ -103,6 +104,10 @@ USE_TZ = True
 # -------- Static Files --------
 STATIC_URL = 'static/'
 
+# -------- Media Files --------
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media_files'
+
 # -------- Cross-Origin Settings --------
 CORS_ALLOWED_ORIGINS = os.environ['CORS_ALLOWED_ORIGINS'].split(',')
 CSRF_TRUSTED_ORIGINS = os.environ['CSRF_TRUSTED_ORIGINS'].split(',')
@@ -159,6 +164,7 @@ REST_FRAMEWORK = {
         'friends_list': '120/hour',
         'friends_remove': '30/hour',
         'friends_search': '60/hour',
+        'media_upload': '30/hour',
     },
 }
 
