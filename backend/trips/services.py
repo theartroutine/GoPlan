@@ -39,6 +39,11 @@ def create_trip(
     captain,
     name: str,
     destination: str,
+    destination_place_id: str = "",
+    destination_lat=None,
+    destination_lng=None,
+    destination_country_code: str = "",
+    cover_image_url: str = "",
     start_date,
     end_date,
     description: str = "",
@@ -50,6 +55,11 @@ def create_trip(
         trip = Trip.objects.create(
             name=name,
             destination=destination,
+            destination_place_id=destination_place_id,
+            destination_lat=destination_lat,
+            destination_lng=destination_lng,
+            destination_country_code=destination_country_code,
+            cover_image_url=cover_image_url,
             start_date=start_date,
             end_date=end_date,
             description=description,
@@ -95,18 +105,27 @@ def get_trip_detail(trip_id, requesting_user):
 _UNSET = object()
 
 
-def update_trip(trip, *, name=_UNSET, destination=_UNSET, start_date=_UNSET,
-                end_date=_UNSET, description=_UNSET, currency_code=_UNSET, budget_estimate=_UNSET):
+def update_trip(trip, *, name=_UNSET, destination=_UNSET,
+                destination_place_id=_UNSET, destination_lat=_UNSET,
+                destination_lng=_UNSET, destination_country_code=_UNSET,
+                cover_image_url=_UNSET,
+                start_date=_UNSET, end_date=_UNSET,
+                description=_UNSET, currency_code=_UNSET, budget_estimate=_UNSET):
     """Partially update trip fields. Only updates fields explicitly passed.
     Sentinel _UNSET distinguishes "not provided" from None (which clears a nullable field).
     """
-    if name is not _UNSET:            trip.name = name
-    if destination is not _UNSET:     trip.destination = destination
-    if start_date is not _UNSET:      trip.start_date = start_date
-    if end_date is not _UNSET:        trip.end_date = end_date
-    if description is not _UNSET:     trip.description = description
-    if currency_code is not _UNSET:   trip.currency_code = currency_code
-    if budget_estimate is not _UNSET: trip.budget_estimate = budget_estimate
+    if name is not _UNSET:                       trip.name = name
+    if destination is not _UNSET:                trip.destination = destination
+    if destination_place_id is not _UNSET:       trip.destination_place_id = destination_place_id
+    if destination_lat is not _UNSET:            trip.destination_lat = destination_lat
+    if destination_lng is not _UNSET:            trip.destination_lng = destination_lng
+    if destination_country_code is not _UNSET:   trip.destination_country_code = destination_country_code
+    if cover_image_url is not _UNSET:            trip.cover_image_url = cover_image_url
+    if start_date is not _UNSET:                 trip.start_date = start_date
+    if end_date is not _UNSET:                   trip.end_date = end_date
+    if description is not _UNSET:                trip.description = description
+    if currency_code is not _UNSET:              trip.currency_code = currency_code
+    if budget_estimate is not _UNSET:            trip.budget_estimate = budget_estimate
     trip.save()
     return trip
 

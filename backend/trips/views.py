@@ -63,6 +63,11 @@ class TripListCreateAPIView(APIView):
             captain=request.user,
             name=d["name"],
             destination=d["destination"],
+            destination_place_id=d.get("destination_place_id", ""),
+            destination_lat=d.get("destination_lat"),
+            destination_lng=d.get("destination_lng"),
+            destination_country_code=d.get("destination_country_code", ""),
+            cover_image_url=d.get("cover_image_url", ""),
             start_date=d["start_date"],
             end_date=d["end_date"],
             description=d.get("description", ""),
@@ -100,14 +105,17 @@ class TripDetailUpdateAPIView(APIView):
             )
         if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
             return Response(
-                {"detail": "Cannot edit a terminal trip.", "error_code": "TRIP_TERMINAL"},
+                {"detail": "Cannot edit a trip that is completed or cancelled.", "error_code": "TRIP_TERMINAL"},
                 status=status.HTTP_409_CONFLICT,
             )
         serializer = UpdateTripSerializer(data=request.data, context={"trip": trip})
         serializer.is_valid(raise_exception=True)
         d = serializer.validated_data
-        updated = update_trip(trip, **d)
-        return Response({"trip": TripDetailSerializer(updated).data}, status=status.HTTP_200_OK)
+        updated = update_trip(
+            trip,
+            **{k: v for k, v in d.items()},
+        )
+        return Response({"trip": TripDetailSerializer(updated).data})
 
 
 class TripInvitationsAPIView(APIView):

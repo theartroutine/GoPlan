@@ -71,3 +71,37 @@ class CreateTripTests(APITestCase):
     def test_create_trip_missing_required_fields_400(self):
         response = self.client.post(CREATE_URL, {"name": "No Dest"}, format="json", **_auth(self.user))
         self.assertEqual(response.status_code, 400)
+
+    def test_create_trip_with_place_fields_201(self):
+        payload = {
+            "name": "Đà Lạt Trip",
+            "destination": "Đà Lạt, Lâm Đồng, Vietnam",
+            "destination_place_id": "ChIJtest123",
+            "destination_lat": "11.940298",
+            "destination_lng": "108.458397",
+            "destination_country_code": "VN",
+            "cover_image_url": "/api/places/photo?ref=places%2FChIJ%2Fphotos%2FABC",
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-05",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip_data = response.data["trip"]
+        self.assertEqual(trip_data["destination_place_id"], "ChIJtest123")
+        self.assertEqual(trip_data["destination_country_code"], "VN")
+        self.assertIsNotNone(trip_data["cover_image_url"])
+
+    def test_create_trip_without_place_fields_still_201(self):
+        """Backward compatibility: creating without place fields must still work."""
+        payload = {
+            "name": "Old Style Trip",
+            "destination": "Hà Nội",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-03",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip_data = response.data["trip"]
+        self.assertEqual(trip_data["destination_place_id"], "")
+        self.assertIsNone(trip_data["destination_lat"])
+        self.assertEqual(trip_data["cover_image_url"], "")

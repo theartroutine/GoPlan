@@ -57,3 +57,21 @@ class UpdateTripTests(APITestCase):
         res = self.client.patch(self._url(), {"name": "New Name"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "TRIP_TERMINAL")
+
+    def test_captain_can_update_place_fields(self):
+        res = self.client.patch(
+            self._url(),
+            {
+                "destination": "Tokyo, Japan",
+                "destination_place_id": "ChIJtokyo456",
+                "destination_lat": "35.689487",
+                "destination_lng": "139.691706",
+                "destination_country_code": "JP",
+                "cover_image_url": "/api/places/photo?ref=places%2FChIJ%2Fphotos%2FXYZ",
+            },
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["trip"]["destination_place_id"], "ChIJtokyo456")
+        self.assertEqual(res.data["trip"]["destination_country_code"], "JP")
