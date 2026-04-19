@@ -5,6 +5,7 @@ export type TripListItem = {
   id: string;
   name: string;
   destination: string;
+  cover_image_url: string;
   start_date: string;
   end_date: string;
   status: TripStatus;
@@ -24,6 +25,11 @@ export type TripListResponse = {
 export type CreateTripPayload = {
   name: string;
   destination: string;
+  destination_place_id?: string;
+  destination_lat?: number | null;
+  destination_lng?: number | null;
+  destination_country_code?: string;
+  cover_image_url?: string;
   start_date: string;   // "YYYY-MM-DD"
   end_date: string;     // "YYYY-MM-DD"
   description?: string;
@@ -36,6 +42,11 @@ export type CreateTripResponse = {
     id: string;
     name: string;
     destination: string;
+    destination_place_id: string;
+    destination_lat: string | null;
+    destination_lng: string | null;
+    destination_country_code: string;
+    cover_image_url: string;
     start_date: string;
     end_date: string;
     description: string;
@@ -62,6 +73,11 @@ export type TripDetail = {
   id: string;
   name: string;
   destination: string;
+  destination_place_id: string;
+  destination_lat: string | null;
+  destination_lng: string | null;
+  destination_country_code: string;
+  cover_image_url: string;
   start_date: string;
   end_date: string;
   description: string;
@@ -81,6 +97,11 @@ export type TripDetailResponse = {
 export type UpdateTripPayload = Partial<{
   name: string;
   destination: string;
+  destination_place_id: string;
+  destination_lat: number | null;
+  destination_lng: number | null;
+  destination_country_code: string;
+  cover_image_url: string;
   start_date: string;
   end_date: string;
   description: string;
