@@ -568,6 +568,8 @@ Before running any code, enable the API and add the key to `.env.local`.
           return Response({"url": url}, status=status.HTTP_201_CREATED)
   ```
 
+  > **Note:** Image dimension validation (spec §9.1: ≤ 4000×4000) is deferred. Pillow is not in requirements.txt; adding it is out of scope for this task. The byte-level magic check above is implemented per spec §11.
+
 - [ ] **Step 4: Create media/urls.py**
 
   ```python
