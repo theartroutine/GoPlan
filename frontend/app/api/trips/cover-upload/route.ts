@@ -33,9 +33,14 @@ export async function POST(request: NextRequest) {
     refreshedAccessToken = refreshResult.accessToken;
   }
 
-  // Parse body before the try block so a malformed multipart request
-  // returns 400 (bad request) rather than 503 (service unavailable).
-  const formData = await request.formData();
+  // Parse body before the upstream try block so a malformed or missing
+  // multipart body returns 400 (bad request) rather than 503 (service error).
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ detail: "Invalid request body." }, { status: 400 });
+  }
   const file = formData.get("file");
 
   if (!file || !(file instanceof Blob)) {
