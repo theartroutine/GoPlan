@@ -90,6 +90,10 @@ class CreateTripTests(APITestCase):
         self.assertEqual(trip_data["destination_place_id"], "ChIJtest123")
         self.assertEqual(trip_data["destination_country_code"], "VN")
         self.assertIsNotNone(trip_data["cover_image_url"])
+        trip = Trip.objects.get(pk=trip_data["id"])
+        self.assertEqual(trip.destination_place_id, "ChIJtest123")
+        self.assertEqual(trip.destination_country_code, "VN")
+        self.assertEqual(trip.cover_image_url, "/api/places/photo?ref=places%2FChIJ%2Fphotos%2FABC")
 
     def test_create_trip_without_place_fields_still_201(self):
         """Backward compatibility: creating without place fields must still work."""
@@ -105,3 +109,7 @@ class CreateTripTests(APITestCase):
         self.assertEqual(trip_data["destination_place_id"], "")
         self.assertIsNone(trip_data["destination_lat"])
         self.assertEqual(trip_data["cover_image_url"], "")
+        trip = Trip.objects.get(pk=trip_data["id"])
+        self.assertEqual(trip.destination_place_id, "")
+        self.assertIsNone(trip.destination_lat)
+        self.assertEqual(trip.cover_image_url, "")
