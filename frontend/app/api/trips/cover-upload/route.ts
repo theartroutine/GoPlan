@@ -33,14 +33,16 @@ export async function POST(request: NextRequest) {
     refreshedAccessToken = refreshResult.accessToken;
   }
 
+  // Parse body before the try block so a malformed multipart request
+  // returns 400 (bad request) rather than 503 (service unavailable).
+  const formData = await request.formData();
+  const file = formData.get("file");
+
+  if (!file || !(file instanceof Blob)) {
+    return NextResponse.json({ detail: "No file provided." }, { status: 400 });
+  }
+
   try {
-    const formData = await request.formData();
-    const file = formData.get("file");
-
-    if (!file || !(file instanceof Blob)) {
-      return NextResponse.json({ detail: "No file provided." }, { status: 400 });
-    }
-
     const djangoForm = new FormData();
     djangoForm.append("file", file);
 
