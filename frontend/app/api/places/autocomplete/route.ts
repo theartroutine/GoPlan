@@ -1,4 +1,7 @@
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+
+import { REFRESH_COOKIE_NAME } from "@/app/api/auth/_lib/session-state";
 
 const API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 const PLACES_BASE = "https://places.googleapis.com/v1";
@@ -24,6 +27,11 @@ type GoogleAutocompleteResponse = {
 export async function POST(request: NextRequest) {
   if (!API_KEY) {
     return NextResponse.json({ detail: "Places API not configured." }, { status: 503 });
+  }
+
+  const jar = await cookies();
+  if (!jar.get(REFRESH_COOKIE_NAME)?.value) {
+    return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
   }
 
   const body = (await request.json()) as AutocompleteBody;

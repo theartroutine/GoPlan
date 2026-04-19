@@ -1,4 +1,7 @@
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+
+import { REFRESH_COOKIE_NAME } from "@/app/api/auth/_lib/session-state";
 
 const API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 const PLACES_BASE = "https://places.googleapis.com/v1";
@@ -15,8 +18,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ detail: "Places API not configured." }, { status: 503 });
   }
 
+  const jar = await cookies();
+  if (!jar.get(REFRESH_COOKIE_NAME)?.value) {
+    return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
+  }
+
   const ref = request.nextUrl.searchParams.get("ref");
-  const maxwidth = request.nextUrl.searchParams.get("maxwidth") ?? "800";
+  const rawMaxwidth = request.nextUrl.searchParams.get("maxwidth") ?? "800";
+  const maxwidthNum = Number(rawMaxwidth);
+  if (!Number.isInteger(maxwidthNum) || maxwidthNum < 1 || maxwidthNum > 4800) {
+    return NextResponse.json({ detail: "Invalid maxwidth parameter." }, { status: 400 });
+  }
 
   if (!ref || !PHOTO_REF_PATTERN.test(ref)) {
     return NextResponse.json({ detail: "Invalid photo reference." }, { status: 400 });
@@ -24,7 +36,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // Step 1: get the photoUri without following a redirect (avoids exposing the key in a redirect URL)
-    const mediaUrl = `${PLACES_BASE}/${ref}/media?maxWidthPx=${maxwidth}&skipHttpRedirect=true`;
+    const mediaUrl = `${PLACES_BASE}/${ref}/media?maxWidthPx=${maxwidthNum}&skipHttpRedirect=true`;
     const metaRes = await fetch(mediaUrl, {
       headers: { "X-Goog-Api-Key": API_KEY },
     });
