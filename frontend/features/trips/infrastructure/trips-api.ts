@@ -67,9 +67,10 @@ export async function bffLeaveTrip(tripId: string): Promise<void> {
 export async function bffUploadTripCover(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
-  // bff (axios) detects FormData and removes the default Content-Type: application/json,
-  // letting the browser set the correct multipart/form-data boundary automatically.
+  // Use bff.postForm so axios sets Content-Type: multipart/form-data, overriding
+  // the instance default of application/json. The XHR adapter then removes the
+  // header and lets the browser attach the correct multipart boundary.
   // Using bff also ensures the rolling X-Access-Token response header is captured.
-  const res = await bff.post<{ url: string }>("/api/trips/cover-upload", formData);
+  const res = await bff.postForm<{ url: string }>("/api/trips/cover-upload", formData);
   return res.data.url;
 }
