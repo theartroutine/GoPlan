@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Parse body before the upstream try block so a malformed or missing
-  // multipart body returns 400 (bad request) rather than 503 (service error).
+  // multipart body returns 400 (bad request) rather than 503 (service unavailable).
   let formData: FormData;
   try {
     formData = await request.formData();
