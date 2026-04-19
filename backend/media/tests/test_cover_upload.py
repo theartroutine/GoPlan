@@ -55,16 +55,16 @@ class TripCoverUploadTests(APITestCase):
     def test_upload_wrong_content_type_400(self):
         """A file with non-image bytes must be rejected even if header claims it's JPEG."""
         from django.core.files.uploadedfile import InMemoryUploadedFile
-        import io as _io
 
         # Plain text bytes — definitely not an image
-        fake_bytes = _io.BytesIO(b"<script>alert('xss')</script>")
+        fake_content = b"<script>alert('xss')</script>"
+        fake_bytes = io.BytesIO(fake_content)
         fake_file = InMemoryUploadedFile(
             file=fake_bytes,
             field_name="file",
             name="evil.jpg",
             content_type="image/jpeg",    # lies — claims to be JPEG
-            size=len(b"<script>alert('xss')</script>"),
+            size=len(fake_content),
             charset=None,
         )
         res = self.client.post(
