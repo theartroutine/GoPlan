@@ -1760,6 +1760,8 @@ The `GOOGLE_PLACES_API_KEY` env var must be set in `frontend/.env.local` (done i
 **Files:**
 - Modify: `frontend/features/trips/presentation/create-trip-form.tsx`
 
+> **⚠️ Decision update (2026-04-20):** ~~`coverUrl` = BFF proxy URL stored directly as `cover_image_url` on submit~~ → **Hybrid approach:** on place selection, show BFF proxy URL in `CoverImagePicker` immediately for visual feedback, AND start background upload to permanent `/media/...` storage. Only `permanentCoverUrl` (a stable `/media/...` URL) is sent to server on submit. Submit button disabled + shows "Uploading cover…" while background upload is in progress. `CoverImagePicker`'s `onChange` (user override) sets `permanentCoverUrl` directly since it already calls `bffUploadTripCover` internally.
+
 - [ ] **Step 1: Rewrite create-trip-form.tsx**
 
   Replace the entire file with:
@@ -1925,6 +1927,8 @@ The `GOOGLE_PLACES_API_KEY` env var must be set in `frontend/.env.local` (done i
 
 **Files:**
 - Modify: `frontend/features/trips/presentation/edit-trip-form.tsx`
+
+> **⚠️ Decision update (2026-04-20):** Same hybrid approach as Task 9. Additionally: ~~pre-seed `placeData` from trip fields only if `destination_place_id` exists~~ → `pickerValue` starts as `null` on mount (user hasn't changed destination yet). `coverPreviewUrl` initializes to `trip.cover_image_url` (already a permanent URL from previous save). When user selects new destination: background-upload new photo → `permanentCoverUrl` set → sent on submit. Independent cover override (user uploads via `CoverImagePicker` without changing destination) also sets `permanentCoverUrl` and is sent unconditionally.
 
 - [ ] **Step 1: Rewrite edit-trip-form.tsx**
 
