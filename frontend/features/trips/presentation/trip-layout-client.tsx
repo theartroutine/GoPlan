@@ -47,7 +47,9 @@ function TripShell({ children }: { children: React.ReactNode }) {
       {portalTarget && createPortal(<TripTabBar />, portalTarget)}
       <div>
         <TripHeader trip={data.trip} />
-        <div className="p-4 sm:p-6">{children}</div>
+        <div className="border-t border-border/40 px-4 pb-4 pt-4 sm:px-6 sm:pb-6">
+            {children}
+          </div>
       </div>
     </>
   );

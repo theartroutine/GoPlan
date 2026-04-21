@@ -1,25 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
-import type { TripListItem } from "@/features/trips/domain/types";
-import { bffListTrips } from "@/features/trips/infrastructure/trips-api";
+import { useDashboardTrips } from "@/features/trips/application/use-dashboard-trips";
+import { getDashboardFilterStatus } from "@/features/trips/presentation/dashboard-trip-filters";
 import { TripCard } from "@/features/trips/presentation/trip-card";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
 export function DashboardContent() {
-  const [trips, setTrips] = useState<TripListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const { trips, loading, error, retry } = useDashboardTrips();
 
-  useEffect(() => {
-    bffListTrips()
-      .then((data) => setTrips(data.results))
-      .catch(() => setError("Failed to load trips."))
-      .finally(() => setLoading(false));
-  }, []);
+  const activeStatus = getDashboardFilterStatus(searchParams.get("status"));
+  const visibleTrips = activeStatus
+    ? trips.filter((trip) => trip.status === activeStatus)
+    : trips;
 
   return (
     <div className="p-4 sm:p-6">
@@ -37,7 +34,12 @@ export function DashboardContent() {
       )}
 
       {error && (
-        <p className="text-center text-sm text-destructive">{error}</p>
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <p className="text-sm text-destructive">{error}</p>
+          <Button type="button" variant="outline" size="sm" onClick={retry}>
+            Try again
+          </Button>
+        </div>
       )}
 
       {!loading && !error && trips.length === 0 && (
@@ -49,9 +51,15 @@ export function DashboardContent() {
         </div>
       )}
 
-      {!loading && !error && trips.length > 0 && (
+      {!loading && !error && trips.length > 0 && visibleTrips.length === 0 && (
+        <div className="rounded-xl border border-dashed border-border p-12 text-center">
+          <p className="text-muted-foreground">No trips match this status.</p>
+        </div>
+      )}
+
+      {!loading && !error && visibleTrips.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {trips.map((trip) => (
+          {visibleTrips.map((trip) => (
             <TripCard key={trip.id} trip={trip} />
           ))}
         </div>

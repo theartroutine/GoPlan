@@ -2,13 +2,32 @@
 
 import { Fragment, useState } from "react";
 import Link from "next/link";
+import { CalendarDays, Check, PencilLine, Users, Wallet } from "lucide-react";
 
 import type { TripStatus } from "@/features/trips/domain/types";
 import { bffCancelTrip } from "@/features/trips/infrastructure/trips-api";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/shared/ui/alert-dialog";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+} from "@/shared/ui/avatar";
 import { Button } from "@/shared/ui/button";
+import { cn } from "@/shared/lib/utils";
 
-// -------- Status Progress Bar --------
+// ── Status Journey ────────────────────────────────────────────────────────
 
 const STATUS_STEPS: { key: TripStatus; label: string }[] = [
   { key: "PLANNING", label: "Planning" },
@@ -16,68 +35,85 @@ const STATUS_STEPS: { key: TripStatus; label: string }[] = [
   { key: "COMPLETED", label: "Completed" },
 ];
 
-function StatusProgressBar({ status }: { status: TripStatus }) {
+function StatusJourney({ status }: { status: TripStatus }) {
   if (status === "CANCELLED") {
     return (
-      <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive">
-        Trip Cancelled
-      </div>
+      <p className="flex items-center gap-2 text-sm font-medium text-destructive">
+        <span className="size-2 rounded-full bg-destructive/80" />
+        This trip has been cancelled
+      </p>
     );
   }
 
   const currentIdx = STATUS_STEPS.findIndex((s) => s.key === status);
 
   return (
-    <div>
-      <div className="flex items-center">
-        {STATUS_STEPS.map((step, i) => {
-          const isPast = i < currentIdx;
-          const isCurrent = i === currentIdx;
-          return (
-            <Fragment key={step.key}>
-              {i > 0 && (
-                <div
-                  className={`h-0.5 flex-1 ${isPast || isCurrent ? "bg-primary" : "bg-border"}`}
-                />
-              )}
+    <div className="flex items-start">
+      {STATUS_STEPS.map((step, i) => {
+        const isPast = i < currentIdx;
+        const isCurrent = i === currentIdx;
+
+        return (
+          <Fragment key={step.key}>
+            <div className="flex flex-col items-center gap-2">
               <div
-                className={`h-3 w-3 shrink-0 rounded-full border-2 ${
+                className={cn(
+                  "flex size-5 items-center justify-center rounded-full transition-all duration-300",
                   isPast
-                    ? "border-primary bg-primary"
+                    ? "bg-foreground text-background"
                     : isCurrent
-                      ? "border-primary bg-background ring-2 ring-primary/20"
-                      : "border-muted-foreground/30 bg-background"
-                }`}
+                      ? "border-[1.5px] border-foreground bg-background ring-2 ring-foreground/10"
+                      : "border border-border/60 bg-muted",
+                )}
+              >
+                {isPast ? (
+                  <Check className="size-3" strokeWidth={2.5} />
+                ) : isCurrent ? (
+                  <span className="size-1.5 rounded-full bg-foreground" />
+                ) : null}
+              </div>
+              <span
+                className={cn(
+                  "text-xs font-medium",
+                  isCurrent ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {step.label}
+              </span>
+            </div>
+
+            {i < STATUS_STEPS.length - 1 && (
+              <div
+                className={cn(
+                  "mt-2.5 h-px flex-1 transition-colors duration-500",
+                  i < currentIdx ? "bg-foreground/25" : "bg-border/60",
+                )}
               />
-              {i < STATUS_STEPS.length - 1 && (
-                <div
-                  className={`h-0.5 flex-1 ${isPast ? "bg-primary" : "bg-border"}`}
-                />
-              )}
-            </Fragment>
-          );
-        })}
-      </div>
-      <div className="mt-1.5 flex justify-between text-xs">
-        {STATUS_STEPS.map((step, i) => (
-          <span
-            key={step.key}
-            className={i === currentIdx ? "font-semibold text-foreground" : "text-muted-foreground"}
-          >
-            {step.label}
-          </span>
-        ))}
-      </div>
+            )}
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
 
-// -------- Overview Tab --------
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function fmtDate(d: string, opts?: Intl.DateTimeFormatOptions) {
+  return new Date(d).toLocaleDateString("en-US", opts ?? {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+// ── Overview Tab ──────────────────────────────────────────────────────────
 
 export function OverviewTab() {
   const { tripId, data, refresh } = useTripContext();
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   if (!data) return null;
 
@@ -91,124 +127,183 @@ export function OverviewTab() {
         (1000 * 60 * 60 * 24),
     ) + 1;
 
+  const dateRange = `${fmtDate(trip.start_date, { month: "short", day: "numeric" })} – ${fmtDate(trip.end_date)}`;
+
+  const totalBudget = trip.budget_estimate
+    ? parseFloat(trip.budget_estimate).toLocaleString("vi-VN")
+    : null;
+
   const budgetPerPerson =
     trip.budget_estimate && members.length > 0
       ? (parseFloat(trip.budget_estimate) / members.length).toLocaleString("vi-VN")
       : null;
+
+  const MAX_AVATARS = 5;
+  const visibleMembers = members.slice(0, MAX_AVATARS);
+  const extraCount = members.length - MAX_AVATARS;
 
   async function handleCancel() {
     setCancelLoading(true);
     setCancelError(null);
     try {
       await bffCancelTrip(trip.id);
+      setDialogOpen(false);
       await refresh();
     } catch {
-      setCancelError("Could not cancel trip.");
+      setCancelError("Could not cancel the trip. Please try again.");
     } finally {
       setCancelLoading(false);
     }
   }
 
   return (
-    <div className="space-y-4">
-      {isCaptain && (
-        <div className="flex justify-end">
-          <Link
-            href={`/trips/${tripId}/edit`}
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            ✏ Edit Trip
-          </Link>
-        </div>
-      )}
+    <div className="divide-y divide-border/50">
 
-      {trip.description && (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Description
-          </h2>
-          <p className="text-sm leading-relaxed">{trip.description}</p>
-        </div>
-      )}
+      {/* ── Key info ──────────────────────────────────────────────────────── */}
+      <div
+        className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both pb-6"
+        style={{ animationDuration: "0.5s", animationDelay: "0ms" }}
+      >
+        <div className="space-y-4">
 
-      <div className="rounded-xl border border-border bg-card p-4">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Trip Details
-        </h2>
-        <div className="space-y-1 text-sm">
-          <p>
-            📅 {trip.start_date} – {trip.end_date}{" "}
-            <span className="text-muted-foreground">({days} days)</span>
-          </p>
-          <p>
-            👥{" "}
-            <span className="font-medium">
-              {members.length} member{members.length !== 1 ? "s" : ""}
-            </span>{" "}
-            ·{" "}
-            <Link
-              href={`/trips/${tripId}/members`}
-              className="text-primary hover:underline"
-            >
-              View members
-            </Link>
-          </p>
+          {/* Dates */}
+          <div className="flex items-start gap-3">
+            <CalendarDays className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">{dateRange}</p>
+              <p className="text-xs text-muted-foreground">{days} days</p>
+            </div>
+          </div>
+
+          {/* Members */}
+          <div className="flex items-start gap-3">
+            <Users className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">
+                {members.length} member{members.length !== 1 ? "s" : ""}
+              </p>
+              <AvatarGroup>
+                {visibleMembers.map((m) => (
+                  <Avatar key={m.membership_id} size="sm">
+                    <AvatarFallback className="text-[10px]">
+                      {m.user.display_name.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+                {extraCount > 0 && (
+                  <AvatarGroupCount className="text-[10px]">
+                    +{extraCount}
+                  </AvatarGroupCount>
+                )}
+              </AvatarGroup>
+            </div>
+          </div>
+
+          {/* Budget */}
+          {totalBudget && (
+            <div className="flex items-start gap-3">
+              <Wallet className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">
+                  {totalBudget} {trip.currency_code}
+                </p>
+                {budgetPerPerson && (
+                  <p className="text-xs text-muted-foreground">
+                    ~{budgetPerPerson} {trip.currency_code} per person
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
 
-      {trip.budget_estimate && (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Budget
-          </h2>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-            <div>
-              <span className="text-muted-foreground">Total: </span>
-              <span className="font-medium">
-                {parseFloat(trip.budget_estimate).toLocaleString("vi-VN")}{" "}
-                {trip.currency_code}
-              </span>
-            </div>
-            {budgetPerPerson && (
-              <div>
-                <span className="text-muted-foreground">Per person: </span>
-                <span className="font-medium">
-                  ~{budgetPerPerson} {trip.currency_code}
-                </span>
-              </div>
+      {/* ── Status ────────────────────────────────────────────────────────── */}
+      <div
+        className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both py-6"
+        style={{ animationDuration: "0.5s", animationDelay: "80ms" }}
+      >
+        <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Status
+        </p>
+        <StatusJourney status={trip.status} />
+      </div>
+
+      {/* ── Description ───────────────────────────────────────────────────── */}
+      {trip.description && (
+        <div
+          className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both py-6"
+          style={{ animationDuration: "0.5s", animationDelay: "140ms" }}
+        >
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            About
+          </p>
+          <p className="text-sm leading-relaxed text-foreground/75">{trip.description}</p>
+        </div>
+      )}
+
+      {/* ── Captain actions ────────────────────────────────────────────────── */}
+      {isCaptain && (
+        <div
+          className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both pt-6"
+          style={{ animationDuration: "0.5s", animationDelay: "200ms" }}
+        >
+          <div className="space-y-2">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="w-full gap-2"
+            >
+              <Link href={`/trips/${tripId}/edit`}>
+                <PencilLine className="size-3.5" />
+                Edit trip
+              </Link>
+            </Button>
+
+            {!isTerminal && (
+              <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2 border-destructive/40 text-destructive hover:border-destructive/60 hover:bg-destructive/5 hover:text-destructive"
+                  >
+                    Cancel trip
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent size="sm">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Cancel this trip?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      All {members.length} member{members.length !== 1 ? "s" : ""} will be
+                      notified. This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  {cancelError && (
+                    <p className="text-sm text-destructive">{cancelError}</p>
+                  )}
+                  <AlertDialogFooter>
+                    <AlertDialogCancel size="sm" disabled={cancelLoading}>
+                      Keep trip
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      size="sm"
+                      disabled={cancelLoading}
+                      onClick={() => void handleCancel()}
+                    >
+                      {cancelLoading ? "Cancelling…" : "Yes, cancel"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
         </div>
       )}
 
-      <div className="rounded-xl border border-border bg-card p-4">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Status
-        </h2>
-        <StatusProgressBar status={trip.status} />
-      </div>
-
-      {isCaptain && !isTerminal && (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-destructive/60">
-            Danger Zone
-          </h2>
-          {cancelError && (
-            <p className="mb-2 text-sm text-destructive">{cancelError}</p>
-          )}
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={cancelLoading}
-            onClick={() => void handleCancel()}
-          >
-            {cancelLoading ? "Cancelling…" : "Cancel Trip"}
-          </Button>
-          <p className="mt-2 text-xs text-muted-foreground">
-            This will cancel the trip for all members.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

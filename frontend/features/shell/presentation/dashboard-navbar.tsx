@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 
+import { DASHBOARD_FILTER_TABS, getDashboardFilterStatus } from "@/features/trips/presentation/dashboard-trip-filters";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -12,26 +14,19 @@ import {
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
 
-const FILTER_TABS = [
-  { key: "all", label: "All" },
-  { key: "ongoing", label: "Ongoing" },
-  { key: "upcoming", label: "Upcoming" },
-  { key: "completed", label: "Completed" },
-] as const;
-
-type FilterKey = (typeof FILTER_TABS)[number]["key"];
-
 export function DashboardNavbar() {
-  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const searchParams = useSearchParams();
+  const activeStatus = getDashboardFilterStatus(searchParams.get("status"));
+  const activeFilter = activeStatus ?? "ALL";
 
   return (
     <div className="flex w-full items-center justify-between gap-2 sm:gap-4">
       {/* Filter tabs — horizontally scrollable on mobile */}
       <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
-        {FILTER_TABS.map((tab) => (
-          <button
+        {DASHBOARD_FILTER_TABS.map((tab) => (
+          <Link
             key={tab.key}
-            onClick={() => setActiveFilter(tab.key)}
+            href={tab.status ? `/?status=${tab.status}` : "/"}
             className={cn(
               "shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
               activeFilter === tab.key
@@ -40,7 +35,7 @@ export function DashboardNavbar() {
             )}
           >
             {tab.label}
-          </button>
+          </Link>
         ))}
       </div>
 
