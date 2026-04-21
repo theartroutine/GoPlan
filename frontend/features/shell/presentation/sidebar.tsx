@@ -79,14 +79,15 @@ function SidebarContent({ isMobile }: { isMobile: boolean }) {
 
   return (
     <>
-      <div className="flex items-center justify-between">
-        <SidebarLogo />
+      <div className="flex h-14 items-center border-b border-border">
+        <SidebarLogo showCollapseButton={!isMobile} />
         {isMobile && (
           <Button
             variant="ghost"
             size="icon-sm"
-            className="mr-3 text-muted-foreground"
+            className="mr-3 shrink-0 text-muted-foreground"
             onClick={closeMobile}
+            aria-label="Close sidebar"
           >
             <X className="h-4 w-4" />
           </Button>
@@ -107,6 +108,7 @@ function SidebarContent({ isMobile }: { isMobile: boolean }) {
                   <button
                     onClick={toggle}
                     className="flex w-full items-center justify-center gap-3 rounded-md px-0 py-2 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    aria-label="Expand sidebar"
                   >
                     <PanelLeftOpen className="h-4 w-4 shrink-0" />
                     <span className="max-w-0 overflow-hidden" />
