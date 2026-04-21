@@ -1,3 +1,5 @@
+import { bff } from "@/shared/http/bff-client";
+
 export type LocationSuggestion = {
   provider: "here";
   provider_id: string;
@@ -21,22 +23,27 @@ export async function bffSuggestLocations(
   signal?: AbortSignal,
 ): Promise<LocationSuggestion[]> {
   try {
-    const params = new URLSearchParams({ q: query });
-    const res = await fetch(`/api/location-search/suggest?${params.toString()}`, { signal });
-    if (!res.ok) return [];
-    const data = (await res.json()) as SuggestResponse;
+    const res = await bff.get<SuggestResponse>("/api/location-search/suggest", {
+      params: { q: query },
+      signal,
+    });
+    const data = res.data;
     return data.suggestions ?? [];
   } catch {
     return [];
   }
 }
 
-export async function bffLookupLocation(providerId: string): Promise<ResolvedDestination | null> {
+export async function bffLookupLocation(
+  providerId: string,
+  signal?: AbortSignal,
+): Promise<ResolvedDestination | null> {
   try {
-    const params = new URLSearchParams({ id: providerId });
-    const res = await fetch(`/api/location-search/lookup?${params.toString()}`);
-    if (!res.ok) return null;
-    return (await res.json()) as ResolvedDestination;
+    const res = await bff.get<ResolvedDestination>("/api/location-search/lookup", {
+      params: { id: providerId },
+      signal,
+    });
+    return res.data;
   } catch {
     return null;
   }

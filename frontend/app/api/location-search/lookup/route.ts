@@ -1,7 +1,9 @@
-import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-import { REFRESH_COOKIE_NAME } from "@/app/api/auth/_lib/session-state";
+import {
+  buildProtectedResponse,
+  protectedUpstreamCall,
+} from "@/app/api/_lib/protected-upstream";
 import {
   consumeHereLocationSearchSlot,
   getHereLocationSearchAvailability,
@@ -52,15 +54,27 @@ export async function GET(request: NextRequest) {
   if (!availability.enabled) {
     return NextResponse.json({ detail: availability.detail }, { status: 503 });
   }
+  const hereApiKey = HERE_API_KEY;
+  if (!hereApiKey) {
+    return NextResponse.json({ detail: "Location search is not configured." }, { status: 503 });
+  }
 
-  const jar = await cookies();
-  if (!jar.get(REFRESH_COOKIE_NAME)?.value) {
-    return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
+  const authResult = await protectedUpstreamCall({
+    path: "/api/auth/me",
+    method: "GET",
+    authorization: request.headers.get("Authorization"),
+  });
+  if (!authResult.ok) {
+    return authResult.response;
   }
 
   const providerId = request.nextUrl.searchParams.get("id")?.trim() ?? "";
   if (!providerId) {
-    return NextResponse.json({ detail: "id is required." }, { status: 400 });
+    return buildProtectedResponse(
+      { detail: "id is required." },
+      authResult.refreshedAccessToken,
+      400,
+    );
   }
 
   const cacheKey = `lookup:${providerId}`;
@@ -74,34 +88,44 @@ export async function GET(request: NextRequest) {
   }>({ key: cacheKey });
 
   if (cachedLocation) {
-    return NextResponse.json(cachedLocation);
+    return buildProtectedResponse(cachedLocation, authResult.refreshedAccessToken);
   }
 
   const rateLimit = consumeHereLocationSearchSlot();
   if (!rateLimit.allowed) {
-    return NextResponse.json(
+    const response = buildProtectedResponse(
       { detail: "HERE location lookup is temporarily rate limited." },
-      {
-        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-        status: 429,
-      },
+      authResult.refreshedAccessToken,
+      429,
     );
+    response.headers.set("Retry-After", String(rateLimit.retryAfterSeconds));
+    return response;
   }
 
   const url = new URL(HERE_LOOKUP_URL);
   url.searchParams.set("id", providerId);
-  url.searchParams.set("apiKey", HERE_API_KEY);
+  url.searchParams.set("apiKey", hereApiKey);
   url.searchParams.set("lang", "vi-VN");
   url.searchParams.set("politicalView", "VNM");
 
   try {
     const res = await fetch(url.toString(), { cache: "no-store" });
     if (!res.ok) {
-      return NextResponse.json({ detail: "Location lookup failed." }, { status: 502 });
+      return buildProtectedResponse(
+        { detail: "Location lookup failed." },
+        authResult.refreshedAccessToken,
+        502,
+      );
     }
 
     const item = (await res.json()) as HereLookupItem;
-    if (!item?.id) return NextResponse.json({ detail: "Location not found." }, { status: 502 });
+    if (!item?.id) {
+      return buildProtectedResponse(
+        { detail: "Location not found." },
+        authResult.refreshedAccessToken,
+        502,
+      );
+    }
 
     const payload = {
       destination: item.address?.label ?? item.title ?? "",
@@ -118,8 +142,12 @@ export async function GET(request: NextRequest) {
       value: payload,
     });
 
-    return NextResponse.json(payload);
+    return buildProtectedResponse(payload, authResult.refreshedAccessToken);
   } catch {
-    return NextResponse.json({ detail: "Failed to lookup location." }, { status: 502 });
+    return buildProtectedResponse(
+      { detail: "Failed to lookup location." },
+      authResult.refreshedAccessToken,
+      502,
+    );
   }
 }

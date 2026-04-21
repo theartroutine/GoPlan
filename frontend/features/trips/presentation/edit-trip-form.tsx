@@ -53,9 +53,16 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setLoading(true);
 
     const form = new FormData(e.currentTarget);
+    const destination = pickerValue?.destination ?? rawDestination;
+
+    if (!destination.trim()) {
+      setError("Please enter a destination.");
+      return;
+    }
+
+    setLoading(true);
 
     // Build base payload from non-destination fields.
     const payload: UpdateTripPayload = {
@@ -78,7 +85,7 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
       payload.destination_lng          = pickerValue.destination_lng;
       payload.destination_country_code = pickerValue.destination_country_code;
     } else if (rawDestination !== trip.destination) {
-      payload.destination              = rawDestination;
+      payload.destination              = destination;
       payload.destination_provider     = "";
       payload.destination_provider_id  = "";
       payload.destination_lat          = null;
@@ -117,6 +124,7 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
           initialValue={trip.destination}
           onChange={handlePickerChange}
           onRawInputChange={setRawDestination}
+          required
         />
       </div>
       <CoverImagePicker coverUrl={coverPreviewUrl} onChange={handleCoverChange} />

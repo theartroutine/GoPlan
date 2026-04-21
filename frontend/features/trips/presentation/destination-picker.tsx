@@ -53,6 +53,8 @@ export function DestinationPicker({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastRequestedQueryRef = useRef("");
+  const lookupAbortRef = useRef<AbortController | null>(null);
+  const lookupRequestIdRef = useRef(0);
   const requestIdRef = useRef(0);
   const suggestAbortRef = useRef<AbortController | null>(null);
 
@@ -71,6 +73,7 @@ export function DestinationPicker({
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      lookupAbortRef.current?.abort();
       suggestAbortRef.current?.abort();
     };
   }, []);
@@ -136,6 +139,10 @@ export function DestinationPicker({
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const text = e.target.value;
+      lookupAbortRef.current?.abort();
+      lookupAbortRef.current = null;
+      lookupRequestIdRef.current += 1;
+      setIsLoading(false);
       setInputValue(text);
       onRawInputChange?.(text);
       if (isCommitted) {
@@ -156,11 +163,20 @@ export function DestinationPicker({
       setIsOpen(false);
       setSuggestions([]);
       suggestAbortRef.current?.abort();
+      lookupAbortRef.current?.abort();
       lastRequestedQueryRef.current = "";
+      const controller = new AbortController();
+      lookupAbortRef.current = controller;
+      const lookupRequestId = lookupRequestIdRef.current + 1;
+      lookupRequestIdRef.current = lookupRequestId;
       setIsLoading(true);
 
       try {
-        const details = await bffLookupLocation(suggestion.provider_id);
+        const details = await bffLookupLocation(suggestion.provider_id, controller.signal);
+        if (controller.signal.aborted || lookupRequestId !== lookupRequestIdRef.current) {
+          return;
+        }
+
         if (details) {
           onChange({
             destination: details.destination || displayName,
@@ -181,9 +197,15 @@ export function DestinationPicker({
             destination_country_code: "",
           });
         }
-      } finally {
-        setIsLoading(false);
         setIsCommitted(true);
+      } finally {
+        if (lookupAbortRef.current === controller) {
+          lookupAbortRef.current = null;
+        }
+
+        if (lookupRequestId === lookupRequestIdRef.current) {
+          setIsLoading(false);
+        }
       }
     },
     [onChange],

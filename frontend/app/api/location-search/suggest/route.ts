@@ -1,7 +1,9 @@
-import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-import { REFRESH_COOKIE_NAME } from "@/app/api/auth/_lib/session-state";
+import {
+  buildProtectedResponse,
+  protectedUpstreamCall,
+} from "@/app/api/_lib/protected-upstream";
 import {
   consumeHereLocationSearchSlot,
   getHereLocationSearchAvailability,
@@ -61,15 +63,23 @@ export async function GET(request: NextRequest) {
   if (!availability.enabled) {
     return NextResponse.json({ detail: availability.detail }, { status: 503 });
   }
+  const hereApiKey = HERE_API_KEY;
+  if (!hereApiKey) {
+    return NextResponse.json({ detail: "Location search is not configured." }, { status: 503 });
+  }
 
-  const jar = await cookies();
-  if (!jar.get(REFRESH_COOKIE_NAME)?.value) {
-    return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
+  const authResult = await protectedUpstreamCall({
+    path: "/api/auth/me",
+    method: "GET",
+    authorization: request.headers.get("Authorization"),
+  });
+  if (!authResult.ok) {
+    return authResult.response;
   }
 
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
   if (query.length < 2) {
-    return NextResponse.json({ suggestions: [] });
+    return buildProtectedResponse({ suggestions: [] }, authResult.refreshedAccessToken);
   }
 
   const cacheKey = `suggest:${query.toLocaleLowerCase("vi-VN")}`;
@@ -83,23 +93,26 @@ export async function GET(request: NextRequest) {
   >({ key: cacheKey });
 
   if (cachedSuggestions) {
-    return NextResponse.json({ suggestions: cachedSuggestions });
+    return buildProtectedResponse(
+      { suggestions: cachedSuggestions },
+      authResult.refreshedAccessToken,
+    );
   }
 
   const rateLimit = consumeHereLocationSearchSlot();
   if (!rateLimit.allowed) {
-    return NextResponse.json(
+    const response = buildProtectedResponse(
       { detail: "HERE location search is temporarily rate limited." },
-      {
-        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
-        status: 429,
-      },
+      authResult.refreshedAccessToken,
+      429,
     );
+    response.headers.set("Retry-After", String(rateLimit.retryAfterSeconds));
+    return response;
   }
 
   const url = new URL(HERE_AUTOSUGGEST_URL);
   url.searchParams.set("q", query);
-  url.searchParams.set("apiKey", HERE_API_KEY);
+  url.searchParams.set("apiKey", hereApiKey);
   url.searchParams.set("lang", "vi-VN");
   url.searchParams.set("politicalView", "VNM");
   // HERE autosuggest requires a spatial bias. Use Vietnam as the default bias
@@ -110,7 +123,11 @@ export async function GET(request: NextRequest) {
   try {
     const res = await fetch(url.toString(), { cache: "no-store" });
     if (!res.ok) {
-      return NextResponse.json({ detail: "Location service unavailable." }, { status: 502 });
+      return buildProtectedResponse(
+        { detail: "Location service unavailable." },
+        authResult.refreshedAccessToken,
+        502,
+      );
     }
 
     const data = (await res.json()) as HereSuggestResponse;
@@ -130,8 +147,12 @@ export async function GET(request: NextRequest) {
       value: suggestions,
     });
 
-    return NextResponse.json({ suggestions });
+    return buildProtectedResponse({ suggestions }, authResult.refreshedAccessToken);
   } catch {
-    return NextResponse.json({ detail: "Failed to fetch suggestions." }, { status: 502 });
+    return buildProtectedResponse(
+      { detail: "Failed to fetch suggestions." },
+      authResult.refreshedAccessToken,
+      502,
+    );
   }
 }
