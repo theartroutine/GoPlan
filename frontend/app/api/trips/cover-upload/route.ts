@@ -9,15 +9,36 @@ import {
 } from "@/app/api/auth/_lib/session-state";
 import { API_BASE_URL } from "@/shared/http/config";
 
+async function uploadTripCover(
+  file: Blob,
+  bearerToken: string,
+): Promise<{ data: unknown; status: number }> {
+  const djangoForm = new FormData();
+  djangoForm.append("file", file);
+
+  const res = await fetch(`${API_BASE_URL}/api/media/trip-covers`, {
+    method: "POST",
+    headers: { Authorization: bearerToken },
+    body: djangoForm,
+  });
+
+  const text = await res.text();
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { detail: text || "Upload failed." };
+  }
+
+  return { data, status: res.status };
+}
+
 export async function POST(request: NextRequest) {
-  // Auth: bffUploadTripCover (client) always sends a fresh Bearer token from tokenManager.
-  // Refresh cookie is a fallback only; we do not replicate protectedUpstreamCall's
-  // server-side retry-on-401 because it is redundant with the client-side invariant.
+  const jar = await cookies();
   let bearerToken = request.headers.get("Authorization");
   let refreshedAccessToken: string | null = null;
 
   if (!bearerToken) {
-    const jar = await cookies();
     const refreshToken = jar.get(REFRESH_COOKIE_NAME)?.value;
     if (!refreshToken) {
       return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
@@ -48,24 +69,27 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const djangoForm = new FormData();
-    djangoForm.append("file", file);
+    let result = await uploadTripCover(file, bearerToken);
 
-    const res = await fetch(`${API_BASE_URL}/api/media/trip-covers`, {
-      method: "POST",
-      headers: { Authorization: bearerToken },
-      body: djangoForm,
-    });
+    if (result.status === 401) {
+      const refreshToken = jar.get(REFRESH_COOKIE_NAME)?.value;
+      if (!refreshToken) {
+        return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
+      }
 
-    const text = await res.text();
-    let data: unknown;
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = { detail: text || "Upload failed." };
+      const refreshResult = await refreshWithSingleFlight(refreshToken);
+      const failureResponse = handleRefreshFailure(jar, refreshResult);
+      if (failureResponse) return failureResponse;
+      if (refreshResult.kind !== "success") {
+        return NextResponse.json({ detail: "Auth failed." }, { status: 401 });
+      }
+
+      setRefreshToken(jar, refreshResult.refreshToken);
+      refreshedAccessToken = refreshResult.accessToken;
+      result = await uploadTripCover(file, `Bearer ${refreshResult.accessToken}`);
     }
 
-    const response = NextResponse.json(data, { status: res.status });
+    const response = NextResponse.json(result.data, { status: result.status });
     if (refreshedAccessToken) {
       response.headers.set("X-Access-Token", refreshedAccessToken);
     }

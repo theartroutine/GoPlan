@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -176,15 +176,20 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
     if not invitee_ids:
         raise InviteError("No invitee IDs provided.")
 
-    if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
-        raise InviteError("Cannot invite members to a trip that is completed or cancelled.")
-
-    invitees = User.objects.filter(pk__in=invitee_ids, is_profile_completed=True)
+    invitees = list(User.objects.filter(pk__in=invitee_ids, is_profile_completed=True))
     if len(invitees) != len(invitee_ids):
         raise InviteError("One or more users not found.")
 
     created = []
     with transaction.atomic():
+        try:
+            locked_trip = Trip.objects.select_for_update().get(pk=trip.pk)
+        except Trip.DoesNotExist:
+            raise NotFound("Trip not found.")
+
+        if locked_trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+            raise InviteError("Cannot invite members to a trip that is completed or cancelled.")
+
         for invitee in invitees:
             if invitee == captain:
                 raise InviteError("Cannot invite yourself.")
@@ -192,18 +197,21 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
             if not _are_friends(captain, invitee):
                 raise InviteError(f"{invitee.display_name} is not in your friends list.")
 
-            if trip.memberships.filter(user=invitee, status=MemberStatus.ACTIVE).exists():
+            if locked_trip.memberships.filter(user=invitee, status=MemberStatus.ACTIVE).exists():
                 raise InviteError(f"{invitee.display_name} is already a member.")
 
-            if trip.invitations.filter(invitee=invitee, status=InvitationStatus.PENDING).exists():
+            if locked_trip.invitations.filter(invitee=invitee, status=InvitationStatus.PENDING).exists():
                 raise InviteError(f"{invitee.display_name} already has a pending invitation.")
 
-            inv = TripInvitation.objects.create(
-                trip=trip,
-                inviter=captain,
-                invitee=invitee,
-                status=InvitationStatus.PENDING,
-            )
+            try:
+                inv = TripInvitation.objects.create(
+                    trip=locked_trip,
+                    inviter=captain,
+                    invitee=invitee,
+                    status=InvitationStatus.PENDING,
+                )
+            except IntegrityError as exc:
+                raise InviteError(f"{invitee.display_name} already has a pending invitation.") from exc
             created.append(inv)
 
             create_notification(
@@ -211,11 +219,11 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
                 notification_type=NotificationType.TRIP_INVITATION,
                 actor=captain,
                 payload={
-                    "trip_id": str(trip.id),
-                    "trip_name": trip.name,
-                    "destination": trip.destination,
-                    "start_date": str(trip.start_date),
-                    "end_date": str(trip.end_date),
+                    "trip_id": str(locked_trip.id),
+                    "trip_name": locked_trip.name,
+                    "destination": locked_trip.destination,
+                    "start_date": str(locked_trip.start_date),
+                    "end_date": str(locked_trip.end_date),
                     "invitation_id": str(inv.id),
                 },
             )
@@ -227,7 +235,17 @@ def accept_invitation(invitation_id, actor) -> TripMember:
     """Accept a PENDING invitation. Creates ACTIVE TripMember for invitee."""
     with transaction.atomic():
         try:
-            invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
+            invitation_trip_id = TripInvitation.objects.values_list("trip_id", flat=True).get(pk=invitation_id)
+        except TripInvitation.DoesNotExist:
+            raise NotFound("Invitation not found.")
+
+        try:
+            trip = Trip.objects.select_for_update().get(pk=invitation_trip_id)
+        except Trip.DoesNotExist:
+            raise NotFound("Trip not found.")
+
+        try:
+            invitation = TripInvitation.objects.select_for_update().select_related("inviter").get(pk=invitation_id)
         except TripInvitation.DoesNotExist:
             raise NotFound("Invitation not found.")
 
@@ -237,7 +255,7 @@ def accept_invitation(invitation_id, actor) -> TripMember:
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationError("This invitation is no longer pending.")
 
-        if invitation.trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+        if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
             raise InvitationError("This trip is no longer open to new members.")
 
         invitation.status = InvitationStatus.ACCEPTED
@@ -245,7 +263,7 @@ def accept_invitation(invitation_id, actor) -> TripMember:
         invitation.save(update_fields=["status", "responded_at"])
 
         membership = TripMember.objects.create(
-            trip=invitation.trip,
+            trip=trip,
             user=actor,
             role=TripRole.MEMBER,
             status=MemberStatus.ACTIVE,
@@ -256,8 +274,8 @@ def accept_invitation(invitation_id, actor) -> TripMember:
             notification_type=NotificationType.TRIP_INVITATION_ACCEPTED,
             actor=actor,
             payload={
-                "trip_id": str(invitation.trip_id),
-                "trip_name": invitation.trip.name,
+                "trip_id": str(trip.id),
+                "trip_name": trip.name,
                 "accepted_by_name": actor.display_name,
             },
         )
