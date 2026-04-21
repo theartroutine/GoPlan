@@ -1,3 +1,6 @@
+import Image from "next/image";
+
+import { getTripCoverUrl } from "@/features/trips/domain/get-trip-cover-url";
 import type { TripDetail } from "@/features/trips/domain/types";
 import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge";
 
@@ -11,7 +14,15 @@ function fmtDate(dateStr: string) {
 
 export function TripHeader({ trip }: { trip: TripDetail }) {
   return (
-    <div className="relative h-44 overflow-hidden bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-700">
+    <div className="relative h-44 overflow-hidden">
+      <Image
+        src={getTripCoverUrl(trip.cover_image_url)}
+        alt={`${trip.name} cover`}
+        fill
+        className="object-cover"
+        unoptimized
+      />
+      <div className="absolute inset-0 bg-black/25" />
       <div className="absolute right-4 top-4">
         <TripStatusBadge status={trip.status} />
       </div>

@@ -4,11 +4,12 @@ import { useRef, useState } from "react";
 import Image from "next/image";
 import { Upload } from "lucide-react";
 
+import { getTripCoverUrl } from "@/features/trips/domain/get-trip-cover-url";
 import { bffUploadTripCover } from "@/features/trips/infrastructure/trips-api";
 import { Button } from "@/shared/ui/button";
 
 type Props = {
-  /** URL shown in the preview — may be a BFF proxy URL or a permanent /media/... URL. */
+  /** URL shown in the preview. Empty string falls back to app default placeholder. */
   coverUrl: string;
   /** Called with the new permanent /media/... URL after the user uploads a custom image. */
   onChange: (url: string) => void;
@@ -18,9 +19,6 @@ export function CoverImagePicker({ coverUrl, onChange }: Props) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Do not render until a cover URL is available
-  if (!coverUrl) return null;
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -44,7 +42,7 @@ export function CoverImagePicker({ coverUrl, onChange }: Props) {
     <div className="space-y-2">
       <div className="relative w-full aspect-[16/7] rounded-md overflow-hidden bg-muted">
         <Image
-          src={coverUrl}
+          src={getTripCoverUrl(coverUrl)}
           alt="Trip cover preview"
           fill
           className="object-cover"

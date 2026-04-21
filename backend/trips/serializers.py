@@ -8,7 +8,8 @@ from trips.models import MemberStatus, Trip, TripInvitation, TripMember
 class CreateTripSerializer(serializers.Serializer):
     name            = serializers.CharField(max_length=120)
     destination     = serializers.CharField(max_length=200)
-    destination_place_id     = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    destination_provider     = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
+    destination_provider_id  = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
     destination_lat          = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     destination_lng          = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     destination_country_code = serializers.CharField(max_length=2, required=False, allow_blank=True, default="")
@@ -58,7 +59,7 @@ class TripResponseSerializer(serializers.ModelSerializer):
         model = Trip
         fields = [
             "id", "name", "destination",
-            "destination_place_id", "destination_lat", "destination_lng",
+            "destination_provider", "destination_provider_id", "destination_lat", "destination_lng",
             "destination_country_code", "cover_image_url",
             "start_date", "end_date",
             "description", "status", "currency_code", "budget_estimate",
@@ -87,7 +88,7 @@ class TripDetailSerializer(serializers.ModelSerializer):
         model = Trip
         fields = [
             "id", "name", "destination",
-            "destination_place_id", "destination_lat", "destination_lng",
+            "destination_provider", "destination_provider_id", "destination_lat", "destination_lng",
             "destination_country_code", "cover_image_url",
             "start_date", "end_date",
             "description", "status", "currency_code", "budget_estimate",
@@ -98,7 +99,8 @@ class TripDetailSerializer(serializers.ModelSerializer):
 class UpdateTripSerializer(serializers.Serializer):
     name            = serializers.CharField(max_length=120, required=False)
     destination     = serializers.CharField(max_length=200, required=False)
-    destination_place_id     = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    destination_provider     = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    destination_provider_id  = serializers.CharField(max_length=255, required=False, allow_blank=True)
     destination_lat          = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     destination_lng          = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     destination_country_code = serializers.CharField(max_length=2, required=False, allow_blank=True)

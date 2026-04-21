@@ -39,7 +39,8 @@ def create_trip(
     captain,
     name: str,
     destination: str,
-    destination_place_id: str = "",
+    destination_provider: str = "",
+    destination_provider_id: str = "",
     destination_lat=None,
     destination_lng=None,
     destination_country_code: str = "",
@@ -55,7 +56,8 @@ def create_trip(
         trip = Trip.objects.create(
             name=name,
             destination=destination,
-            destination_place_id=destination_place_id,
+            destination_provider=destination_provider,
+            destination_provider_id=destination_provider_id,
             destination_lat=destination_lat,
             destination_lng=destination_lng,
             destination_country_code=destination_country_code,
@@ -106,7 +108,7 @@ _UNSET = object()
 
 
 def update_trip(trip, *, name=_UNSET, destination=_UNSET,
-                destination_place_id=_UNSET, destination_lat=_UNSET,
+                destination_provider=_UNSET, destination_provider_id=_UNSET, destination_lat=_UNSET,
                 destination_lng=_UNSET, destination_country_code=_UNSET,
                 cover_image_url=_UNSET,
                 start_date=_UNSET, end_date=_UNSET,
@@ -116,7 +118,8 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
     """
     if name is not _UNSET:                       trip.name = name
     if destination is not _UNSET:                trip.destination = destination
-    if destination_place_id is not _UNSET:       trip.destination_place_id = destination_place_id
+    if destination_provider is not _UNSET:       trip.destination_provider = destination_provider
+    if destination_provider_id is not _UNSET:    trip.destination_provider_id = destination_provider_id
     if destination_lat is not _UNSET:            trip.destination_lat = destination_lat
     if destination_lng is not _UNSET:            trip.destination_lng = destination_lng
     if destination_country_code is not _UNSET:   trip.destination_country_code = destination_country_code

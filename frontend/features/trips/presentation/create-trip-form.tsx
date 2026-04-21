@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import type { CreateTripPayload } from "@/features/trips/domain/types";
-import { bffCreateTrip, bffUploadTripCover } from "@/features/trips/infrastructure/trips-api";
+import { bffCreateTrip } from "@/features/trips/infrastructure/trips-api";
 import { CoverImagePicker } from "@/features/trips/presentation/cover-image-picker";
 import type { DestinationPickerValue } from "@/features/trips/presentation/destination-picker";
 import { DestinationPicker } from "@/features/trips/presentation/destination-picker";
@@ -26,50 +26,15 @@ export function CreateTripForm() {
   const [rawDestination, setRawDestination] = useState("");
 
   // -------- Cover Image State --------
-  // coverPreviewUrl: shown in CoverImagePicker (BFF proxy URL initially, then permanent)
-  // permanentCoverUrl: the /media/... URL that gets sent to the server
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string>("");
   const [permanentCoverUrl, setPermanentCoverUrl] = useState<string | null>(null);
-  const [coverUploading, setCoverUploading] = useState(false);
 
   /**
    * Called when the user commits a selection from the dropdown.
-   * Shows the BFF proxy photo immediately, then starts a background upload
-   * so the DB always receives a permanent /media/... URL on submit.
    * Called with null when the user edits the input after a committed selection.
    */
-  const handlePickerChange = useCallback(async (value: DestinationPickerValue | null) => {
+  const handlePickerChange = useCallback((value: DestinationPickerValue | null) => {
     setPickerValue(value);
-
-    if (!value) {
-      setCoverPreviewUrl("");
-      setPermanentCoverUrl(null);
-      return;
-    }
-
-    if (value.cover_image_url) {
-      // Show preview immediately using the BFF proxy URL
-      setCoverPreviewUrl(value.cover_image_url);
-      setPermanentCoverUrl(null);
-
-      // Background upload → permanent storage
-      setCoverUploading(true);
-      try {
-        const res = await fetch(value.cover_image_url);
-        const blob = await res.blob();
-        const file = new File([blob], "cover.jpg", { type: blob.type || "image/jpeg" });
-        const url = await bffUploadTripCover(file);
-        setPermanentCoverUrl(url);
-        setCoverPreviewUrl(url); // update preview to permanent URL
-      } catch {
-        // Upload failed silently — cover will not be saved.
-      } finally {
-        setCoverUploading(false);
-      }
-    } else {
-      setCoverPreviewUrl("");
-      setPermanentCoverUrl(null);
-    }
   }, []);
 
   /**
@@ -107,12 +72,13 @@ export function CreateTripForm() {
       end_date:    endDate,
       description: (form.get("description") as string | null) || undefined,
       ...(pickerValue && {
-        destination_place_id:     pickerValue.destination_place_id,
+        destination_provider:     pickerValue.destination_provider,
+        destination_provider_id:  pickerValue.destination_provider_id,
         destination_lat:          pickerValue.destination_lat,
         destination_lng:          pickerValue.destination_lng,
         destination_country_code: pickerValue.destination_country_code,
-        cover_image_url:          permanentCoverUrl ?? undefined,
       }),
+      cover_image_url: permanentCoverUrl ?? "",
     };
 
     try {
@@ -126,7 +92,7 @@ export function CreateTripForm() {
   }
 
   const endMinDate = startDate ? new Date(startDate + "T00:00:00") : undefined;
-  const isSubmitDisabled = loading || coverUploading;
+  const isSubmitDisabled = loading;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -142,9 +108,7 @@ export function CreateTripForm() {
           onRawInputChange={setRawDestination}
         />
       </div>
-      {coverPreviewUrl && (
-        <CoverImagePicker coverUrl={coverPreviewUrl} onChange={handleCoverChange} />
-      )}
+      <CoverImagePicker coverUrl={coverPreviewUrl} onChange={handleCoverChange} />
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="start_date">Start date *</Label>
@@ -172,7 +136,7 @@ export function CreateTripForm() {
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <Button type="submit" className="w-full" disabled={isSubmitDisabled}>
-        {coverUploading ? "Uploading cover…" : loading ? "Creating…" : "Create trip"}
+        {loading ? "Creating…" : "Create trip"}
       </Button>
     </form>
   );

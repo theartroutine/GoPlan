@@ -58,26 +58,29 @@ class UpdateTripTests(APITestCase):
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "TRIP_TERMINAL")
 
-    def test_captain_can_update_place_fields(self):
+    def test_captain_can_update_destination_provider_fields(self):
         res = self.client.patch(
             self._url(),
             {
                 "destination": "Tokyo, Japan",
-                "destination_place_id": "ChIJtokyo456",
+                "destination_provider": "here",
+                "destination_provider_id": "here:cm:namedplace:tokyo",
                 "destination_lat": "35.689487",
                 "destination_lng": "139.691706",
                 "destination_country_code": "JP",
-                "cover_image_url": "/api/places/photo?ref=places%2FChIJ%2Fphotos%2FXYZ",
+                "cover_image_url": "/media/trip-covers/tokyo.jpg",
             },
             format="json",
             **_auth(self.captain),
         )
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data["trip"]["destination_place_id"], "ChIJtokyo456")
+        self.assertEqual(res.data["trip"]["destination_provider"], "here")
+        self.assertEqual(res.data["trip"]["destination_provider_id"], "here:cm:namedplace:tokyo")
         self.assertEqual(res.data["trip"]["destination_country_code"], "JP")
         self.trip.refresh_from_db()
-        self.assertEqual(self.trip.destination_place_id, "ChIJtokyo456")
+        self.assertEqual(self.trip.destination_provider, "here")
+        self.assertEqual(self.trip.destination_provider_id, "here:cm:namedplace:tokyo")
         self.assertEqual(self.trip.destination_country_code, "JP")
         self.assertAlmostEqual(float(self.trip.destination_lat), 35.689487, places=5)
         self.assertAlmostEqual(float(self.trip.destination_lng), 139.691706, places=5)
-        self.assertEqual(self.trip.cover_image_url, "/api/places/photo?ref=places%2FChIJ%2Fphotos%2FXYZ")
+        self.assertEqual(self.trip.cover_image_url, "/media/trip-covers/tokyo.jpg")

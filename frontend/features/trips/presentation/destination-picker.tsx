@@ -3,21 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MapPin } from "lucide-react";
 
-import type { PlaceSuggestion } from "@/features/trips/infrastructure/places-api";
+import type { LocationSuggestion } from "@/features/trips/infrastructure/location-search-api";
 import {
-  bffAutocompletePlaces,
-  bffGetPlaceDetails,
-  getPlacePhotoUrl,
-} from "@/features/trips/infrastructure/places-api";
+  bffLookupLocation,
+  bffSuggestLocations,
+} from "@/features/trips/infrastructure/location-search-api";
 import { Input } from "@/shared/ui/input";
 
 export type DestinationPickerValue = {
   destination: string;
-  destination_place_id: string;
+  destination_provider: "here";
+  destination_provider_id: string;
   destination_lat: number | null;
   destination_lng: number | null;
   destination_country_code: string;
-  cover_image_url: string;
 };
 
 type Props = {
@@ -44,16 +43,18 @@ export function DestinationPicker({
   required,
 }: Props) {
   const [inputValue, setInputValue] = useState(initialValue);
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [sessionToken, setSessionToken] = useState<string>(() => crypto.randomUUID());
   // True when the user has committed to a selection (not just typed)
   const [isCommitted, setIsCommitted] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastRequestedQueryRef = useRef("");
+  const requestIdRef = useRef(0);
+  const suggestAbortRef = useRef<AbortController | null>(null);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -67,34 +68,70 @@ export function DestinationPicker({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  // Debounced autocomplete call
   useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      suggestAbortRef.current?.abort();
+    };
+  }, []);
+
+  // Debounced suggest call
+  useEffect(() => {
+    const normalizedQuery = inputValue.trim();
+
     if (isCommitted) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    suggestAbortRef.current?.abort();
 
-    if (inputValue.trim().length < 2) {
+    if (normalizedQuery.length < 2) {
+      lastRequestedQueryRef.current = "";
       setSuggestions([]);
       setIsOpen(false);
+      setIsLoading(false);
+      setActiveIndex(-1);
+      return;
+    }
+
+    if (normalizedQuery === lastRequestedQueryRef.current) {
+      setIsOpen(suggestions.length > 0);
+      setActiveIndex(-1);
       return;
     }
 
     debounceRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      suggestAbortRef.current = controller;
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+
       setIsLoading(true);
+
       try {
-        const results = await bffAutocompletePlaces(inputValue.trim(), sessionToken);
+        const results = await bffSuggestLocations(normalizedQuery, controller.signal);
+        if (controller.signal.aborted || requestId !== requestIdRef.current) {
+          return;
+        }
+
+        lastRequestedQueryRef.current = normalizedQuery;
         setSuggestions(results);
         setIsOpen(results.length > 0);
         setActiveIndex(-1);
       } finally {
-        setIsLoading(false);
+        if (suggestAbortRef.current === controller) {
+          suggestAbortRef.current = null;
+        }
+
+        if (requestId === requestIdRef.current) {
+          setIsLoading(false);
+        }
       }
     }, 300);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [inputValue, sessionToken, isCommitted]);
+  }, [inputValue, isCommitted, suggestions.length]);
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,7 +140,6 @@ export function DestinationPicker({
       onRawInputChange?.(text);
       if (isCommitted) {
         setIsCommitted(false);
-        setSessionToken(crypto.randomUUID());
         onChange(null);
       }
     },
@@ -111,41 +147,46 @@ export function DestinationPicker({
   );
 
   const handleSelect = useCallback(
-    async (suggestion: PlaceSuggestion) => {
-      const displayName =
-        suggestion.secondary_text
-          ? `${suggestion.main_text}, ${suggestion.secondary_text}`
-          : suggestion.main_text;
+    async (suggestion: LocationSuggestion) => {
+      const displayName = suggestion.subtitle
+        ? `${suggestion.title}, ${suggestion.subtitle}`
+        : suggestion.title;
 
       setInputValue(displayName);
       setIsOpen(false);
       setSuggestions([]);
+      suggestAbortRef.current?.abort();
+      lastRequestedQueryRef.current = "";
       setIsLoading(true);
 
       try {
-        const details = await bffGetPlaceDetails(suggestion.place_id, sessionToken);
+        const details = await bffLookupLocation(suggestion.provider_id);
         if (details) {
-          const coverUrl = details.photo_reference
-            ? getPlacePhotoUrl(details.photo_reference)
-            : "";
           onChange({
-            destination: details.name || displayName,
-            destination_place_id: details.place_id,
-            destination_lat: details.lat,
-            destination_lng: details.lng,
-            destination_country_code: details.country_code,
-            cover_image_url: coverUrl,
+            destination: details.destination || displayName,
+            destination_provider: details.destination_provider,
+            destination_provider_id: details.destination_provider_id,
+            destination_lat: details.destination_lat,
+            destination_lng: details.destination_lng,
+            destination_country_code: details.destination_country_code,
           });
-          setInputValue(details.name || displayName);
+          setInputValue(details.destination || displayName);
+        } else {
+          onChange({
+            destination: displayName,
+            destination_provider: "here",
+            destination_provider_id: suggestion.provider_id,
+            destination_lat: null,
+            destination_lng: null,
+            destination_country_code: "",
+          });
         }
       } finally {
         setIsLoading(false);
         setIsCommitted(true);
-        // Rotate token — next search starts a fresh session
-        setSessionToken(crypto.randomUUID());
       }
     },
-    [sessionToken, onChange],
+    [onChange],
   );
 
   const handleKeyDown = useCallback(
@@ -186,9 +227,9 @@ export function DestinationPicker({
           className="pr-8"
         />
         {isLoading ? (
-          <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground pointer-events-none" />
+          <Loader2 className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground pointer-events-none" />
         ) : (
-          <MapPin className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <MapPin className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         )}
       </div>
 
@@ -196,15 +237,15 @@ export function DestinationPicker({
         <ul
           id="destination-listbox"
           role="listbox"
-          className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-md shadow-md overflow-hidden"
+          className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md"
         >
           {suggestions.map((s, i) => (
             <li
-              key={s.place_id}
+              key={s.provider_id}
               role="option"
               aria-selected={i === activeIndex}
               className={[
-                "flex items-start gap-2.5 px-3 py-2.5 cursor-pointer text-sm min-h-[44px] transition-colors",
+                "flex min-h-[44px] cursor-pointer items-start gap-2.5 px-3 py-2.5 text-sm transition-colors",
                 i === activeIndex ? "bg-accent" : "hover:bg-accent",
               ].join(" ")}
               onMouseDown={(e) => {
@@ -215,9 +256,9 @@ export function DestinationPicker({
             >
               <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <span className="font-medium">{s.main_text}</span>
-                {s.secondary_text && (
-                  <span className="block text-xs text-muted-foreground">{s.secondary_text}</span>
+                <span className="font-medium">{s.title}</span>
+                {s.subtitle && (
+                  <span className="block text-xs text-muted-foreground">{s.subtitle}</span>
                 )}
               </div>
             </li>
