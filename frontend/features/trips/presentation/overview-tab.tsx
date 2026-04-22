@@ -2,6 +2,10 @@
 
 import { CalendarDays, Users, Wallet } from "lucide-react";
 
+import {
+  formatDateOnly,
+  getInclusiveDateOnlySpan,
+} from "@/features/trips/domain/date-only";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import {
   Avatar,
@@ -9,16 +13,6 @@ import {
   AvatarGroup,
   AvatarGroupCount,
 } from "@/shared/ui/avatar";
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-function fmtDate(d: string, opts?: Intl.DateTimeFormatOptions) {
-  return new Date(d).toLocaleDateString("en-US", opts ?? {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 // ── Overview Tab ──────────────────────────────────────────────────────────
 
@@ -29,13 +23,16 @@ export function OverviewTab() {
 
   const { trip, members } = data;
 
-  const days =
-    Math.ceil(
-      (new Date(trip.end_date).getTime() - new Date(trip.start_date).getTime()) /
-        (1000 * 60 * 60 * 24),
-    ) + 1;
+  const days = getInclusiveDateOnlySpan(trip.start_date, trip.end_date);
 
-  const dateRange = `${fmtDate(trip.start_date, { month: "short", day: "numeric" })} – ${fmtDate(trip.end_date)}`;
+  const dateRange = `${formatDateOnly(trip.start_date, {
+    month: "short",
+    day: "numeric",
+  })} – ${formatDateOnly(trip.end_date, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })}`;
 
   const totalBudget = trip.budget_estimate
     ? parseFloat(trip.budget_estimate).toLocaleString("vi-VN")

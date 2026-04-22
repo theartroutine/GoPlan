@@ -2,18 +2,21 @@ import Link from "next/link";
 import Image from "next/image";
 import { CalendarDays, MapPin, Users } from "lucide-react";
 
+import { formatDateOnly } from "@/features/trips/domain/date-only";
 import { getTripCoverUrl } from "@/features/trips/domain/get-trip-cover-url";
 import type { TripListItem } from "@/features/trips/domain/types";
 import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge";
 
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
 export function TripCard({ trip }: { trip: TripListItem }) {
-  const dateRange = `${dateFormatter.format(new Date(trip.start_date))} – ${dateFormatter.format(new Date(trip.end_date))}`;
+  const dateRange = `${formatDateOnly(trip.start_date, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })} – ${formatDateOnly(trip.end_date, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })}`;
   const budgetPerPerson =
     trip.budget_estimate && trip.member_count > 0
       ? (parseFloat(trip.budget_estimate) / trip.member_count).toLocaleString("vi-VN")

@@ -129,7 +129,47 @@ describe("DestinationPicker", () => {
       await Promise.resolve();
     });
 
-    expect(onChange).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(null);
     expect(input.value).toBe("dalat");
+  });
+
+  it("propagates the selected suggestion text immediately while lookup is pending", async () => {
+    locationSearchApiMock.bffSuggestLocations.mockResolvedValueOnce([
+      {
+        provider: "here",
+        provider_id: "here:da-nang",
+        title: "Da Nang",
+        subtitle: "Vietnam",
+      },
+    ]);
+    locationSearchApiMock.bffLookupLocation.mockImplementationOnce(
+      () =>
+        new Promise(() => {
+          // Keep lookup pending to verify parent text sync before details resolve.
+        }),
+    );
+
+    const onRawInputChange = vi.fn();
+
+    render(
+      <DestinationPicker
+        onChange={() => undefined}
+        onRawInputChange={onRawInputChange}
+      />,
+    );
+
+    const input = screen.getByRole("combobox") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "da" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+      await Promise.resolve();
+    });
+
+    fireEvent.mouseDown(screen.getByRole("option", { name: /Da Nang/i }));
+
+    expect(onRawInputChange).toHaveBeenLastCalledWith("Da Nang, Vietnam");
+    expect(input.value).toBe("Da Nang, Vietnam");
   });
 });

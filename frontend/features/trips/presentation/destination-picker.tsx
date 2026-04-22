@@ -160,6 +160,8 @@ export function DestinationPicker({
         : suggestion.title;
 
       setInputValue(displayName);
+      onRawInputChange?.(displayName);
+      setIsCommitted(true);
       setIsOpen(false);
       setSuggestions([]);
       suggestAbortRef.current?.abort();
@@ -178,15 +180,17 @@ export function DestinationPicker({
         }
 
         if (details) {
+          const resolvedDestination = details.destination || displayName;
           onChange({
-            destination: details.destination || displayName,
+            destination: resolvedDestination,
             destination_provider: details.destination_provider,
             destination_provider_id: details.destination_provider_id,
             destination_lat: details.destination_lat,
             destination_lng: details.destination_lng,
             destination_country_code: details.destination_country_code,
           });
-          setInputValue(details.destination || displayName);
+          setInputValue(resolvedDestination);
+          onRawInputChange?.(resolvedDestination);
         } else {
           onChange({
             destination: displayName,
@@ -196,8 +200,8 @@ export function DestinationPicker({
             destination_lng: null,
             destination_country_code: "",
           });
+          onRawInputChange?.(displayName);
         }
-        setIsCommitted(true);
       } finally {
         if (lookupAbortRef.current === controller) {
           lookupAbortRef.current = null;
@@ -208,7 +212,7 @@ export function DestinationPicker({
         }
       }
     },
-    [onChange],
+    [onChange, onRawInputChange],
   );
 
   const handleKeyDown = useCallback(
