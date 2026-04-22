@@ -54,7 +54,7 @@ export function TripHeader() {
         bottom overlay elements can translate past the edge.
         The image clips inside its own inner container.
       */}
-      <div className="relative h-44 sm:h-52">
+      <div className="relative h-56 sm:h-64 lg:h-72">
         {/* Image layer */}
         <div className="absolute inset-0 overflow-hidden">
           <Image
@@ -65,7 +65,7 @@ export function TripHeader() {
             unoptimized
           />
           {/* Gradient at the bottom to ease the transition */}
-          <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background/30 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background/35 to-transparent" />
         </div>
 
         {/* ── Status badge — bottom-left, crosses the edge ── */}

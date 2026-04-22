@@ -58,7 +58,7 @@ export function DashboardContent() {
       )}
 
       {!loading && !error && visibleTrips.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 md:gap-5 xl:grid-cols-3">
           {visibleTrips.map((trip) => (
             <TripCard key={trip.id} trip={trip} />
           ))}

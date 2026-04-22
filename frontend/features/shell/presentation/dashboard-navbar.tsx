@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { DASHBOARD_FILTER_TABS, getDashboardFilterStatus } from "@/features/trips/presentation/dashboard-trip-filters";
 import { cn } from "@/shared/lib/utils";
-import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import {
   Tooltip,
@@ -39,7 +38,7 @@ export function DashboardNavbar() {
         ))}
       </div>
 
-      {/* Search + Create — hidden on small mobile, visible sm+ */}
+      {/* Search — hidden on small mobile, visible sm+ */}
       <div className="hidden items-center gap-2 sm:flex">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -54,16 +53,7 @@ export function DashboardNavbar() {
           </TooltipTrigger>
           <TooltipContent>Coming soon</TooltipContent>
         </Tooltip>
-        <Button size="sm" className="h-8 gap-1.5">
-          <Plus className="h-3.5 w-3.5" />
-          Create
-        </Button>
       </div>
-
-      {/* Create button only — visible on small mobile */}
-      <Button size="icon-sm" className="sm:hidden shrink-0">
-        <Plus className="h-4 w-4" />
-      </Button>
     </div>
   );
 }
