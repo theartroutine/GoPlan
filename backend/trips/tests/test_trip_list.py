@@ -39,6 +39,9 @@ class TripListTests(APITestCase):
         _make_trip_with_captain(self.bob, name="Bob Trip")
         response = self.client.get(LIST_URL, **_auth(self.alice))
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn("count", response.data)
+        self.assertIn("next", response.data)
+        self.assertIn("previous", response.data)
         names = [t["name"] for t in response.data["results"]]
         self.assertIn("Alice Trip", names)
         self.assertNotIn("Bob Trip", names)
@@ -54,6 +57,18 @@ class TripListTests(APITestCase):
         _make_trip_with_captain(self.alice)
         response = self.client.get(LIST_URL, **_auth(self.alice))
         self.assertEqual(response.data["results"][0]["my_role"], TripRole.CAPTAIN)
+
+    def test_list_member_count_uses_active_members(self):
+        trip = _make_trip_with_captain(self.alice)
+        TripMember.objects.create(
+            trip=trip,
+            user=self.bob,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        response = self.client.get(LIST_URL, **_auth(self.alice))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["results"][0]["member_count"], 2)
 
     def test_list_requires_auth_401(self):
         response = self.client.get(LIST_URL)

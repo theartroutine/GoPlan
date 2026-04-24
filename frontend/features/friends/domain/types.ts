@@ -20,5 +20,11 @@ export type Friend = {
 
 export type PaginatedResponse<T> = {
   results: T[];
+  next: string | null;
+  previous: string | null;
+};
+
+export type CountPaginatedResponse<T> = {
+  results: T[];
   count: number;
 };

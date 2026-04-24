@@ -84,8 +84,10 @@ def create_notification(recipient, notification_type, payload=None, actor=None):
                     {"type": "notification_push", "data": message},
                 )
             except Exception:
-                logger.exception(
-                    "Failed to push notification %s via WebSocket", notification.id
+                logger.error(
+                    "Failed to push notification %s via WebSocket",
+                    notification.id,
+                    exc_info=True,
                 )
 
         transaction.on_commit(_push_ws)
@@ -135,7 +137,11 @@ def mark_notification_read(notification_id, user):
                     },
                 )
             except Exception:
-                logger.exception("Failed to push read event via WebSocket")
+                logger.error(
+                    "Failed to push read event via WebSocket for notification %s",
+                    notification.id,
+                    exc_info=True,
+                )
 
         transaction.on_commit(_push_read)
     return notification
@@ -167,7 +173,11 @@ def mark_all_notifications_read(user):
                         },
                     )
                 except Exception:
-                    logger.exception("Failed to push read_all event via WebSocket")
+                    logger.error(
+                        "Failed to push read_all event via WebSocket for user %s",
+                        user.id,
+                        exc_info=True,
+                    )
 
             transaction.on_commit(_push_read_all)
     return count

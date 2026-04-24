@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { InvitableFriend } from "@/features/trips/domain/types";
 import { bffGetInvitableFriends, bffSendInvitations } from "@/features/trips/infrastructure/trips-api";
 import { Button } from "@/shared/ui/button";
+import { Checkbox } from "@/shared/ui/checkbox";
 
 type Props = { tripId: string; onClose: () => void; onInvited: () => void };
 
@@ -56,19 +57,22 @@ export function InviteMembersModal({ tripId, onClose, onInvited }: Props) {
           <ul className="max-h-64 space-y-2 overflow-y-auto">
             {friends.map((f) => (
               <li key={f.id}>
-                <button
-                  type="button"
-                  onClick={() => toggleSelect(f.id)}
-                  className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+                <label
+                  htmlFor={`invite-${f.id}`}
+                  className={`flex w-full cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
                     selected.has(f.id) ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"
                   }`}
                 >
+                  <Checkbox
+                    id={`invite-${f.id}`}
+                    checked={selected.has(f.id)}
+                    onCheckedChange={() => toggleSelect(f.id)}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{f.display_name}</p>
                     <p className="text-xs text-muted-foreground">{f.identify_tag}</p>
                   </div>
-                  {selected.has(f.id) && <span className="text-primary">✓</span>}
-                </button>
+                </label>
               </li>
             ))}
           </ul>

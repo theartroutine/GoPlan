@@ -1,4 +1,5 @@
 import type {
+  CountPaginatedResponse,
   Friend,
   FriendRequest,
   FriendUser,
@@ -7,11 +8,10 @@ import type {
 import { bff } from "@/shared/http/bff-client";
 
 export async function bffFriendList(
-  limit = 20,
-  offset = 0,
+  cursor?: string,
 ): Promise<PaginatedResponse<Friend>> {
   const res = await bff.get<PaginatedResponse<Friend>>("/api/friends", {
-    params: { limit, offset },
+    params: cursor ? { cursor } : undefined,
   });
   return res.data;
 }
@@ -19,8 +19,8 @@ export async function bffFriendList(
 export async function bffIncomingRequests(
   limit = 20,
   offset = 0,
-): Promise<PaginatedResponse<FriendRequest>> {
-  const res = await bff.get<PaginatedResponse<FriendRequest>>(
+): Promise<CountPaginatedResponse<FriendRequest>> {
+  const res = await bff.get<CountPaginatedResponse<FriendRequest>>(
     "/api/friends/requests/incoming",
     { params: { limit, offset } },
   );
@@ -30,8 +30,8 @@ export async function bffIncomingRequests(
 export async function bffOutgoingRequests(
   limit = 20,
   offset = 0,
-): Promise<PaginatedResponse<FriendRequest>> {
-  const res = await bff.get<PaginatedResponse<FriendRequest>>(
+): Promise<CountPaginatedResponse<FriendRequest>> {
+  const res = await bff.get<CountPaginatedResponse<FriendRequest>>(
     "/api/friends/requests/outgoing",
     { params: { limit, offset } },
   );
@@ -82,10 +82,11 @@ export async function bffRemoveFriend(id: string): Promise<void> {
 
 export async function bffSearchUser(
   query: string,
+  signal?: AbortSignal,
 ): Promise<{ user: FriendUser | null }> {
   const res = await bff.get<{ user: FriendUser | null }>(
     "/api/friends/search",
-    { params: { q: query } },
+    { params: { q: query }, signal },
   );
   return res.data;
 }

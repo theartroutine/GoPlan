@@ -98,7 +98,7 @@ export function CreateTripForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-1.5">
         <Label htmlFor="name">Trip name *</Label>
-        <Input id="name" name="name" placeholder="Đà Lạt 2026" required />
+        <Input id="name" name="name" placeholder="Summer Trip 2026" required />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="destination">Destination *</Label>

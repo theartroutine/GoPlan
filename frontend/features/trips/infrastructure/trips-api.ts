@@ -1,8 +1,10 @@
 import type { CreateTripPayload, CreateTripResponse, InvitableFriend, TripDetail, TripDetailResponse, TripInvitation, TripListResponse, UpdateTripPayload } from "@/features/trips/domain/types";
 import { bff } from "@/shared/http/bff-client";
 
-export async function bffListTrips(): Promise<TripListResponse> {
-  const res = await bff.get<TripListResponse>("/api/trips");
+export async function bffListTrips(cursor?: string): Promise<TripListResponse> {
+  const res = await bff.get<TripListResponse>("/api/trips", {
+    params: cursor ? { cursor } : undefined,
+  });
   return res.data;
 }
 
@@ -11,8 +13,8 @@ export async function bffCreateTrip(payload: CreateTripPayload): Promise<CreateT
   return res.data;
 }
 
-export async function bffGetTrip(tripId: string): Promise<TripDetailResponse> {
-  const res = await bff.get<TripDetailResponse>(`/api/trips/${tripId}`);
+export async function bffGetTrip(tripId: string, signal?: AbortSignal): Promise<TripDetailResponse> {
+  const res = await bff.get<TripDetailResponse>(`/api/trips/${tripId}`, { signal });
   return res.data;
 }
 

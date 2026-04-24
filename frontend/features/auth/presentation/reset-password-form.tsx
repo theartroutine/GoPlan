@@ -27,6 +27,15 @@ export function ResetPasswordForm({ uid, token }: ResetPasswordFormProps) {
   const [isExpiredToken, setIsExpiredToken] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const clearFieldError = useCallback((field: keyof FieldErrors) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }, []);
+
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
@@ -119,7 +128,7 @@ export function ResetPasswordForm({ uid, token }: ResetPasswordFormProps) {
         value={password}
         onChange={(e) => {
           setPassword(e.target.value);
-          setFieldErrors({});
+          clearFieldError("password");
           setError(null);
         }}
         error={fieldErrors.password?.join(" ")}
@@ -135,7 +144,7 @@ export function ResetPasswordForm({ uid, token }: ResetPasswordFormProps) {
         value={confirmPassword}
         onChange={(e) => {
           setConfirmPassword(e.target.value);
-          setFieldErrors({});
+          clearFieldError("confirm_password");
           setError(null);
         }}
         error={fieldErrors.confirm_password?.join(" ")}

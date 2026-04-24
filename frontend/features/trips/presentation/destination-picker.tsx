@@ -243,7 +243,7 @@ export function DestinationPicker({
           value={inputValue}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          placeholder="Đà Lạt, Tokyo, Paris…"
+          placeholder="Da Lat, Tokyo, Paris..."
           required={required}
           aria-autocomplete="list"
           aria-expanded={isOpen}

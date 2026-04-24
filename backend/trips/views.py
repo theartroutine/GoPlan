@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rest_framework import permissions, status
-from rest_framework.pagination import LimitOffsetPagination
+from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -45,9 +45,10 @@ from trips.services import (
 TRIP_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 
 
-class TripListPagination(LimitOffsetPagination):
-    default_limit = 20
-    max_limit = 50
+class TripListPagination(CursorPagination):
+    page_size = 20
+    ordering = "-created_at"
+    cursor_query_param = "cursor"
 
 
 class TripListCreateAPIView(APIView):

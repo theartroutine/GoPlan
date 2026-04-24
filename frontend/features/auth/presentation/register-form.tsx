@@ -20,6 +20,15 @@ export function RegisterForm() {
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const clearFieldError = useCallback((field: keyof FieldErrors) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }, []);
+
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
@@ -73,7 +82,10 @@ export function RegisterForm() {
         autoComplete="email"
         required
         value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          clearFieldError("email");
+        }}
         error={fieldErrors.email?.join(" ")}
       />
 
@@ -85,7 +97,10 @@ export function RegisterForm() {
         required
         minLength={8}
         value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        onChange={(e) => {
+          setPassword(e.target.value);
+          clearFieldError("password");
+        }}
         error={fieldErrors.password?.join(" ")}
       />
 

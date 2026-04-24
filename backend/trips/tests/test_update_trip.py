@@ -39,6 +39,11 @@ class UpdateTripTests(APITestCase):
         res = self.client.patch(self._url(), {"end_date": "2026-01-01"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 400)
 
+    def test_patch_end_date_only_rejected_when_before_existing_start(self):
+        res = self.client.patch(self._url(), {"end_date": "2026-05-01"}, format="json", **_auth(self.captain))
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("end_date", res.data)
+
     def test_captain_can_update_budget(self):
         res = self.client.patch(self._url(), {"budget_estimate": "5000000.00"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 200)

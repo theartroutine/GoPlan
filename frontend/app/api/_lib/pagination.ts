@@ -30,6 +30,22 @@ export function normalizePaginatedResponse(data: unknown) {
 }
 
 /**
+ * Normalize DRF CursorPagination response for BFF list endpoints.
+ * Returns cursor-only values so browser clients never receive backend URLs.
+ */
+export function normalizeCursorPaginatedResponse(data: unknown) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return { results: [], next: null, previous: null };
+  }
+  const obj = data as Record<string, unknown>;
+  return {
+    results: Array.isArray(obj.results) ? obj.results : [],
+    next: extractCursor(obj.next as string | null),
+    previous: extractCursor(obj.previous as string | null),
+  };
+}
+
+/**
  * Strip next/previous URLs from DRF LimitOffsetPagination response.
  * Returns {count, results} — frontend manages offset/limit directly.
  */

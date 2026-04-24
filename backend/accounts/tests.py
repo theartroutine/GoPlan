@@ -13,6 +13,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
+from accounts.models import EmailVerificationToken
 from accounts.services import generate_email_verification_token
 from test_helpers import (
     create_completed_user as build_completed_user,
@@ -241,7 +242,7 @@ class AuthAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_OR_EXPIRED_TOKEN")
 
-    def test_verify_email_idempotent(self):
+    def test_verify_email_token_is_single_use(self):
         user = User.objects.create_user(email="owner@example.com", password="StrongPass#2026")
         token = generate_email_verification_token(user)
 
@@ -249,7 +250,11 @@ class AuthAPITestCase(APITestCase):
         response2 = self.client.post(self.verify_email_url, {"token": token}, format="json")
 
         self.assertEqual(response1.status_code, status.HTTP_200_OK)
-        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+        self.assertEqual(response2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response2.data["error_code"], "INVALID_OR_EXPIRED_TOKEN")
+        self.assertTrue(
+            EmailVerificationToken.objects.filter(user=user, used_at__isnull=False).exists()
+        )
 
     def test_verify_email_missing_token(self):
         response = self.client.post(self.verify_email_url, {}, format="json")

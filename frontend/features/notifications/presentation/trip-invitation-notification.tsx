@@ -28,11 +28,13 @@ export function TripInvitationNotification({ notification, onAccept, onDecline }
     );
   }
 
+  const invitationId = payload.invitation_id;
+
   async function handleAccept() {
     setLoading("accept");
     setActionError(null);
     try {
-      await onAccept(payload.invitation_id, notification.id);
+      await onAccept(invitationId, notification.id);
       setResponded("accepted");
     } catch {
       setActionError("Failed to accept invitation. Please try again.");
@@ -45,7 +47,7 @@ export function TripInvitationNotification({ notification, onAccept, onDecline }
     setLoading("decline");
     setActionError(null);
     try {
-      await onDecline(payload.invitation_id, notification.id);
+      await onDecline(invitationId, notification.id);
       setResponded("declined");
     } catch {
       setActionError("Failed to decline invitation. Please try again.");

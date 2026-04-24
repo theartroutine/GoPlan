@@ -17,7 +17,6 @@ import { DashboardContent } from "@/features/trips/presentation/dashboard-conten
 
 function makeTripListResponse(): TripListResponse {
   return {
-    count: 1,
     next: null,
     previous: null,
     results: [

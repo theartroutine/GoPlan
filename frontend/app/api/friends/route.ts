@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 
-import { stripPaginationUrls } from "@/app/api/_lib/pagination";
+import { normalizeCursorPaginatedResponse } from "@/app/api/_lib/pagination";
 import {
   buildProtectedResponse,
   protectedUpstreamCall,
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   if (!result.ok) return result.response;
 
   return buildProtectedResponse(
-    stripPaginationUrls(result.data),
+    normalizeCursorPaginatedResponse(result.data),
     result.refreshedAccessToken,
   );
 }

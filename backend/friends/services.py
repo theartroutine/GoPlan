@@ -86,6 +86,18 @@ def _friend_count(user):
     ).count()
 
 
+def _friend_count_locked(user):
+    """Count total friendships for a user using a locking query.
+
+    Must be called inside a transaction.atomic() scope after _lock_user_pair()
+    so concurrent accept operations involving this user cannot race the limit
+    check.
+    """
+    return Friendship.objects.select_for_update().filter(
+        Q(user_low=user) | Q(user_high=user)
+    ).count()
+
+
 def _lock_user_pair(user_a, user_b):
     """Lock two User rows in deterministic order to prevent deadlocks."""
     sorted_ids = sorted([user_a.pk, user_b.pk])
@@ -198,11 +210,11 @@ def accept_friend_request(friend_request_id, actor):
 
         _lock_user_pair(fr.sender, fr.receiver)
 
-        if _friend_count(fr.sender) >= FRIEND_LIMIT:
+        if _friend_count_locked(fr.sender) >= FRIEND_LIMIT:
             raise FriendLimitReachedError(
                 "The sender has reached the maximum number of friends."
             )
-        if _friend_count(fr.receiver) >= FRIEND_LIMIT:
+        if _friend_count_locked(fr.receiver) >= FRIEND_LIMIT:
             raise FriendLimitReachedError(
                 "You have reached the maximum number of friends."
             )

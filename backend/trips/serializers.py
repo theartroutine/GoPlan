@@ -40,7 +40,10 @@ class TripListItemSerializer(serializers.ModelSerializer):
         ]
 
     def get_member_count(self, obj) -> int:
-        # Use prefetch cache from get_user_trips; .count() would bypass it
+        annotated = getattr(obj, "active_member_count", None)
+        if annotated is not None:
+            return annotated
+        # Fall back to the prefetch cache when the annotation is absent.
         return len(obj.memberships.all())
 
     def get_my_role(self, obj) -> str | None:

@@ -65,13 +65,16 @@ class CreateNotificationWSTests(TransactionTestCase):
             "notifications.services.get_channel_layer",
             side_effect=Exception("Redis down"),
         ):
-            notification = create_notification(
-                recipient=recipient,
-                notification_type=NotificationType.FRIEND_REQUEST,
-            )
+            with patch("notifications.services.logger.error") as mock_error:
+                notification = create_notification(
+                    recipient=recipient,
+                    notification_type=NotificationType.FRIEND_REQUEST,
+                )
 
         # DB record persisted despite WS failure
         self.assertTrue(Notification.objects.filter(pk=notification.id).exists())
+        mock_error.assert_called_once()
+        self.assertTrue(mock_error.call_args.kwargs["exc_info"])
 
     def test_create_notification_pushes_after_commit(self):
         recipient = create_verified_user()
@@ -211,6 +214,26 @@ class MarkNotificationReadConcurrencyTests(TransactionTestCase):
         # But must still return the notification (idempotent)
         self.assertEqual(result.id, notification.id)
 
+    def test_mark_read_handles_channel_layer_failure(self):
+        user = create_verified_user(email="mark-read-ws@example.com")
+        notification = Notification.objects.create(
+            recipient=user,
+            type=NotificationType.FRIEND_REQUEST,
+        )
+
+        with patch(
+            "notifications.services.get_channel_layer",
+            side_effect=Exception("Redis down"),
+        ):
+            with patch("notifications.services.logger.error") as mock_error:
+                result = mark_notification_read(notification.id, user)
+
+        notification.refresh_from_db()
+        self.assertEqual(result.id, notification.id)
+        self.assertIsNotNone(notification.read_at)
+        mock_error.assert_called_once()
+        self.assertTrue(mock_error.call_args.kwargs["exc_info"])
+
 
 # -------- mark_all_notifications_read --------
 
@@ -240,6 +263,33 @@ class MarkAllNotificationsReadTests(APITestCase):
             ).count(),
             0,
         )
+
+
+@override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
+class MarkAllNotificationsReadWSTests(TransactionTestCase):
+
+    def test_mark_all_read_handles_channel_layer_failure(self):
+        user = create_verified_user(email="mark-all-read-ws@example.com")
+        Notification.objects.create(
+            recipient=user, type=NotificationType.FRIEND_REQUEST
+        )
+
+        with patch(
+            "notifications.services.get_channel_layer",
+            side_effect=Exception("Redis down"),
+        ):
+            with patch("notifications.services.logger.error") as mock_error:
+                count = mark_all_notifications_read(user)
+
+        self.assertEqual(count, 1)
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=user, read_at__isnull=True
+            ).count(),
+            0,
+        )
+        mock_error.assert_called_once()
+        self.assertTrue(mock_error.call_args.kwargs["exc_info"])
 
 
 class MarkAllNotificationsReadTransactionTests(APITestCase):

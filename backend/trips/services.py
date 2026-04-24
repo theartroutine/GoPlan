@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Count, Prefetch, Q, Subquery
 from django.utils import timezone
 
 from friends.models import Friendship
@@ -118,9 +118,15 @@ def create_trip(
 def get_user_trips(user):
     """Return all trips where user has an ACTIVE membership."""
     active_memberships = TripMember.objects.filter(status=MemberStatus.ACTIVE)
+    user_trip_ids = active_memberships.filter(user=user).values("trip_id")
     return (
-        Trip.objects.filter(memberships__user=user, memberships__status=MemberStatus.ACTIVE)
+        Trip.objects.filter(id__in=Subquery(user_trip_ids))
         .prefetch_related(Prefetch("memberships", queryset=active_memberships))
+        .annotate(active_member_count=Count(
+            "memberships",
+            filter=Q(memberships__status=MemberStatus.ACTIVE),
+            distinct=True,
+        ))
         .order_by("-created_at")
         .distinct()
     )
@@ -271,19 +277,20 @@ def accept_invitation(invitation_id, actor) -> TripMember:
     """Accept a PENDING invitation. Creates ACTIVE TripMember for invitee."""
     with transaction.atomic():
         try:
-            invitation_trip_id = TripInvitation.objects.values_list("trip_id", flat=True).get(pk=invitation_id)
+            invitation = (
+                TripInvitation.objects
+                .select_related("trip", "inviter")
+                .select_for_update()
+                .get(pk=invitation_id)
+            )
         except TripInvitation.DoesNotExist:
             raise TripNotFoundError("Invitation not found.")
 
+        trip = invitation.trip
         try:
-            trip = Trip.objects.select_for_update().get(pk=invitation_trip_id)
+            trip = Trip.objects.select_for_update().get(pk=trip.pk)
         except Trip.DoesNotExist:
             raise TripNotFoundError("Trip not found.")
-
-        try:
-            invitation = TripInvitation.objects.select_for_update().select_related("inviter").get(pk=invitation_id)
-        except TripInvitation.DoesNotExist:
-            raise TripNotFoundError("Invitation not found.")
 
         if invitation.invitee != actor:
             raise TripPermissionError("Only the invitee can accept this invitation.")

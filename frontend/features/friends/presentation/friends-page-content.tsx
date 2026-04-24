@@ -21,25 +21,21 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
-const PAGE_SIZE = 20;
-
 export function FriendsPageContent() {
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [count, setCount] = useState(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [offset, setOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<Friend | null>(null);
 
   const fetchFriends = useCallback(async () => {
     try {
       setError(null);
-      const data = await bffFriendList(PAGE_SIZE, 0);
+      const data = await bffFriendList();
       setFriends(data.results);
-      setCount(data.count);
-      setOffset(0);
+      setNextCursor(data.next);
     } catch {
       setError("Failed to load friends.");
     } finally {
@@ -56,7 +52,6 @@ export function FriendsPageContent() {
     try {
       await bffRemoveFriend(friendshipId);
       setFriends((prev) => prev.filter((f) => f.friendship_id !== friendshipId));
-      setCount((prev) => prev - 1);
       setConfirmTarget(null);
     } catch (err) {
       const message =
@@ -70,12 +65,12 @@ export function FriendsPageContent() {
   };
 
   const handleLoadMore = async () => {
-    const nextOffset = offset + PAGE_SIZE;
+    if (!nextCursor) return;
     setLoadingMore(true);
     try {
-      const data = await bffFriendList(PAGE_SIZE, nextOffset);
+      const data = await bffFriendList(nextCursor);
       setFriends((prev) => [...prev, ...data.results]);
-      setOffset(nextOffset);
+      setNextCursor(data.next);
     } catch {
       setError("Failed to load more friends.");
     } finally {
@@ -120,7 +115,9 @@ export function FriendsPageContent() {
 
       {!loading && friends.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">{count} friend{count !== 1 ? "s" : ""}</p>
+          <p className="text-xs text-muted-foreground">
+            {friends.length} friend{friends.length !== 1 ? "s" : ""}
+          </p>
           {friends.map((friend) => (
             <FriendCard
               key={friend.friendship_id}
@@ -142,7 +139,7 @@ export function FriendsPageContent() {
               }
             />
           ))}
-          {friends.length < count && (
+          {nextCursor && (
             <div className="flex justify-center pt-2">
               <Button variant="outline" size="sm" onClick={handleLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Spinner className="h-4 w-4" /> : "Load more"}

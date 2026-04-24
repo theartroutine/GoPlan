@@ -179,7 +179,9 @@ class ListTests(APITestCase):
 
         response = self.client.get(INCOMING_URL, **_auth_header(self.bob))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["count"], 2)
+        self.assertNotIn("count", response.data)
+        self.assertIn("next", response.data)
+        self.assertIn("previous", response.data)
         self.assertEqual(len(response.data["results"]), 2)
 
     def test_outgoing_list(self):
@@ -188,7 +190,8 @@ class ListTests(APITestCase):
 
         response = self.client.get(OUTGOING_URL, **_auth_header(self.alice))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["count"], 2)
+        self.assertNotIn("count", response.data)
+        self.assertEqual(len(response.data["results"]), 2)
 
     def test_friend_list(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
@@ -197,7 +200,8 @@ class ListTests(APITestCase):
 
         response = self.client.get(FRIEND_LIST_URL, **_auth_header(self.alice))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["count"], 1)
+        self.assertNotIn("count", response.data)
+        self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(
             response.data["results"][0]["user"]["identify_tag"], "bob#DEF456"
         )

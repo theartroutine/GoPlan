@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import axios from "axios";
 import type { TripDetailResponse } from "@/features/trips/domain/types";
 import { bffGetTrip } from "@/features/trips/infrastructure/trips-api";
 
@@ -33,28 +34,39 @@ export function TripProvider({
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
     setError(null);
+    setNotFound(false);
     try {
-      const result = await bffGetTrip(tripId);
+      const result = await bffGetTrip(tripId, signal);
       setData(result);
     } catch (err: unknown) {
+      if (signal.aborted || axios.isCancel(err)) return;
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 403 || status === 404) setNotFound(true);
       else setError("Failed to load trip.");
     } finally {
-      setLoading(false);
+      if (!signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [tripId]);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+
+  const refresh = useCallback(async () => {
+    const controller = new AbortController();
+    await load(controller.signal);
   }, [load]);
 
   return (
     <TripContext.Provider
-      value={{ tripId, data, loading, error, notFound, refresh: load }}
+      value={{ tripId, data, loading, error, notFound, refresh }}
     >
       {children}
     </TripContext.Provider>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   LayoutDashboard,
   LogOut,
@@ -143,19 +144,23 @@ export function Sidebar() {
       </aside>
 
       {/* Mobile overlay drawer */}
-      {isMobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={closeMobile}
-          />
-          {/* Drawer */}
-          <aside className="relative flex h-full w-64 flex-col bg-background shadow-xl animate-in slide-in-from-left duration-200">
+      <Dialog.Root
+        open={isMobileOpen}
+        onOpenChange={(open) => {
+          if (!open) closeMobile();
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 lg:hidden" />
+          <Dialog.Content
+            className="fixed inset-y-0 left-0 z-50 flex h-full w-64 flex-col bg-background shadow-xl animate-in slide-in-from-left duration-200 lg:hidden"
+            aria-label="Navigation"
+          >
+            <Dialog.Title className="sr-only">Navigation Menu</Dialog.Title>
             <SidebarContent isMobile={true} />
-          </aside>
-        </div>
-      )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </>
   );
 }

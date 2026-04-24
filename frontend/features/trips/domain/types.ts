@@ -16,7 +16,6 @@ export type TripListItem = {
 };
 
 export type TripListResponse = {
-  count: number;
   next: string | null;
   previous: string | null;
   results: TripListItem[];
