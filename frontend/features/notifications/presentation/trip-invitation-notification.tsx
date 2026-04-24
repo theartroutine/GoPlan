@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-import type { Notification, TripInvitationPayload } from "@/features/notifications/domain/types";
+import type { Notification } from "@/features/notifications/domain/types";
+import { parseTripInvitationPayload } from "@/features/notifications/domain/payload-parsers";
 import { Button } from "@/shared/ui/button";
 
 type Props = {
@@ -16,8 +17,16 @@ export function TripInvitationNotification({ notification, onAccept, onDecline }
   const [responded, setResponded] = useState<"accepted" | "declined" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const payload = notification.payload as unknown as TripInvitationPayload;
+  const payload = parseTripInvitationPayload(notification.payload);
   const actorName = notification.actor?.display_name ?? "Someone";
+
+  if (!payload) {
+    return (
+      <div className="px-4 py-3 text-sm text-muted-foreground">
+        Trip invitation (details unavailable)
+      </div>
+    );
+  }
 
   async function handleAccept() {
     setLoading("accept");
