@@ -52,6 +52,7 @@ class TripListPagination(LimitOffsetPagination):
 
 class TripListCreateAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_list_create"
 
     def get(self, request):
         trips = get_user_trips(request.user)
@@ -88,6 +89,7 @@ class TripListCreateAPIView(APIView):
 
 class TripDetailUpdateAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_detail_update"
 
     def get(self, request, trip_id):
         try:
@@ -136,6 +138,7 @@ class TripDetailUpdateAPIView(APIView):
 
 class TripInvitationsAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_send_invitations"
 
     def get(self, request, trip_id):
         try:
@@ -182,6 +185,7 @@ class TripInvitationsAPIView(APIView):
 
 class InvitableFriendsAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_invitable_friends"
 
     def get(self, request, trip_id):
         try:
@@ -205,6 +209,7 @@ class InvitableFriendsAPIView(APIView):
 
 class AcceptInvitationAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_accept_invitation"
 
     def post(self, request, inv_id):
         try:
@@ -220,6 +225,7 @@ class AcceptInvitationAPIView(APIView):
 
 class DeclineInvitationAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_decline_invitation"
 
     def post(self, request, inv_id):
         try:
@@ -235,6 +241,7 @@ class DeclineInvitationAPIView(APIView):
 
 class StartTripAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_start"
 
     def post(self, request, trip_id):
         try:
@@ -250,6 +257,7 @@ class StartTripAPIView(APIView):
 
 class CompleteTripAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_complete"
 
     def post(self, request, trip_id):
         try:
@@ -265,6 +273,7 @@ class CompleteTripAPIView(APIView):
 
 class CancelTripAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_cancel"
 
     def post(self, request, trip_id):
         try:
@@ -280,6 +289,7 @@ class CancelTripAPIView(APIView):
 
 class RemoveMemberAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_remove_member"
 
     def delete(self, request, trip_id, user_id):
         try:
@@ -297,6 +307,7 @@ class RemoveMemberAPIView(APIView):
 
 class LeaveTripAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_leave"
 
     def post(self, request, trip_id):
         try:

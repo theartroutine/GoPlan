@@ -165,6 +165,18 @@ REST_FRAMEWORK = {
         'friends_remove': '30/hour',
         'friends_search': '60/hour',
         'media_upload': '30/hour',
+        'trips_list_create': '60/hour',
+        'trips_detail_update': '120/hour',
+        'trips_send_invitations': '10/hour',
+        'trips_invitable_friends': '60/hour',
+        'trips_accept_invitation': '30/hour',
+        'trips_decline_invitation': '30/hour',
+        'trips_start': '20/hour',
+        'trips_complete': '20/hour',
+        'trips_cancel': '20/hour',
+        'trips_remove_member': '30/hour',
+        'trips_leave': '30/hour',
+        'ws_ticket_refresh': '20/minute',
     },
 }
 
