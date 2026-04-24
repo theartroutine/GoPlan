@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 import string
 
@@ -15,6 +16,7 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
+from accounts.models import EmailVerificationToken
 from accounts.tokens import RefreshToken
 
 User = get_user_model()
@@ -58,7 +60,10 @@ def build_display_name(first_name: str, last_name: str) -> str:
 
 def generate_email_verification_token(user: User) -> str:
     signer = signing.TimestampSigner(salt=EMAIL_VERIFICATION_SALT)
-    return signer.sign(str(user.pk))
+    token = signer.sign(str(user.pk))
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    EmailVerificationToken.objects.get_or_create(user=user, token_hash=token_hash)
+    return token
 
 
 def verify_email_token(token: str) -> User:
@@ -68,10 +73,26 @@ def verify_email_token(token: str) -> User:
     except (signing.BadSignature, signing.SignatureExpired) as exc:
         raise EmailVerificationError("Invalid or expired verification token.") from exc
 
-    try:
-        return User.objects.get(pk=user_pk)
-    except User.DoesNotExist as exc:
-        raise EmailVerificationError("Invalid or expired verification token.") from exc
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with transaction.atomic():
+        try:
+            token_record = EmailVerificationToken.objects.select_for_update().get(
+                token_hash=token_hash
+            )
+        except EmailVerificationToken.DoesNotExist as exc:
+            raise EmailVerificationError("Invalid or expired verification token.") from exc
+
+        if token_record.is_used():
+            raise EmailVerificationError("Invalid or expired verification token.")
+
+        try:
+            user = User.objects.get(pk=user_pk)
+        except User.DoesNotExist as exc:
+            raise EmailVerificationError("Invalid or expired verification token.") from exc
+
+        token_record.used_at = timezone.now()
+        token_record.save(update_fields=["used_at"])
+        return user
 
 
 def confirm_email(user: User) -> User:

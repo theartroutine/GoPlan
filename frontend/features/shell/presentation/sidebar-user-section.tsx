@@ -37,11 +37,33 @@ export function SidebarUserSection() {
 
   const initials = getInitials(user.display_name || user.email);
 
-  const content = (
+  const copyButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={handleCopy}
+          aria-label={copied ? "Copied" : "Copy tag"}
+        >
+          {copied ? (
+            <Check className="h-3 w-3" />
+          ) : (
+            <Copy className="h-3 w-3" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="right">
+        {copied ? "Copied!" : "Copy tag"}
+      </TooltipContent>
+    </Tooltip>
+  );
+
+  const expandedContent = (
     <div
       className={cn(
-        "flex items-center overflow-hidden transition-[padding,gap] duration-200",
-        isCollapsed ? "justify-center gap-0 px-0 py-3" : "gap-3 px-4 py-3",
+        "flex items-center gap-3 overflow-hidden px-4 py-3",
       )}
     >
       <Avatar className="h-8 w-8 shrink-0">
@@ -51,8 +73,8 @@ export function SidebarUserSection() {
       </Avatar>
       <div
         className={cn(
-          "min-w-0 overflow-hidden transition-[opacity,max-width] duration-200",
-          isCollapsed ? "max-w-0 opacity-0" : "max-w-48 opacity-100",
+          "min-w-0 overflow-hidden transition-[opacity,transform] duration-300 ease-out",
+          isCollapsed ? "translate-x-1 opacity-0" : "translate-x-0 opacity-100",
         )}
       >
         <p className="truncate text-sm font-medium leading-tight whitespace-nowrap">
@@ -63,25 +85,7 @@ export function SidebarUserSection() {
             <p className="truncate text-xs text-muted-foreground whitespace-nowrap">
               {user.identify_tag}
             </p>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={handleCopy}
-                >
-                  {copied ? (
-                    <Check className="h-3 w-3" />
-                  ) : (
-                    <Copy className="h-3 w-3" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                {copied ? "Copied!" : "Copy tag"}
-              </TooltipContent>
-            </Tooltip>
+            {copyButton}
           </div>
         )}
       </div>
@@ -90,17 +94,40 @@ export function SidebarUserSection() {
 
   if (isCollapsed) {
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>{content}</TooltipTrigger>
-        <TooltipContent side="right">
-          <p className="font-medium">{user.display_name}</p>
-          {user.identify_tag && (
-            <p className="text-xs text-muted-foreground">{user.identify_tag}</p>
-          )}
-        </TooltipContent>
-      </Tooltip>
+      <div className="flex flex-col items-center gap-2 py-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Avatar className="h-8 w-8 shrink-0">
+              <AvatarFallback className="bg-muted text-xs font-medium">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p className="font-medium">{user.display_name}</p>
+            {user.identify_tag && (
+              <p className="text-xs text-muted-foreground">{user.identify_tag}</p>
+            )}
+          </TooltipContent>
+        </Tooltip>
+        {user.identify_tag ? (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="h-5 w-5 text-muted-foreground hover:text-foreground"
+            onClick={handleCopy}
+            aria-label={copied ? "Copied" : "Copy tag"}
+          >
+            {copied ? (
+              <Check className="h-3 w-3" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
+          </Button>
+        ) : null}
+      </div>
     );
   }
 
-  return content;
+  return expandedContent;
 }

@@ -4,9 +4,10 @@ from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
 from realtime.services import authenticate_ws_ticket
-from test_helpers import create_verified_user
+from test_helpers import create_completed_user, create_verified_user
 
 WS_TICKET_URL = "/api/realtime/ws-ticket"
+WS_TICKET_REFRESH_URL = "/api/realtime/ws-ticket/refresh"
 
 
 def _auth_header(user):
@@ -31,3 +32,26 @@ class WebSocketTicketViewTests(APITestCase):
     def test_issue_ws_ticket_requires_auth(self):
         response = self.client.post(WS_TICKET_URL)
         self.assertEqual(response.status_code, 401)
+
+    def test_refresh_ws_ticket_returns_ticket(self):
+        user = create_completed_user("ws-refresh@example.com", "wsrefresh", "WSR001")
+
+        response = self.client.post(WS_TICKET_REFRESH_URL, **_auth_header(user))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("ticket", response.data)
+
+        authenticated_user, auth_error = authenticate_ws_ticket(response.data["ticket"])
+        self.assertIsNone(auth_error)
+        self.assertEqual(authenticated_user, user)
+
+    def test_refresh_ws_ticket_requires_auth(self):
+        response = self.client.post(WS_TICKET_REFRESH_URL)
+        self.assertEqual(response.status_code, 401)
+
+    def test_refresh_ws_ticket_requires_completed_profile(self):
+        user = create_verified_user("ws-incomplete@example.com")
+
+        response = self.client.post(WS_TICKET_REFRESH_URL, **_auth_header(user))
+
+        self.assertEqual(response.status_code, 403)

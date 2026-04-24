@@ -7,6 +7,7 @@ from friends.models import FriendRequest, FriendRequestStatus, Friendship
 from friends.validators import parse_identify_tag
 from notifications.models import NotificationType
 from notifications.services import create_notification
+from shared.utils.identity import canonical_pair
 
 User = get_user_model()
 
@@ -66,22 +67,27 @@ FRIEND_LIMIT = 500
 # -------- Helpers --------
 
 
-def _canonical_pair(user_a, user_b):
-    """Return (user_low, user_high) sorted by UUID for consistent ordering."""
-    if user_a.pk < user_b.pk:
-        return user_a, user_b
-    return user_b, user_a
-
-
 def _are_friends(user_a, user_b):
     """Check if two users are already friends."""
-    low, high = _canonical_pair(user_a, user_b)
+    low, high = canonical_pair(user_a, user_b)
     return Friendship.objects.filter(user_low=low, user_high=high).exists()
 
 
 def _friend_count(user):
     """Count total friendships for a user."""
     return Friendship.objects.filter(
+        Q(user_low=user) | Q(user_high=user)
+    ).count()
+
+
+def _friend_count_locked(user):
+    """Count total friendships for a user using a locking query.
+
+    Must be called inside a transaction.atomic() scope after _lock_user_pair()
+    so concurrent accept operations involving this user cannot race the limit
+    check.
+    """
+    return Friendship.objects.select_for_update().filter(
         Q(user_low=user) | Q(user_high=user)
     ).count()
 
@@ -198,11 +204,11 @@ def accept_friend_request(friend_request_id, actor):
 
         _lock_user_pair(fr.sender, fr.receiver)
 
-        if _friend_count(fr.sender) >= FRIEND_LIMIT:
+        if _friend_count_locked(fr.sender) >= FRIEND_LIMIT:
             raise FriendLimitReachedError(
                 "The sender has reached the maximum number of friends."
             )
-        if _friend_count(fr.receiver) >= FRIEND_LIMIT:
+        if _friend_count_locked(fr.receiver) >= FRIEND_LIMIT:
             raise FriendLimitReachedError(
                 "You have reached the maximum number of friends."
             )
@@ -214,7 +220,7 @@ def accept_friend_request(friend_request_id, actor):
         fr.resolved_at = timezone.now()
         fr.save(update_fields=["status", "resolved_at", "updated_at"])
 
-        low, high = _canonical_pair(fr.sender, fr.receiver)
+        low, high = canonical_pair(fr.sender, fr.receiver)
         friendship = Friendship.objects.create(user_low=low, user_high=high)
 
         create_notification(

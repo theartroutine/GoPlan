@@ -71,3 +71,50 @@ class CreateTripTests(APITestCase):
     def test_create_trip_missing_required_fields_400(self):
         response = self.client.post(CREATE_URL, {"name": "No Dest"}, format="json", **_auth(self.user))
         self.assertEqual(response.status_code, 400)
+
+    def test_create_trip_with_destination_provider_fields_201(self):
+        payload = {
+            "name": "Đà Lạt Trip",
+            "destination": "Đà Lạt, Lâm Đồng, Vietnam",
+            "destination_provider": "here",
+            "destination_provider_id": "here:cm:namedplace:123",
+            "destination_lat": "11.940298",
+            "destination_lng": "108.458397",
+            "destination_country_code": "VN",
+            "cover_image_url": "/media/trip-covers/abc.jpg",
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-05",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip_data = response.data["trip"]
+        self.assertEqual(trip_data["destination_provider"], "here")
+        self.assertEqual(trip_data["destination_provider_id"], "here:cm:namedplace:123")
+        self.assertEqual(trip_data["destination_country_code"], "VN")
+        self.assertEqual(trip_data["cover_image_url"], "/media/trip-covers/abc.jpg")
+        trip = Trip.objects.get(pk=trip_data["id"])
+        self.assertEqual(trip.destination_provider, "here")
+        self.assertEqual(trip.destination_provider_id, "here:cm:namedplace:123")
+        self.assertEqual(trip.destination_country_code, "VN")
+        self.assertEqual(trip.cover_image_url, "/media/trip-covers/abc.jpg")
+
+    def test_create_trip_without_destination_provider_fields_still_201(self):
+        """Backward compatibility: creating without structured destination fields must still work."""
+        payload = {
+            "name": "Old Style Trip",
+            "destination": "Hà Nội",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-03",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip_data = response.data["trip"]
+        self.assertEqual(trip_data["destination_provider"], "")
+        self.assertEqual(trip_data["destination_provider_id"], "")
+        self.assertIsNone(trip_data["destination_lat"])
+        self.assertEqual(trip_data["cover_image_url"], "")
+        trip = Trip.objects.get(pk=trip_data["id"])
+        self.assertEqual(trip.destination_provider, "")
+        self.assertEqual(trip.destination_provider_id, "")
+        self.assertIsNone(trip.destination_lat)
+        self.assertEqual(trip.cover_image_url, "")

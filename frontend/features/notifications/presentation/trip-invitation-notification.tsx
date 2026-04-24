@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-import type { Notification, TripInvitationPayload } from "@/features/notifications/domain/types";
+import type { Notification } from "@/features/notifications/domain/types";
+import { parseTripInvitationPayload } from "@/features/notifications/domain/payload-parsers";
 import { Button } from "@/shared/ui/button";
 
 type Props = {
@@ -16,14 +17,24 @@ export function TripInvitationNotification({ notification, onAccept, onDecline }
   const [responded, setResponded] = useState<"accepted" | "declined" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const payload = notification.payload as unknown as TripInvitationPayload;
+  const payload = parseTripInvitationPayload(notification.payload);
   const actorName = notification.actor?.display_name ?? "Someone";
+
+  if (!payload) {
+    return (
+      <div className="px-4 py-3 text-sm text-muted-foreground">
+        Trip invitation (details unavailable)
+      </div>
+    );
+  }
+
+  const invitationId = payload.invitation_id;
 
   async function handleAccept() {
     setLoading("accept");
     setActionError(null);
     try {
-      await onAccept(payload.invitation_id, notification.id);
+      await onAccept(invitationId, notification.id);
       setResponded("accepted");
     } catch {
       setActionError("Failed to accept invitation. Please try again.");
@@ -36,7 +47,7 @@ export function TripInvitationNotification({ notification, onAccept, onDecline }
     setLoading("decline");
     setActionError(null);
     try {
-      await onDecline(payload.invitation_id, notification.id);
+      await onDecline(invitationId, notification.id);
       setResponded("declined");
     } catch {
       setActionError("Failed to decline invitation. Please try again.");

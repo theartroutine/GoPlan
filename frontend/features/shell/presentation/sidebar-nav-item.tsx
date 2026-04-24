@@ -28,18 +28,17 @@ export function SidebarNavItem({ item, isMobile = false }: { item: NavigationIte
     <Link
       href={item.href}
       className={cn(
-        "flex items-center gap-3 rounded-md py-2 text-sm font-medium transition-[color,background-color,padding] duration-200",
+        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150",
         isActive
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-        collapsed ? "justify-center px-0" : "px-3",
       )}
     >
       <Icon className="h-4 w-4 shrink-0" />
       <span
         className={cn(
-          "truncate overflow-hidden whitespace-nowrap transition-[opacity,max-width] duration-200",
-          collapsed ? "max-w-0 opacity-0" : "max-w-48 opacity-100",
+          "truncate overflow-hidden whitespace-nowrap transition-[opacity,transform] duration-300 ease-out",
+          collapsed ? "translate-x-1 opacity-0" : "translate-x-0 opacity-100",
         )}
       >
         {item.label}

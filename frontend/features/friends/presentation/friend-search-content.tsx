@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Search } from "lucide-react";
 import Link from "next/link";
 import { isAxiosError } from "axios";
@@ -23,17 +23,22 @@ export function FriendSearchContent() {
   const [foundUser, setFoundUser] = useState<FriendUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const handleSearch = async () => {
+  const handleSearch = useCallback(async () => {
     const trimmed = query.trim();
-    if (!trimmed) return;
+    if (trimmed.length < 2) return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     setState("loading");
     setError(null);
     setFoundUser(null);
 
     try {
-      const data = await bffSearchUser(trimmed);
+      const data = await bffSearchUser(trimmed, controller.signal);
       if (data.user) {
         setFoundUser(data.user);
         setState("found");
@@ -41,6 +46,12 @@ export function FriendSearchContent() {
         setState("not-found");
       }
     } catch (err) {
+      if (
+        controller.signal.aborted ||
+        (isAxiosError(err) && err.code === "ERR_CANCELED")
+      ) {
+        return;
+      }
       const message =
         isAxiosError(err) && typeof err.response?.data?.detail === "string"
           ? err.response.data.detail
@@ -48,7 +59,25 @@ export function FriendSearchContent() {
       setError(message);
       setState("error");
     }
-  };
+  }, [query]);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      abortRef.current?.abort();
+      return;
+    }
+
+    const id = setTimeout(() => {
+      void handleSearch();
+    }, 300);
+
+    return () => clearTimeout(id);
+  }, [query, handleSearch]);
+
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
 
   const handleSend = async () => {
     if (!foundUser) return;
@@ -73,7 +102,7 @@ export function FriendSearchContent() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
+    if (e.key === "Enter") void handleSearch();
   };
 
   return (
@@ -90,8 +119,10 @@ export function FriendSearchContent() {
           placeholder="Enter identify tag (e.g. name#CODE)"
           value={query}
           onChange={(e) => {
-            setQuery(e.target.value);
-            if (state !== "idle" && state !== "loading") {
+            const nextQuery = e.target.value;
+            abortRef.current?.abort();
+            setQuery(nextQuery);
+            if (state !== "idle") {
               setState("idle");
               setError(null);
               setFoundUser(null);
@@ -101,8 +132,8 @@ export function FriendSearchContent() {
           className="flex-1"
         />
         <Button
-          onClick={handleSearch}
-          disabled={state === "loading" || !query.trim()}
+          onClick={() => void handleSearch()}
+          disabled={state === "loading" || query.trim().length < 2}
         >
           {state === "loading" ? (
             <Spinner className="h-4 w-4" />
@@ -142,7 +173,7 @@ export function FriendSearchContent() {
 
       {state === "sent" && (
         <div className="rounded-xl border border-border bg-card p-6 text-center">
-          <p className="text-sm font-medium text-green-600">
+          <p className="text-sm font-medium text-emerald-600">
             Friend request sent!
           </p>
         </div>

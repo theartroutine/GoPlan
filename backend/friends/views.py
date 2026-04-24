@@ -1,6 +1,6 @@
 from django.db.models import Q
 from rest_framework import permissions, serializers, status
-from rest_framework.pagination import LimitOffsetPagination
+from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -65,9 +65,10 @@ def _handle_friend_error(exc):
 # -------- Pagination --------
 
 
-class FriendListPagination(LimitOffsetPagination):
-    default_limit = 20
-    max_limit = 50
+class FriendListPagination(CursorPagination):
+    page_size = 20
+    ordering = "-created_at"
+    cursor_query_param = "cursor"
 
 
 # -------- Views --------

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   LayoutDashboard,
   LogOut,
-  PanelLeftOpen,
   Settings,
   UserCircle,
   Users,
@@ -38,7 +38,7 @@ const NAV_ITEMS: NavigationItem[] = [
 
 function SidebarContent({ isMobile }: { isMobile: boolean }) {
   const { logout } = useAuth();
-  const { isCollapsed, toggle, closeMobile } = useSidebar();
+  const { isCollapsed, closeMobile } = useSidebar();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -54,10 +54,7 @@ function SidebarContent({ isMobile }: { isMobile: boolean }) {
   const logoutButton = (
     <Button
       variant="ghost"
-      className={cn(
-        "w-full gap-3 text-destructive hover:text-destructive hover:bg-destructive/10 transition-[padding] duration-200",
-        collapsed ? "justify-center px-0" : "justify-start",
-      )}
+      className="w-full justify-start gap-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
       onClick={handleLogout}
       disabled={loggingOut}
     >
@@ -68,8 +65,8 @@ function SidebarContent({ isMobile }: { isMobile: boolean }) {
       )}
       <span
         className={cn(
-          "overflow-hidden whitespace-nowrap transition-[opacity,max-width] duration-200",
-          collapsed ? "max-w-0 opacity-0" : "max-w-24 opacity-100",
+          "overflow-hidden whitespace-nowrap transition-[opacity,transform] duration-300 ease-out",
+          collapsed ? "translate-x-1 opacity-0" : "translate-x-0 opacity-100",
         )}
       >
         Log out
@@ -79,53 +76,38 @@ function SidebarContent({ isMobile }: { isMobile: boolean }) {
 
   return (
     <>
-      <div className="flex items-center justify-between">
+      <div className="flex h-14 items-center border-b border-border">
         <SidebarLogo />
         {isMobile && (
           <Button
             variant="ghost"
             size="icon-sm"
-            className="mr-3 text-muted-foreground"
+            className="mr-3 shrink-0 text-muted-foreground"
             onClick={closeMobile}
+            aria-label="Close sidebar"
           >
             <X className="h-4 w-4" />
           </Button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-4">
+      <div
+        className={cn(
+          "flex-1 overflow-y-auto py-4",
+          collapsed ? "px-2" : "px-3",
+        )}
+      >
         <nav className="flex flex-col gap-1">
-          {!isMobile && (
-            <div
-              className={cn(
-                "overflow-hidden transition-[opacity,max-height] duration-200",
-                collapsed ? "max-h-10 opacity-100" : "max-h-0 opacity-0",
-              )}
-            >
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={toggle}
-                    className="flex w-full items-center justify-center gap-3 rounded-md px-0 py-2 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                  >
-                    <PanelLeftOpen className="h-4 w-4 shrink-0" />
-                    <span className="max-w-0 overflow-hidden" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Expand sidebar</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
           {NAV_ITEMS.map((item) => (
             <SidebarNavItem key={item.key} item={item} isMobile={isMobile} />
           ))}
         </nav>
       </div>
 
-      <div className="px-3 pb-3">
+      <div className={cn("pb-3", collapsed ? "px-2" : "px-3")}>
         <Separator className="mb-3" />
         <SidebarUserSection />
-        <div className="mt-2 px-1">
+        <div className={cn("mt-2", collapsed ? "px-0" : "px-1")}>
           {collapsed && !isMobile ? (
             <Tooltip>
               <TooltipTrigger asChild>{logoutButton}</TooltipTrigger>
@@ -154,7 +136,7 @@ export function Sidebar() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden lg:flex h-screen shrink-0 flex-col border-r border-border bg-background transition-[width] duration-200",
+          "relative hidden h-screen shrink-0 flex-col overflow-x-hidden border-r border-border bg-background transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:flex",
           isCollapsed ? "w-[68px]" : "w-64",
         )}
       >
@@ -162,19 +144,23 @@ export function Sidebar() {
       </aside>
 
       {/* Mobile overlay drawer */}
-      {isMobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={closeMobile}
-          />
-          {/* Drawer */}
-          <aside className="relative flex h-full w-64 flex-col bg-background shadow-xl animate-in slide-in-from-left duration-200">
+      <Dialog.Root
+        open={isMobileOpen}
+        onOpenChange={(open) => {
+          if (!open) closeMobile();
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 lg:hidden" />
+          <Dialog.Content
+            className="fixed inset-y-0 left-0 z-50 flex h-full w-64 flex-col bg-background shadow-xl animate-in slide-in-from-left duration-200 lg:hidden"
+            aria-label="Navigation"
+          >
+            <Dialog.Title className="sr-only">Navigation Menu</Dialog.Title>
             <SidebarContent isMobile={true} />
-          </aside>
-        </div>
-      )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </>
   );
 }

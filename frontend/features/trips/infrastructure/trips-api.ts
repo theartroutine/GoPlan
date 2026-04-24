@@ -1,8 +1,10 @@
 import type { CreateTripPayload, CreateTripResponse, InvitableFriend, TripDetail, TripDetailResponse, TripInvitation, TripListResponse, UpdateTripPayload } from "@/features/trips/domain/types";
 import { bff } from "@/shared/http/bff-client";
 
-export async function bffListTrips(): Promise<TripListResponse> {
-  const res = await bff.get<TripListResponse>("/api/trips");
+export async function bffListTrips(cursor?: string): Promise<TripListResponse> {
+  const res = await bff.get<TripListResponse>("/api/trips", {
+    params: cursor ? { cursor } : undefined,
+  });
   return res.data;
 }
 
@@ -11,8 +13,8 @@ export async function bffCreateTrip(payload: CreateTripPayload): Promise<CreateT
   return res.data;
 }
 
-export async function bffGetTrip(tripId: string): Promise<TripDetailResponse> {
-  const res = await bff.get<TripDetailResponse>(`/api/trips/${tripId}`);
+export async function bffGetTrip(tripId: string, signal?: AbortSignal): Promise<TripDetailResponse> {
+  const res = await bff.get<TripDetailResponse>(`/api/trips/${tripId}`, { signal });
   return res.data;
 }
 
@@ -62,4 +64,15 @@ export async function bffRemoveMember(tripId: string, userId: string): Promise<v
 
 export async function bffLeaveTrip(tripId: string): Promise<void> {
   await bff.post(`/api/trips/${tripId}/leave`);
+}
+
+export async function bffUploadTripCover(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  // Use bff.postForm so axios sets Content-Type: multipart/form-data, overriding
+  // the instance default of application/json. The XHR adapter then removes the
+  // header and lets the browser attach the correct multipart boundary.
+  // Using bff also ensures the rolling X-Access-Token response header is captured.
+  const res = await bff.postForm<{ url: string }>("/api/trips/cover-upload", formData);
+  return res.data.url;
 }

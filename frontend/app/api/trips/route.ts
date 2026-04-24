@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { normalizeCursorPaginatedResponse } from "@/app/api/_lib/pagination";
 import {
   buildProtectedResponse,
   protectedUpstreamCall,
@@ -17,7 +18,10 @@ export async function GET(request: NextRequest) {
   });
 
   if (!result.ok) return result.response;
-  return buildProtectedResponse(result.data, result.refreshedAccessToken);
+  return buildProtectedResponse(
+    normalizeCursorPaginatedResponse(result.data),
+    result.refreshedAccessToken,
+  );
 }
 
 export async function POST(request: NextRequest) {

@@ -17,26 +17,40 @@ type WebSocketContextValue = {
 };
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
+const WS_AUTH_TRANSITION_DEBOUNCE_MS = 500;
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const { status: authStatus } = useAuth();
   const [wsStatus, setWsStatus] = useState<WsConnectionStatus>("disconnected");
 
   useEffect(() => {
-    // Subscribe to status changes from wsManager — covers both connect and disconnect
     const unsubscribe = wsManager.onStatusChange(setWsStatus);
-
-    if (authStatus === "authenticated") {
-      wsManager.connect();
-    } else {
-      wsManager.disconnect();
-    }
 
     return () => {
       unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const transitionTimer = setTimeout(() => {
+      if (authStatus === "authenticated") {
+        wsManager.connect();
+        return;
+      }
+
       wsManager.disconnect();
+    }, WS_AUTH_TRANSITION_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(transitionTimer);
     };
   }, [authStatus]);
+
+  useEffect(() => {
+    return () => {
+      wsManager.disconnect();
+    };
+  }, []);
 
   return (
     <WebSocketContext.Provider value={{ status: wsStatus }}>

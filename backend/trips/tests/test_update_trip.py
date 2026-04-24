@@ -39,6 +39,11 @@ class UpdateTripTests(APITestCase):
         res = self.client.patch(self._url(), {"end_date": "2026-01-01"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 400)
 
+    def test_patch_end_date_only_rejected_when_before_existing_start(self):
+        res = self.client.patch(self._url(), {"end_date": "2026-05-01"}, format="json", **_auth(self.captain))
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("end_date", res.data)
+
     def test_captain_can_update_budget(self):
         res = self.client.patch(self._url(), {"budget_estimate": "5000000.00"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 200)
@@ -57,3 +62,30 @@ class UpdateTripTests(APITestCase):
         res = self.client.patch(self._url(), {"name": "New Name"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "TRIP_TERMINAL")
+
+    def test_captain_can_update_destination_provider_fields(self):
+        res = self.client.patch(
+            self._url(),
+            {
+                "destination": "Tokyo, Japan",
+                "destination_provider": "here",
+                "destination_provider_id": "here:cm:namedplace:tokyo",
+                "destination_lat": "35.689487",
+                "destination_lng": "139.691706",
+                "destination_country_code": "JP",
+                "cover_image_url": "/media/trip-covers/tokyo.jpg",
+            },
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["trip"]["destination_provider"], "here")
+        self.assertEqual(res.data["trip"]["destination_provider_id"], "here:cm:namedplace:tokyo")
+        self.assertEqual(res.data["trip"]["destination_country_code"], "JP")
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.destination_provider, "here")
+        self.assertEqual(self.trip.destination_provider_id, "here:cm:namedplace:tokyo")
+        self.assertEqual(self.trip.destination_country_code, "JP")
+        self.assertAlmostEqual(float(self.trip.destination_lat), 35.689487, places=5)
+        self.assertAlmostEqual(float(self.trip.destination_lng), 139.691706, places=5)
+        self.assertEqual(self.trip.cover_image_url, "/media/trip-covers/tokyo.jpg")

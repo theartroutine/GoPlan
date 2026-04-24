@@ -5,7 +5,7 @@ from channels.layers import get_channel_layer
 from django.db import transaction
 from django.utils import timezone
 
-from notifications.models import Notification
+from notifications.models import Notification, NotificationType
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,88 @@ logger = logging.getLogger(__name__)
 
 class NotificationNotFoundError(Exception):
     pass
+
+
+class NotificationPayloadValidationError(ValueError):
+    pass
+
+
+# -------- Payload Schemas --------
+
+
+NOTIFICATION_PAYLOAD_SCHEMAS = {
+    NotificationType.FRIEND_REQUEST: frozenset(),
+    NotificationType.FRIEND_ACCEPTED: frozenset(),
+    NotificationType.TRIP_INVITATION: frozenset(
+        {
+            "trip_id",
+            "trip_name",
+            "destination",
+            "start_date",
+            "end_date",
+            "invitation_id",
+        }
+    ),
+    NotificationType.TRIP_INVITATION_ACCEPTED: frozenset(
+        {"trip_id", "trip_name", "accepted_by_name"}
+    ),
+    NotificationType.TRIP_INVITATION_DECLINED: frozenset(
+        {"trip_id", "trip_name", "declined_by_name"}
+    ),
+    NotificationType.TRIP_CANCELLED: frozenset({"trip_id", "trip_name"}),
+    NotificationType.TRIP_MEMBER_REMOVED: frozenset({"trip_id", "trip_name"}),
+}
+
+
+def _normalize_notification_type(notification_type):
+    """Return the string value for NotificationType enum members."""
+    return (
+        notification_type.value
+        if isinstance(notification_type, NotificationType)
+        else notification_type
+    )
+
+
+def validate_notification_payload(notification_type, payload):
+    """Validate payload shape for a notification type at runtime."""
+    type_value = _normalize_notification_type(notification_type)
+    if type_value not in NOTIFICATION_PAYLOAD_SCHEMAS:
+        raise NotificationPayloadValidationError(
+            f"Unsupported notification type: {type_value}"
+        )
+
+    normalized_payload = {} if payload is None else payload
+    if not isinstance(normalized_payload, dict):
+        raise NotificationPayloadValidationError(
+            "Notification payload must be a JSON object."
+        )
+
+    expected_keys = NOTIFICATION_PAYLOAD_SCHEMAS[type_value]
+    payload_keys = set(normalized_payload.keys())
+    missing_keys = expected_keys - payload_keys
+    extra_keys = payload_keys - expected_keys
+    if missing_keys:
+        raise NotificationPayloadValidationError(
+            "Notification payload is missing required keys: "
+            + ", ".join(sorted(missing_keys))
+        )
+    if extra_keys:
+        raise NotificationPayloadValidationError(
+            "Notification payload has unexpected keys: "
+            + ", ".join(sorted(extra_keys))
+        )
+
+    invalid_string_keys = [
+        key for key in sorted(expected_keys)
+        if not isinstance(normalized_payload[key], str)
+    ]
+    if invalid_string_keys:
+        raise NotificationPayloadValidationError(
+            "Notification payload values must be strings: "
+            + ", ".join(invalid_string_keys)
+        )
+
+    return normalized_payload
 
 
 # -------- Payload Builders --------
@@ -67,12 +149,14 @@ def build_ws_notification_message(notification):
 
 def create_notification(recipient, notification_type, payload=None, actor=None):
     """Create a notification and push it via WebSocket after DB commit."""
+    type_value = _normalize_notification_type(notification_type)
+    validated_payload = validate_notification_payload(type_value, payload)
     with transaction.atomic():
         notification = Notification.objects.create(
             recipient=recipient,
             actor=actor,
-            type=notification_type,
-            payload=payload or {},
+            type=type_value,
+            payload=validated_payload,
         )
 
         def _push_ws():
@@ -84,8 +168,10 @@ def create_notification(recipient, notification_type, payload=None, actor=None):
                     {"type": "notification_push", "data": message},
                 )
             except Exception:
-                logger.exception(
-                    "Failed to push notification %s via WebSocket", notification.id
+                logger.error(
+                    "Failed to push notification %s via WebSocket",
+                    notification.id,
+                    exc_info=True,
                 )
 
         transaction.on_commit(_push_ws)
@@ -135,7 +221,11 @@ def mark_notification_read(notification_id, user):
                     },
                 )
             except Exception:
-                logger.exception("Failed to push read event via WebSocket")
+                logger.error(
+                    "Failed to push read event via WebSocket for notification %s",
+                    notification.id,
+                    exc_info=True,
+                )
 
         transaction.on_commit(_push_read)
     return notification
@@ -167,7 +257,11 @@ def mark_all_notifications_read(user):
                         },
                     )
                 except Exception:
-                    logger.exception("Failed to push read_all event via WebSocket")
+                    logger.error(
+                        "Failed to push read_all event via WebSocket for user %s",
+                        user.id,
+                        exc_info=True,
+                    )
 
             transaction.on_commit(_push_read_all)
     return count
