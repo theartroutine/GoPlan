@@ -44,6 +44,18 @@ class InviteError(TripServiceError):
     error_code = "INVITE_ERROR"
 
 
+class NotFriendError(InviteError):
+    error_code = "NOT_FRIEND"
+
+
+class AlreadyMemberError(InviteError):
+    error_code = "ALREADY_MEMBER"
+
+
+class AlreadyInvitedError(InviteError):
+    error_code = "ALREADY_INVITED"
+
+
 class InvitationError(TripServiceError):
     error_code = "INVITATION_ERROR"
 
@@ -219,13 +231,13 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
                 raise InviteError("Cannot invite yourself.")
 
             if not _are_friends(captain, invitee):
-                raise InviteError(f"{invitee.display_name} is not in your friends list.")
+                raise NotFriendError("Cannot invite this user.")
 
             if locked_trip.memberships.filter(user=invitee, status=MemberStatus.ACTIVE).exists():
-                raise InviteError(f"{invitee.display_name} is already a member.")
+                raise AlreadyMemberError("Cannot invite this user.")
 
             if locked_trip.invitations.filter(invitee=invitee, status=InvitationStatus.PENDING).exists():
-                raise InviteError(f"{invitee.display_name} already has a pending invitation.")
+                raise AlreadyInvitedError("Cannot invite this user.")
 
             try:
                 inv = TripInvitation.objects.create(
@@ -235,7 +247,7 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
                     status=InvitationStatus.PENDING,
                 )
             except IntegrityError as exc:
-                raise InviteError(f"{invitee.display_name} already has a pending invitation.") from exc
+                raise AlreadyInvitedError("Cannot invite this user.") from exc
             created.append(inv)
 
             create_notification(
