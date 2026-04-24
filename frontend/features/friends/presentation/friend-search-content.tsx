@@ -173,7 +173,7 @@ export function FriendSearchContent() {
 
       {state === "sent" && (
         <div className="rounded-xl border border-border bg-card p-6 text-center">
-          <p className="text-sm font-medium text-green-600">
+          <p className="text-sm font-medium text-emerald-600">
             Friend request sent!
           </p>
         </div>

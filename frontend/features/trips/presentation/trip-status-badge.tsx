@@ -24,7 +24,7 @@ const STATUS_CONFIG: Record<TripStatus, { label: string; tone: string; dotTone: 
   },
 };
 
-type TripStatusBadgeVariant = "default" | "hero";
+export type BadgeVariant = "default" | "hero";
 
 export function TripStatusBadge({
   status,
@@ -33,7 +33,7 @@ export function TripStatusBadge({
   style,
 }: {
   status: TripStatus;
-  variant?: TripStatusBadgeVariant;
+  variant?: BadgeVariant;
   className?: string;
   style?: React.CSSProperties;
 }) {

@@ -39,7 +39,7 @@ export function TripCard({ trip }: { trip: TripListItem }) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/55 via-38% to-black/12" />
 
         <div className="absolute inset-x-0 bottom-0 p-4">
-          <div className="space-y-3 rounded-2xl border border-white/15 bg-black/28 p-4 backdrop-blur-sm">
+          <div className="space-y-3 rounded-2xl border border-foreground/10 bg-black/28 p-4 backdrop-blur-sm">
             <div className="flex items-start justify-between gap-3">
               <h3 className="line-clamp-2 text-xl font-semibold leading-tight text-white">
                 {trip.name}

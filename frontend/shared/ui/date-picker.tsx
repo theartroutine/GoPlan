@@ -30,6 +30,9 @@ export function DatePicker({
 
   const parsed = value ? parse(value, "yyyy-MM-dd", new Date()) : undefined;
   const selected = parsed && isValid(parsed) ? parsed : undefined;
+  const triggerAriaLabel = selected
+    ? `${placeholder}. Selected ${format(selected, "PPP")}`
+    : placeholder;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -43,6 +46,7 @@ export function DatePicker({
             "w-full justify-start text-left font-normal",
             !selected && "text-muted-foreground"
           )}
+          aria-label={triggerAriaLabel}
         >
           <CalendarIcon className="mr-2 size-4" />
           {selected ? format(selected, "PPP") : placeholder}

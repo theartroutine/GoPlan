@@ -7,6 +7,7 @@ from friends.models import FriendRequest, FriendRequestStatus, Friendship
 from friends.validators import parse_identify_tag
 from notifications.models import NotificationType
 from notifications.services import create_notification
+from shared.utils.identity import canonical_pair
 
 User = get_user_model()
 
@@ -66,16 +67,9 @@ FRIEND_LIMIT = 500
 # -------- Helpers --------
 
 
-def _canonical_pair(user_a, user_b):
-    """Return (user_low, user_high) sorted by UUID for consistent ordering."""
-    if user_a.pk < user_b.pk:
-        return user_a, user_b
-    return user_b, user_a
-
-
 def _are_friends(user_a, user_b):
     """Check if two users are already friends."""
-    low, high = _canonical_pair(user_a, user_b)
+    low, high = canonical_pair(user_a, user_b)
     return Friendship.objects.filter(user_low=low, user_high=high).exists()
 
 
@@ -226,7 +220,7 @@ def accept_friend_request(friend_request_id, actor):
         fr.resolved_at = timezone.now()
         fr.save(update_fields=["status", "resolved_at", "updated_at"])
 
-        low, high = _canonical_pair(fr.sender, fr.receiver)
+        low, high = canonical_pair(fr.sender, fr.receiver)
         friendship = Friendship.objects.create(user_low=low, user_high=high)
 
         create_notification(

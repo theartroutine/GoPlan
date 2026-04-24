@@ -38,6 +38,7 @@ export class WebSocketManager {
 
   private readonly onBeforeUnload = () => {
     this.pageUnloading = true;
+    this.closeSocketForUnload();
   };
 
   constructor() {
@@ -338,6 +339,29 @@ export class WebSocketManager {
     if (this.ws === ws) {
       this.ws = null;
     }
+  }
+
+  private closeSocketForUnload(): void {
+    this.connectRequestId += 1;
+    this.isConnecting = false;
+    this.cancelReconnect();
+    this.stopHeartbeat();
+
+    if (!this.ws) return;
+
+    this.ws.onopen = null;
+    this.ws.onmessage = null;
+    this.ws.onclose = null;
+    this.ws.onerror = null;
+
+    if (
+      this.ws.readyState === WebSocket.OPEN ||
+      this.ws.readyState === WebSocket.CONNECTING
+    ) {
+      this.ws.close(1001, "Page unloading");
+    }
+
+    this.ws = null;
   }
 
   private transitionToDisconnected(): void {

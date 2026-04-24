@@ -8,6 +8,7 @@ from django.utils import timezone
 from friends.models import Friendship
 from notifications.models import NotificationType
 from notifications.services import create_notification
+from shared.utils.identity import canonical_pair
 from trips.models import InvitationStatus, MemberStatus, Trip, TripInvitation, TripMember, TripRole, TripStatus
 
 User = get_user_model()
@@ -179,7 +180,7 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
 
 def _are_friends(user_a, user_b) -> bool:
     """Check if two users are friends (canonical pair order)."""
-    low, high = (user_a, user_b) if str(user_a.pk) < str(user_b.pk) else (user_b, user_a)
+    low, high = canonical_pair(user_a, user_b)
     return Friendship.objects.filter(user_low=low, user_high=high).exists()
 
 

@@ -22,6 +22,12 @@ const PAGE_TITLES: Record<string, string> = {
   "/settings": "Settings",
 };
 
+const SIDEBAR_LABELS = {
+  open: "Open sidebar",
+  expand: "Expand sidebar",
+  collapse: "Collapse sidebar",
+} as const;
+
 export function TopNavbar() {
   const pathname = usePathname();
   const { openMobile, isCollapsed, toggle } = useSidebar();
@@ -37,7 +43,7 @@ export function TopNavbar() {
         size="icon-sm"
         className="lg:hidden shrink-0"
         onClick={openMobile}
-        aria-label="Open sidebar"
+        aria-label={SIDEBAR_LABELS.open}
       >
         <Menu className="h-5 w-5" />
       </Button>
@@ -48,7 +54,7 @@ export function TopNavbar() {
             size="icon-sm"
             className="hidden shrink-0 rounded-lg border border-border/60 bg-background text-foreground transition-[background-color,border-color,color] duration-200 hover:bg-accent hover:text-accent-foreground lg:inline-flex"
             onClick={toggle}
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={isCollapsed ? SIDEBAR_LABELS.expand : SIDEBAR_LABELS.collapse}
           >
             {isCollapsed ? (
               <ChevronRight className="h-4 w-4" />
@@ -58,7 +64,7 @@ export function TopNavbar() {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          {isCollapsed ? SIDEBAR_LABELS.expand : SIDEBAR_LABELS.collapse}
         </TooltipContent>
       </Tooltip>
 

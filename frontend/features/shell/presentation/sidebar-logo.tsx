@@ -24,7 +24,7 @@ export function SidebarLogo({
       </span>
       <span
         className={cn(
-          "ml-2 overflow-hidden whitespace-nowrap text-sm font-semibold tracking-tight transition-[opacity,transform] duration-260 ease-out",
+          "ml-2 overflow-hidden whitespace-nowrap text-sm font-semibold tracking-tight transition-[opacity,transform] duration-300 ease-out",
           isCollapsed ? "translate-x-1 opacity-0" : "translate-x-0 opacity-100",
         )}
       >

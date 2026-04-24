@@ -65,7 +65,7 @@ function SidebarContent({ isMobile }: { isMobile: boolean }) {
       )}
       <span
         className={cn(
-          "overflow-hidden whitespace-nowrap transition-[opacity,transform] duration-260 ease-out",
+          "overflow-hidden whitespace-nowrap transition-[opacity,transform] duration-300 ease-out",
           collapsed ? "translate-x-1 opacity-0" : "translate-x-0 opacity-100",
         )}
       >
@@ -136,7 +136,7 @@ export function Sidebar() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "relative hidden h-screen shrink-0 flex-col overflow-x-hidden border-r border-border bg-background transition-[width] duration-320 ease-[cubic-bezier(0.22,1,0.36,1)] lg:flex",
+          "relative hidden h-screen shrink-0 flex-col overflow-x-hidden border-r border-border bg-background transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:flex",
           isCollapsed ? "w-[68px]" : "w-64",
         )}
       >

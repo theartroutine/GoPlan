@@ -9,9 +9,11 @@ from rest_framework.test import APITestCase
 from notifications.models import Notification, NotificationType
 from notifications.services import (
     NotificationNotFoundError,
+    NotificationPayloadValidationError,
     create_notification,
     mark_all_notifications_read,
     mark_notification_read,
+    validate_notification_payload,
 )
 from test_helpers import create_verified_user
 
@@ -32,13 +34,12 @@ class CreateNotificationTests(APITestCase):
         notification = create_notification(
             recipient=recipient,
             notification_type=NotificationType.FRIEND_REQUEST,
-            payload={"message": "hello"},
         )
 
         self.assertIsNotNone(notification.id)
         self.assertEqual(notification.recipient, recipient)
         self.assertEqual(notification.type, NotificationType.FRIEND_REQUEST)
-        self.assertEqual(notification.payload, {"message": "hello"})
+        self.assertEqual(notification.payload, {})
         self.assertIsNone(notification.actor)
         self.assertIsNone(notification.read_at)
         self.assertEqual(Notification.objects.count(), 1)
@@ -53,6 +54,71 @@ class CreateNotificationTests(APITestCase):
         )
 
         self.assertEqual(notification.actor, actor)
+
+    def test_create_notification_persists_valid_trip_payload(self):
+        recipient = create_verified_user()
+        payload = {
+            "trip_id": "trip-1",
+            "trip_name": "Da Nang",
+            "destination": "Da Nang",
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-05",
+            "invitation_id": "invitation-1",
+        }
+
+        notification = create_notification(
+            recipient=recipient,
+            notification_type=NotificationType.TRIP_INVITATION,
+            payload=payload,
+        )
+
+        self.assertEqual(notification.type, NotificationType.TRIP_INVITATION)
+        self.assertEqual(notification.payload, payload)
+
+
+# -------- payload validation --------
+
+
+class NotificationPayloadValidationTests(APITestCase):
+
+    def test_validate_friend_payload_rejects_extra_keys(self):
+        with self.assertRaises(NotificationPayloadValidationError):
+            validate_notification_payload(
+                NotificationType.FRIEND_REQUEST,
+                {"message": "hello"},
+            )
+
+    def test_validate_trip_payload_requires_schema_keys(self):
+        with self.assertRaises(NotificationPayloadValidationError):
+            validate_notification_payload(
+                NotificationType.TRIP_INVITATION,
+                {
+                    "trip_id": "trip-1",
+                    "trip_name": "Da Nang",
+                    "destination": "Da Nang",
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-05",
+                },
+            )
+
+    def test_validate_trip_payload_rejects_non_string_values(self):
+        with self.assertRaises(NotificationPayloadValidationError):
+            validate_notification_payload(
+                NotificationType.TRIP_CANCELLED,
+                {"trip_id": "trip-1", "trip_name": 123},
+            )
+
+    def test_create_notification_does_not_persist_invalid_payload(self):
+        recipient = create_verified_user()
+
+        with self.assertRaises(NotificationPayloadValidationError):
+            create_notification(
+                recipient=recipient,
+                notification_type=NotificationType.TRIP_MEMBER_REMOVED,
+                payload={"trip_id": "trip-1"},
+            )
+
+        self.assertEqual(Notification.objects.count(), 0)
 
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)

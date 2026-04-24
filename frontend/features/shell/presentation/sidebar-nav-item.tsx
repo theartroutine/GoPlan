@@ -37,7 +37,7 @@ export function SidebarNavItem({ item, isMobile = false }: { item: NavigationIte
       <Icon className="h-4 w-4 shrink-0" />
       <span
         className={cn(
-          "truncate overflow-hidden whitespace-nowrap transition-[opacity,transform] duration-260 ease-out",
+          "truncate overflow-hidden whitespace-nowrap transition-[opacity,transform] duration-300 ease-out",
           collapsed ? "translate-x-1 opacity-0" : "translate-x-0 opacity-100",
         )}
       >

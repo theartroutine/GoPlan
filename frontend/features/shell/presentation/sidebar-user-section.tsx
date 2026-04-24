@@ -73,7 +73,7 @@ export function SidebarUserSection() {
       </Avatar>
       <div
         className={cn(
-          "min-w-0 overflow-hidden transition-[opacity,transform] duration-260 ease-out",
+          "min-w-0 overflow-hidden transition-[opacity,transform] duration-300 ease-out",
           isCollapsed ? "translate-x-1 opacity-0" : "translate-x-0 opacity-100",
         )}
       >

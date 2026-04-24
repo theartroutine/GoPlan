@@ -30,7 +30,12 @@ export function FormField({ label, error, id, className, labelClassName, ref, ..
         {...props}
       />
       {error && (
-        <p id={`${id}-error`} className="mt-1 text-xs text-destructive">
+        <p
+          id={`${id}-error`}
+          className="mt-1 text-xs text-destructive"
+          role="alert"
+          aria-live="polite"
+        >
           {error}
         </p>
       )}
