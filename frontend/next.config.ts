@@ -6,6 +6,33 @@ const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const tailwindcssPath = path.join(frontendRoot, "node_modules", "tailwindcss");
 
 const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: https:",
+              "connect-src 'self' ws: wss:",
+              "font-src 'self'",
+              "frame-ancestors 'none'",
+            ].join("; "),
+          },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(self)",
+          },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     // Proxy Django-served media files so the browser can load them from port 3000.
     // Note: next.config.ts runs at build time and cannot import from shared/http/config.ts
