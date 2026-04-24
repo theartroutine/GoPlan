@@ -161,4 +161,5 @@ class TripServiceConcurrencyTests(TransactionTestCase):
             with self.assertRaises(InviteError) as exc_info:
                 send_trip_invitations(trip=trip, captain=captain, invitee_ids=[invitee.pk])
 
-        self.assertIn("already has a pending invitation", str(exc_info.exception))
+        self.assertEqual(str(exc_info.exception), "Cannot invite this user.")
+        self.assertEqual(exc_info.exception.error_code, "ALREADY_INVITED")

@@ -1,7 +1,10 @@
 import axios from "axios";
 
 import type { WsConnectionStatus, WsMessage } from "@/features/realtime/domain/types";
-import { bffWsTicket } from "@/features/realtime/infrastructure/realtime-api";
+import {
+  bffRefreshWsTicket,
+  bffWsTicket,
+} from "@/features/realtime/infrastructure/realtime-api";
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
 const WS_SUBPROTOCOL = "goplan.realtime.v1";
@@ -108,7 +111,7 @@ export class WebSocketManager {
 
   private handleAuthError(code: string): void {
     if (code === "token_expired") {
-      this.connect();
+      this.handleExpiredTicket();
       return;
     }
 
@@ -127,92 +130,118 @@ export class WebSocketManager {
   }
 
   private async openSocket(requestId: number): Promise<void> {
-    let socketAuthHandled = false;
-
     try {
       // The ticket endpoint goes through BFF, so it can reuse access-token forwarding
       // and refresh-cookie fallback without exposing bearer tokens in the WS URL.
       const { ticket } = await bffWsTicket();
-
-      if (!this.isCurrentConnectRequest(requestId) || this.pageUnloading) {
-        this.isConnecting = false;
-        return;
-      }
-
-      const ws = new WebSocket(`${WS_BASE_URL}/ws/realtime`, [WS_SUBPROTOCOL, ticket]);
-      this.ws = ws;
-
-      ws.onopen = () => {
-        if (!this.isActiveSocket(ws, requestId)) {
-          ws.close();
-          return;
-        }
-
-        this.clearReconnectTimer();
-        this.isConnecting = false;
-        this.setStatus("connected");
-        this.reconnectAttempt = 0;
-        this.reconnectBootstrapUsed = false;
-        this.startHeartbeat();
-      };
-
-      ws.onmessage = (event: MessageEvent) => {
-        if (!this.isActiveSocket(ws, requestId)) return;
-
-        let data: WsMessage;
-        try {
-          data = JSON.parse(event.data as string) as WsMessage;
-        } catch {
-          return;
-        }
-
-        if (data.type === "auth_error") {
-          socketAuthHandled = true;
-          this.releaseSocketReference(ws);
-          this.stopHeartbeat();
-          this.handleAuthError(data.code as string);
-          return;
-        }
-
-        if (data.type === "pong") {
-          this.clearHeartbeatTimeout();
-          return;
-        }
-
-        this.emit(data.type, data);
-      };
-
-      ws.onclose = (event: CloseEvent) => {
-        if (socketAuthHandled) return;
-        if (!this.isActiveSocket(ws, requestId)) return;
-
-        this.isConnecting = false;
-        this.releaseSocketReference(ws);
-        this.stopHeartbeat();
-
-        if (this.pageUnloading) return;
-
-        if (event.code === 4002) {
-          this.handleAuthError("token_expired");
-          return;
-        }
-        if (event.code === 4001) {
-          this.handleAuthError("auth_failed");
-          return;
-        }
-
-        this.handleNetworkClose();
-      };
-
-      ws.onerror = () => {
-        // Errors always precede close events; actual handling happens in onclose
-      };
+      this.openSocketWithTicket(ticket, requestId);
     } catch (error) {
       if (!this.isCurrentConnectRequest(requestId) || this.pageUnloading) {
         this.isConnecting = false;
         return;
       }
 
+      this.isConnecting = false;
+      this.ws = null;
+
+      if (this.isHardAuthFailure(error)) {
+        this.transitionToDisconnected();
+        return;
+      }
+
+      this.scheduleReconnect();
+    }
+  }
+
+  private openSocketWithTicket(ticket: string, requestId: number): void {
+    if (!this.isCurrentConnectRequest(requestId) || this.pageUnloading) {
+      this.isConnecting = false;
+      return;
+    }
+
+    let socketAuthHandled = false;
+    const ws = new WebSocket(`${WS_BASE_URL}/ws/realtime`, [WS_SUBPROTOCOL, ticket]);
+    this.ws = ws;
+
+    ws.onopen = () => {
+      if (!this.isActiveSocket(ws, requestId)) {
+        ws.close();
+        return;
+      }
+
+      this.clearReconnectTimer();
+      this.isConnecting = false;
+      this.setStatus("connected");
+      this.reconnectAttempt = 0;
+      this.reconnectBootstrapUsed = false;
+      this.startHeartbeat();
+    };
+
+    ws.onmessage = (event: MessageEvent) => {
+      if (!this.isActiveSocket(ws, requestId)) return;
+
+      let data: WsMessage;
+      try {
+        data = JSON.parse(event.data as string) as WsMessage;
+      } catch {
+        return;
+      }
+
+      if (data.type === "auth_error") {
+        socketAuthHandled = true;
+        this.releaseSocketReference(ws);
+        this.stopHeartbeat();
+        this.handleAuthError(data.code as string);
+        return;
+      }
+
+      if (data.type === "pong") {
+        this.clearHeartbeatTimeout();
+        return;
+      }
+
+      this.emit(data.type, data);
+    };
+
+    ws.onclose = (event: CloseEvent) => {
+      if (socketAuthHandled) return;
+      if (!this.isActiveSocket(ws, requestId)) return;
+
+      this.isConnecting = false;
+      this.releaseSocketReference(ws);
+      this.stopHeartbeat();
+
+      if (this.pageUnloading) return;
+
+      if (event.code === 4002) {
+        this.handleExpiredTicket();
+        return;
+      }
+      if (event.code === 4001) {
+        this.handleAuthError("auth_failed");
+        return;
+      }
+
+      this.handleNetworkClose();
+    };
+
+    ws.onerror = () => {
+      // Errors always precede close events; actual handling happens in onclose
+    };
+  }
+
+  private handleExpiredTicket(): void {
+    const requestId = ++this.connectRequestId;
+    this.isConnecting = true;
+    this.setStatus("reconnecting");
+    void this.openSocketWithRefreshedTicket(requestId);
+  }
+
+  private async openSocketWithRefreshedTicket(requestId: number): Promise<void> {
+    try {
+      const { ticket } = await bffRefreshWsTicket();
+      this.openSocketWithTicket(ticket, requestId);
+    } catch (error) {
       this.isConnecting = false;
       this.ws = null;
 
