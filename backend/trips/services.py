@@ -52,6 +52,10 @@ class StatusTransitionError(TripServiceError):
     error_code = "INVALID_STATUS_TRANSITION"
 
 
+class TripTerminalError(StatusTransitionError):
+    error_code = "TRIP_TERMINAL"
+
+
 # -------- Services --------
 
 def create_trip(
@@ -344,9 +348,9 @@ def _assert_captain(trip, actor):
 
 
 def _assert_not_terminal(trip):
-    """Raise StatusTransitionError if trip is in a terminal state."""
+    """Raise TripTerminalError if trip is in a terminal state."""
     if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
-        raise StatusTransitionError("This trip is in a terminal state. No further changes are allowed.")
+        raise TripTerminalError("This trip is in a terminal state. No further changes are allowed.")
 
 
 def start_trip(trip_id, actor) -> Trip:
@@ -408,7 +412,7 @@ def cancel_trip(trip_id, actor) -> Trip:
         _assert_captain(trip, actor)
 
         if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
-            raise StatusTransitionError("This trip is already in a terminal state and cannot be cancelled.")
+            raise TripTerminalError("This trip is already in a terminal state and cannot be cancelled.")
 
         trip.status = TripStatus.CANCELLED
         trip.cancelled_at = timezone.now()
@@ -503,7 +507,7 @@ def leave_trip(trip_id, actor) -> TripMember:
 
         # Terminal state guard — checked first for consistent ordering with other services
         if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
-            raise StatusTransitionError("Cannot leave a trip that is completed or cancelled.")
+            raise TripTerminalError("Cannot leave a trip that is completed or cancelled.")
 
         # Captain cannot leave
         if membership.role == TripRole.CAPTAIN:
