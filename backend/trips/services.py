@@ -4,7 +4,6 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from friends.models import Friendship
 from notifications.models import NotificationType
@@ -17,19 +16,40 @@ User = get_user_model()
 # -------- Exceptions --------
 
 class TripServiceError(Exception):
-    pass
+    """Base exception for trip service layer."""
+    error_code: str = "TRIP_ERROR"
+
+
+class TripNotFoundError(TripServiceError):
+    error_code = "TRIP_NOT_FOUND"
+
+
+class NotTripMemberError(TripServiceError):
+    error_code = "NOT_TRIP_MEMBER"
+
+
+class TripPermissionError(TripServiceError):
+    error_code = "PERMISSION_DENIED"
+
+
+class CannotRemoveSelfError(TripServiceError):
+    error_code = "CANNOT_REMOVE_SELF"
+
+
+class CaptainCannotLeaveError(TripServiceError):
+    error_code = "CAPTAIN_CANNOT_LEAVE"
 
 
 class InviteError(TripServiceError):
-    pass
+    error_code = "INVITE_ERROR"
 
 
 class InvitationError(TripServiceError):
-    pass
+    error_code = "INVITATION_ERROR"
 
 
 class StatusTransitionError(TripServiceError):
-    pass
+    error_code = "INVALID_STATUS_TRANSITION"
 
 
 # -------- Services --------
@@ -95,12 +115,12 @@ def get_trip_detail(trip_id, requesting_user):
     try:
         trip = Trip.objects.get(pk=trip_id)
     except Trip.DoesNotExist:
-        raise NotFound("Trip not found.")
+        raise TripNotFoundError("Trip not found.")
     membership = TripMember.objects.filter(
         trip=trip, user=requesting_user, status=MemberStatus.ACTIVE
     ).first()
     if not membership:
-        raise PermissionDenied("You are not a member of this trip.")
+        raise NotTripMemberError("You are not a member of this trip.")
     return trip, membership
 
 
@@ -185,7 +205,7 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
         try:
             locked_trip = Trip.objects.select_for_update().get(pk=trip.pk)
         except Trip.DoesNotExist:
-            raise NotFound("Trip not found.")
+            raise TripNotFoundError("Trip not found.")
 
         if locked_trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
             raise InviteError("Cannot invite members to a trip that is completed or cancelled.")
@@ -237,20 +257,20 @@ def accept_invitation(invitation_id, actor) -> TripMember:
         try:
             invitation_trip_id = TripInvitation.objects.values_list("trip_id", flat=True).get(pk=invitation_id)
         except TripInvitation.DoesNotExist:
-            raise NotFound("Invitation not found.")
+            raise TripNotFoundError("Invitation not found.")
 
         try:
             trip = Trip.objects.select_for_update().get(pk=invitation_trip_id)
         except Trip.DoesNotExist:
-            raise NotFound("Trip not found.")
+            raise TripNotFoundError("Trip not found.")
 
         try:
             invitation = TripInvitation.objects.select_for_update().select_related("inviter").get(pk=invitation_id)
         except TripInvitation.DoesNotExist:
-            raise NotFound("Invitation not found.")
+            raise TripNotFoundError("Invitation not found.")
 
         if invitation.invitee != actor:
-            raise PermissionDenied("Only the invitee can accept this invitation.")
+            raise TripPermissionError("Only the invitee can accept this invitation.")
 
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationError("This invitation is no longer pending.")
@@ -289,10 +309,10 @@ def decline_invitation(invitation_id, actor) -> TripInvitation:
         try:
             invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
         except TripInvitation.DoesNotExist:
-            raise NotFound("Invitation not found.")
+            raise TripNotFoundError("Invitation not found.")
 
         if invitation.invitee != actor:
-            raise PermissionDenied("Only the invitee can decline this invitation.")
+            raise TripPermissionError("Only the invitee can decline this invitation.")
 
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationError("This invitation is no longer pending.")
@@ -318,9 +338,9 @@ def decline_invitation(invitation_id, actor) -> TripInvitation:
 # -------- Captain action helpers --------
 
 def _assert_captain(trip, actor):
-    """Raise PermissionDenied if actor is not ACTIVE captain of trip."""
+    """Raise TripPermissionError if actor is not ACTIVE captain of trip."""
     if not TripMember.objects.filter(trip=trip, user=actor, role=TripRole.CAPTAIN, status=MemberStatus.ACTIVE).exists():
-        raise PermissionDenied("Only the trip captain can perform this action.")
+        raise TripPermissionError("Only the trip captain can perform this action.")
 
 
 def _assert_not_terminal(trip):
@@ -335,7 +355,7 @@ def start_trip(trip_id, actor) -> Trip:
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
         except Trip.DoesNotExist:
-            raise NotFound("Trip not found.")
+            raise TripNotFoundError("Trip not found.")
 
         _assert_captain(trip, actor)
 
@@ -357,7 +377,7 @@ def complete_trip(trip_id, actor) -> Trip:
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
         except Trip.DoesNotExist:
-            raise NotFound("Trip not found.")
+            raise TripNotFoundError("Trip not found.")
 
         _assert_captain(trip, actor)
 
@@ -383,7 +403,7 @@ def cancel_trip(trip_id, actor) -> Trip:
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
         except Trip.DoesNotExist:
-            raise NotFound("Trip not found.")
+            raise TripNotFoundError("Trip not found.")
 
         _assert_captain(trip, actor)
 
@@ -426,21 +446,21 @@ def remove_member(trip_id, target_user_id, actor) -> TripMember:
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
         except Trip.DoesNotExist:
-            raise NotFound("Trip not found.")
+            raise TripNotFoundError("Trip not found.")
 
         _assert_captain(trip, actor)
         _assert_not_terminal(trip)
 
         # Captain cannot remove themselves
         if str(target_user_id) == str(actor.id):
-            raise ValidationError({"detail": "You cannot remove yourself from the trip.", "error_code": "CANNOT_REMOVE_SELF"})
+            raise CannotRemoveSelfError("You cannot remove yourself from the trip.")
 
         try:
             membership = TripMember.objects.select_for_update().get(
                 trip=trip, user_id=target_user_id, status=MemberStatus.ACTIVE
             )
         except TripMember.DoesNotExist:
-            raise NotFound("Active member not found.")
+            raise TripNotFoundError("Active member not found.")
 
         membership.status = MemberStatus.REMOVED
         membership.left_at = timezone.now()
@@ -471,7 +491,7 @@ def leave_trip(trip_id, actor) -> TripMember:
         try:
             trip = Trip.objects.select_for_update().get(pk=trip_id)
         except Trip.DoesNotExist:
-            raise NotFound("Trip not found.")
+            raise TripNotFoundError("Trip not found.")
 
         # Check actor is an active member of this trip
         try:
@@ -479,7 +499,7 @@ def leave_trip(trip_id, actor) -> TripMember:
                 trip=trip, user=actor, status=MemberStatus.ACTIVE
             )
         except TripMember.DoesNotExist:
-            raise PermissionDenied("You are not an active member of this trip.")
+            raise NotTripMemberError("You are not an active member of this trip.")
 
         # Terminal state guard — checked first for consistent ordering with other services
         if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
@@ -487,10 +507,7 @@ def leave_trip(trip_id, actor) -> TripMember:
 
         # Captain cannot leave
         if membership.role == TripRole.CAPTAIN:
-            raise ValidationError(
-                {"detail": "Captain cannot leave the trip. Transfer captaincy first (not available in Phase 1).",
-                 "error_code": "CAPTAIN_CANNOT_LEAVE"}
-            )
+            raise CaptainCannotLeaveError("Captain cannot leave the trip. Transfer captaincy first (not available in Phase 1).")
 
         membership.status = MemberStatus.LEFT
         membership.left_at = timezone.now()

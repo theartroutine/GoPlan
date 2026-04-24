@@ -18,9 +18,14 @@ from trips.serializers import (
     UpdateTripSerializer,
 )
 from trips.services import (
+    CannotRemoveSelfError,
+    CaptainCannotLeaveError,
     InvitationError,
     InviteError,
+    NotTripMemberError,
     StatusTransitionError,
+    TripNotFoundError,
+    TripPermissionError,
     accept_invitation,
     cancel_trip,
     complete_trip,
@@ -85,7 +90,12 @@ class TripDetailUpdateAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
 
     def get(self, request, trip_id):
-        trip, my_membership = get_trip_detail(trip_id, request.user)
+        try:
+            trip, my_membership = get_trip_detail(trip_id, request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         members = trip.memberships.filter(status=MemberStatus.ACTIVE).select_related("user")
         return Response({
             "trip": TripDetailSerializer(trip).data,
@@ -98,7 +108,12 @@ class TripDetailUpdateAPIView(APIView):
         })
 
     def patch(self, request, trip_id):
-        trip, my_membership = get_trip_detail(trip_id, request.user)
+        try:
+            trip, my_membership = get_trip_detail(trip_id, request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         if my_membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can edit trip info.", "error_code": "NOT_CAPTAIN"},
@@ -123,7 +138,12 @@ class TripInvitationsAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
 
     def get(self, request, trip_id):
-        trip, membership = get_trip_detail(trip_id, request.user)
+        try:
+            trip, membership = get_trip_detail(trip_id, request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         if membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can view invitations.", "error_code": "NOT_CAPTAIN"},
@@ -133,7 +153,12 @@ class TripInvitationsAPIView(APIView):
         return Response({"invitations": TripInvitationSerializer(invitations, many=True).data})
 
     def post(self, request, trip_id):
-        trip, membership = get_trip_detail(trip_id, request.user)
+        try:
+            trip, membership = get_trip_detail(trip_id, request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         if membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can send invitations.", "error_code": "NOT_CAPTAIN"},
@@ -148,7 +173,7 @@ class TripInvitationsAPIView(APIView):
                 invitee_ids=serializer.validated_data["invitee_ids"],
             )
         except InviteError as exc:
-            return Response({"detail": str(exc), "error_code": "INVITE_ERROR"}, status=400)
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {"invitations": TripInvitationSerializer(invitations, many=True).data},
             status=status.HTTP_201_CREATED,
@@ -159,7 +184,12 @@ class InvitableFriendsAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
 
     def get(self, request, trip_id):
-        trip, membership = get_trip_detail(trip_id, request.user)
+        try:
+            trip, membership = get_trip_detail(trip_id, request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         if membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can view invitable friends.", "error_code": "NOT_CAPTAIN"},
@@ -179,9 +209,13 @@ class AcceptInvitationAPIView(APIView):
     def post(self, request, inv_id):
         try:
             membership = accept_invitation(invitation_id=inv_id, actor=request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except TripPermissionError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         except InvitationError as exc:
-            return Response({"detail": str(exc), "error_code": "INVITATION_NOT_PENDING"}, status=409)
-        return Response({"membership_id": str(membership.id)}, status=200)
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_409_CONFLICT)
+        return Response({"membership_id": str(membership.id)}, status=status.HTTP_200_OK)
 
 
 class DeclineInvitationAPIView(APIView):
@@ -190,9 +224,13 @@ class DeclineInvitationAPIView(APIView):
     def post(self, request, inv_id):
         try:
             invitation = decline_invitation(invitation_id=inv_id, actor=request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except TripPermissionError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         except InvitationError as exc:
-            return Response({"detail": str(exc), "error_code": "INVITATION_NOT_PENDING"}, status=409)
-        return Response({"invitation_id": str(invitation.id)}, status=200)
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_409_CONFLICT)
+        return Response({"invitation_id": str(invitation.id)}, status=status.HTTP_200_OK)
 
 
 class StartTripAPIView(APIView):
@@ -201,9 +239,13 @@ class StartTripAPIView(APIView):
     def post(self, request, trip_id):
         try:
             trip = start_trip(trip_id=trip_id, actor=request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except TripPermissionError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         except StatusTransitionError as exc:
-            return Response({"detail": str(exc), "error_code": "INVALID_STATUS_TRANSITION"}, status=409)
-        return Response({"status": trip.status}, status=200)
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_409_CONFLICT)
+        return Response({"status": trip.status}, status=status.HTTP_200_OK)
 
 
 class CompleteTripAPIView(APIView):
@@ -212,9 +254,13 @@ class CompleteTripAPIView(APIView):
     def post(self, request, trip_id):
         try:
             trip = complete_trip(trip_id=trip_id, actor=request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except TripPermissionError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         except StatusTransitionError as exc:
-            return Response({"detail": str(exc), "error_code": "INVALID_STATUS_TRANSITION"}, status=409)
-        return Response({"status": trip.status}, status=200)
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_409_CONFLICT)
+        return Response({"status": trip.status}, status=status.HTTP_200_OK)
 
 
 class CancelTripAPIView(APIView):
@@ -223,40 +269,44 @@ class CancelTripAPIView(APIView):
     def post(self, request, trip_id):
         try:
             trip = cancel_trip(trip_id=trip_id, actor=request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except TripPermissionError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
         except StatusTransitionError as exc:
-            return Response({"detail": str(exc), "error_code": "TRIP_TERMINAL"}, status=409)
-        return Response({"status": trip.status}, status=200)
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_409_CONFLICT)
+        return Response({"status": trip.status}, status=status.HTTP_200_OK)
 
 
 class RemoveMemberAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
 
     def delete(self, request, trip_id, user_id):
-        from rest_framework.exceptions import ValidationError as DRFValidationError
         try:
             remove_member(trip_id=trip_id, target_user_id=user_id, actor=request.user)
-        except DRFValidationError as exc:
-            detail = exc.detail
-            if isinstance(detail, dict):
-                return Response(detail, status=400)
-            return Response({"detail": str(exc)}, status=400)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except TripPermissionError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except CannotRemoveSelfError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_400_BAD_REQUEST)
         except StatusTransitionError as exc:
-            return Response({"detail": str(exc), "error_code": "TRIP_TERMINAL"}, status=409)
-        return Response({}, status=200)
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_409_CONFLICT)
+        return Response({}, status=status.HTTP_200_OK)
 
 
 class LeaveTripAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
 
     def post(self, request, trip_id):
-        from rest_framework.exceptions import ValidationError as DRFValidationError
         try:
             leave_trip(trip_id=trip_id, actor=request.user)
-        except DRFValidationError as exc:
-            detail = exc.detail
-            if isinstance(detail, dict):
-                return Response(detail, status=400)
-            return Response({"detail": str(exc)}, status=400)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except CaptainCannotLeaveError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_400_BAD_REQUEST)
         except StatusTransitionError as exc:
-            return Response({"detail": str(exc), "error_code": "TRIP_TERMINAL"}, status=409)
-        return Response({}, status=200)
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_409_CONFLICT)
+        return Response({}, status=status.HTTP_200_OK)
