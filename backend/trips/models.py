@@ -34,6 +34,40 @@ class InvitationStatus(models.TextChoices):
     CANCELLED = "CANCELLED", "Cancelled"
 
 
+class TimelineSectionKind(models.TextChoices):
+    SYSTEM_DAY  = "SYSTEM_DAY",  "System Day"
+    SPECIAL_DAY = "SPECIAL_DAY", "Special Day"
+
+
+class TimelineActivityTimeMode(models.TextChoices):
+    ALL_DAY    = "ALL_DAY",    "All Day"
+    AT_TIME    = "AT_TIME",    "At Time"
+    TIME_RANGE = "TIME_RANGE", "Time Range"
+
+
+class TimelineActivityStatus(models.TextChoices):
+    UPCOMING    = "UPCOMING",    "Upcoming"
+    IN_PROGRESS = "IN_PROGRESS", "In Progress"
+    DONE        = "DONE",        "Done"
+    CANCELLED   = "CANCELLED",   "Cancelled"
+
+
+class TimelineLocationMode(models.TextChoices):
+    MANUAL     = "MANUAL",     "Manual"
+    STRUCTURED = "STRUCTURED", "Structured"
+
+
+class TimelineSystemType(models.TextChoices):
+    TRANSPORTATION = "TRANSPORTATION", "Transportation"
+    ACCOMMODATION  = "ACCOMMODATION",  "Accommodation"
+    FOOD           = "FOOD",           "Food"
+    SIGHTSEEING    = "SIGHTSEEING",    "Sightseeing"
+    SHOPPING       = "SHOPPING",       "Shopping"
+    CHECKIN_OUT    = "CHECKIN_OUT",    "Check-in / Check-out"
+    FREE_TIME      = "FREE_TIME",      "Free Time"
+    OTHER          = "OTHER",          "Other"
+
+
 # -------- Models --------
 
 class Trip(models.Model):
@@ -52,6 +86,7 @@ class Trip(models.Model):
     cover_image_url          = models.CharField(max_length=500, blank=True, default="")
     # -------- End Place Fields --------
     currency_code   = models.CharField(max_length=3, default="VND")
+    timezone        = models.CharField(max_length=64, default="Asia/Ho_Chi_Minh")
     budget_estimate = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     status          = models.CharField(
         max_length=12,
@@ -149,3 +184,176 @@ class TripInvitation(models.Model):
 
     def __str__(self) -> str:
         return f"Invite {self.invitee_id} → {self.trip_id} ({self.status})"
+
+
+# -------- Timeline Models --------
+
+class TimelineSection(models.Model):
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    trip            = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="timeline_sections")
+    kind            = models.CharField(max_length=16, choices=TimelineSectionKind.choices)
+    section_date    = models.DateField()
+    label           = models.CharField(max_length=120)
+    is_label_custom = models.BooleanField(default=False)
+    position        = models.PositiveIntegerField(default=0)
+    created_by      = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    updated_by      = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["section_date", "position", "created_at"]
+        indexes = [
+            models.Index(fields=["trip", "section_date", "position"]),
+            models.Index(fields=["trip", "kind"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["trip", "section_date"],
+                condition=Q(kind=TimelineSectionKind.SYSTEM_DAY),
+                name="timeline_section_unique_system_day_per_date",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.label} ({self.kind} {self.section_date})"
+
+
+class TimelineCustomType(models.Model):
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    trip            = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="timeline_custom_types")
+    name            = models.CharField(max_length=40)
+    normalized_name = models.CharField(max_length=40)
+    color_token     = models.CharField(max_length=24, default="slate")
+    icon_key        = models.CharField(max_length=32, default="tag")
+    is_active       = models.BooleanField(default=True)
+    created_by      = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "created_at"]
+        indexes = [
+            models.Index(fields=["trip", "is_active"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["trip", "normalized_name"],
+                name="timeline_custom_type_unique_name_per_trip",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} (trip={self.trip_id})"
+
+
+class TimelineActivity(models.Model):
+    id                   = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    trip                 = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="timeline_activities")
+    section              = models.ForeignKey(TimelineSection, on_delete=models.CASCADE, related_name="activities")
+    title                = models.CharField(max_length=140)
+    time_mode            = models.CharField(max_length=16, choices=TimelineActivityTimeMode.choices)
+    start_time           = models.TimeField(null=True, blank=True)
+    end_time             = models.TimeField(null=True, blank=True)
+    status               = models.CharField(
+        max_length=16,
+        choices=TimelineActivityStatus.choices,
+        default=TimelineActivityStatus.UPCOMING,
+    )
+    system_type          = models.CharField(max_length=32, blank=True, default="")
+    custom_type          = models.ForeignKey(
+        TimelineCustomType,
+        null=True, blank=True,
+        on_delete=models.PROTECT,
+        related_name="activities",
+    )
+    position             = models.PositiveIntegerField(default=0)
+    assignee_user        = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_timeline_activities",
+    )
+    location_mode        = models.CharField(
+        max_length=16,
+        choices=TimelineLocationMode.choices,
+        default=TimelineLocationMode.MANUAL,
+    )
+    location_label       = models.CharField(max_length=200, blank=True, default="")
+    location_note        = models.CharField(max_length=200, blank=True, default="")
+    place_provider       = models.CharField(max_length=16, blank=True, default="")
+    place_provider_id    = models.CharField(max_length=255, blank=True, default="")
+    place_title          = models.CharField(max_length=200, blank=True, default="")
+    place_address        = models.CharField(max_length=255, blank=True, default="")
+    place_lat            = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    place_lng            = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    note                 = models.TextField(blank=True, default="")
+    meeting_point        = models.CharField(max_length=200, blank=True, default="")
+    contact_name         = models.CharField(max_length=120, blank=True, default="")
+    contact_phone        = models.CharField(max_length=32, blank=True, default="")
+    booking_reference    = models.CharField(max_length=120, blank=True, default="")
+    external_link        = models.URLField(max_length=500, blank=True, default="")
+    created_by           = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    updated_by           = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    created_at           = models.DateTimeField(auto_now_add=True)
+    updated_at           = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["position", "created_at"]
+        indexes = [
+            models.Index(fields=["section", "position"]),
+            models.Index(fields=["trip", "status"]),
+            models.Index(fields=["trip", "assignee_user"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.title} (trip={self.trip_id})"
+
+
+class TimelineActivityReminder(models.Model):
+    id                    = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    activity              = models.ForeignKey(TimelineActivity, on_delete=models.CASCADE, related_name="reminders")
+    offset_minutes_before = models.PositiveIntegerField()
+    due_at_utc            = models.DateTimeField(db_index=True)
+    sent_at               = models.DateTimeField(null=True, blank=True)
+    created_at            = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["offset_minutes_before", "created_at"]
+        indexes = [
+            models.Index(fields=["sent_at", "due_at_utc"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["activity", "offset_minutes_before", "due_at_utc"],
+                name="timeline_activity_reminder_unique_due_offset",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Reminder {self.offset_minutes_before}m before activity={self.activity_id}"

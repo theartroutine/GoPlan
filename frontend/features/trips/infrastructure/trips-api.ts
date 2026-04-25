@@ -1,4 +1,4 @@
-import type { CreateTripPayload, CreateTripResponse, InvitableFriend, TripDetail, TripDetailResponse, TripInvitation, TripListResponse, UpdateTripPayload } from "@/features/trips/domain/types";
+import type { CreateTripPayload, CreateTripResponse, InvitableFriend, TimelineResponse, TripDetail, TripDetailResponse, TripInvitation, TripListResponse, UpdateTripPayload } from "@/features/trips/domain/types";
 import { bff } from "@/shared/http/bff-client";
 
 export async function bffListTrips(cursor?: string): Promise<TripListResponse> {
@@ -64,6 +64,11 @@ export async function bffRemoveMember(tripId: string, userId: string): Promise<v
 
 export async function bffLeaveTrip(tripId: string): Promise<void> {
   await bff.post(`/api/trips/${tripId}/leave`);
+}
+
+export async function bffGetTimeline(tripId: string, signal?: AbortSignal): Promise<TimelineResponse> {
+  const res = await bff.get<TimelineResponse>(`/api/trips/${tripId}/timeline`, { signal });
+  return res.data;
 }
 
 export async function bffUploadTripCover(file: File): Promise<string> {

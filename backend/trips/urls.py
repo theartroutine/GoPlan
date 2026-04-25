@@ -12,6 +12,7 @@ from trips.views import (
     TripDetailUpdateAPIView,
     TripInvitationsAPIView,
     TripListCreateAPIView,
+    TripTimelineAPIView,
 )
 
 app_name = "trips"
@@ -26,4 +27,5 @@ urlpatterns = [
     path("<uuid:trip_id>/cancel", CancelTripAPIView.as_view(), name="trip-cancel"),
     path("<uuid:trip_id>/members/<uuid:user_id>", RemoveMemberAPIView.as_view(), name="trip-remove-member"),
     path("<uuid:trip_id>/leave", LeaveTripAPIView.as_view(), name="trip-leave"),
+    path("<uuid:trip_id>/timeline", TripTimelineAPIView.as_view(), name="trip-timeline"),
 ]

@@ -40,6 +40,7 @@ describe("EditTripForm", () => {
           description: "",
           status: "PLANNING",
           currency_code: "VND",
+          timezone: "Asia/Ho_Chi_Minh",
           budget_estimate: null,
           cancelled_at: null,
           created_at: "2026-04-20T00:00:00Z",

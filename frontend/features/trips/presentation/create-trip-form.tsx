@@ -14,10 +14,19 @@ import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Textarea } from "@/shared/ui/textarea";
 
+function detectBrowserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Ho_Chi_Minh";
+  } catch {
+    return "Asia/Ho_Chi_Minh";
+  }
+}
+
 export function CreateTripForm() {
   const router = useRouter();
   const [startDate, setStartDate] = useState<string | undefined>();
   const [endDate, setEndDate] = useState<string | undefined>();
+  const [timezone, setTimezone] = useState<string>(() => detectBrowserTimezone());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -79,6 +88,7 @@ export function CreateTripForm() {
         destination_country_code: pickerValue.destination_country_code,
       }),
       cover_image_url: permanentCoverUrl ?? "",
+      timezone,
     };
 
     try {
@@ -129,6 +139,18 @@ export function CreateTripForm() {
             minDate={endMinDate}
           />
         </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="timezone">Trip timezone *</Label>
+        <Input
+          id="timezone"
+          name="timezone"
+          value={timezone}
+          onChange={(e) => setTimezone(e.target.value)}
+          placeholder="Asia/Ho_Chi_Minh"
+          required
+        />
+        <p className="text-xs text-muted-foreground">IANA timezone, e.g. Asia/Ho_Chi_Minh, Asia/Tokyo.</p>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="description">Description</Label>

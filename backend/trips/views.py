@@ -16,6 +16,7 @@ from trips.serializers import (
     TripMemberSerializer,
     TripResponseSerializer,
     UpdateTripSerializer,
+    build_timeline_response,
 )
 from trips.services import (
     CannotRemoveSelfError,
@@ -34,6 +35,7 @@ from trips.services import (
     get_invitable_friends,
     get_pending_invitations,
     get_trip_detail,
+    get_trip_timeline,
     get_user_trips,
     leave_trip,
     remove_member,
@@ -80,6 +82,7 @@ class TripListCreateAPIView(APIView):
             end_date=d["end_date"],
             description=d.get("description", ""),
             currency_code=d.get("currency_code", "VND"),
+            timezone=d.get("timezone", "Asia/Ho_Chi_Minh"),
             budget_estimate=d.get("budget_estimate"),
         )
         return Response(
@@ -304,6 +307,31 @@ class RemoveMemberAPIView(APIView):
         except StatusTransitionError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_409_CONFLICT)
         return Response({}, status=status.HTTP_200_OK)
+
+
+class TripTimelineAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_timeline_detail"
+
+    def get(self, request, trip_id):
+        try:
+            trip, my_membership = get_trip_detail(trip_id, request.user)
+        except TripNotFoundError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+
+        sections, custom_types = get_trip_timeline(trip)
+        is_captain = my_membership.role == TripRole.CAPTAIN
+        is_terminal = trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED)
+        payload = build_timeline_response(
+            trip=trip,
+            sections=sections,
+            custom_types=custom_types,
+            is_captain=is_captain,
+            is_terminal=is_terminal,
+        )
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class LeaveTripAPIView(APIView):

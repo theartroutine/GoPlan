@@ -176,6 +176,7 @@ REST_FRAMEWORK = {
         'trips_cancel': '20/hour',
         'trips_remove_member': '30/hour',
         'trips_leave': '30/hour',
+        'trips_timeline_detail': '240/hour',
         'ws_ticket_refresh': '20/minute',
     },
 }

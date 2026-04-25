@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Prefetch, Q, Subquery
@@ -9,7 +11,17 @@ from friends.models import Friendship
 from notifications.models import NotificationType
 from notifications.services import create_notification
 from shared.utils.identity import canonical_pair
-from trips.models import InvitationStatus, MemberStatus, Trip, TripInvitation, TripMember, TripRole, TripStatus
+from trips.models import (
+    InvitationStatus,
+    MemberStatus,
+    TimelineSection,
+    TimelineSectionKind,
+    Trip,
+    TripInvitation,
+    TripMember,
+    TripRole,
+    TripStatus,
+)
 
 User = get_user_model()
 
@@ -86,9 +98,10 @@ def create_trip(
     end_date,
     description: str = "",
     currency_code: str = "VND",
+    timezone: str = "Asia/Ho_Chi_Minh",
     budget_estimate=None,
 ) -> Trip:
-    """Create a trip and add the creator as CAPTAIN."""
+    """Create a trip and add the creator as CAPTAIN. Auto-generates SYSTEM_DAY sections."""
     with transaction.atomic():
         trip = Trip.objects.create(
             name=name,
@@ -103,6 +116,7 @@ def create_trip(
             end_date=end_date,
             description=description,
             currency_code=currency_code,
+            timezone=timezone,
             budget_estimate=budget_estimate,
             status=TripStatus.PLANNING,
             created_by=captain,
@@ -113,7 +127,42 @@ def create_trip(
             role=TripRole.CAPTAIN,
             status=MemberStatus.ACTIVE,
         )
+        sync_system_day_sections(trip)
     return trip
+
+
+# -------- Timeline system-day sync --------
+
+def sync_system_day_sections(trip: Trip) -> None:
+    """Generate SYSTEM_DAY sections for the trip's full date range.
+
+    Phase 1 minimum: only used at trip creation. Range-update sync rules
+    (extend / shrink / shift) are implemented in later phases.
+    """
+    if not trip.start_date or not trip.end_date:
+        return
+    existing = {s.section_date: s for s in trip.timeline_sections.filter(kind=TimelineSectionKind.SYSTEM_DAY)}
+    current = trip.start_date
+    index = 0
+    while current <= trip.end_date:
+        if current not in existing:
+            TimelineSection.objects.create(
+                trip=trip,
+                kind=TimelineSectionKind.SYSTEM_DAY,
+                section_date=current,
+                label=f"Day {index + 1}",
+                is_label_custom=False,
+                position=0,
+            )
+        else:
+            section = existing[current]
+            if not section.is_label_custom:
+                expected_label = f"Day {index + 1}"
+                if section.label != expected_label:
+                    section.label = expected_label
+                    section.save(update_fields=["label", "updated_at"])
+        current = current + timedelta(days=1)
+        index += 1
 
 
 def get_user_trips(user):
@@ -155,7 +204,7 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
                 destination_lng=_UNSET, destination_country_code=_UNSET,
                 cover_image_url=_UNSET,
                 start_date=_UNSET, end_date=_UNSET,
-                description=_UNSET, currency_code=_UNSET, budget_estimate=_UNSET):
+                description=_UNSET, currency_code=_UNSET, timezone=_UNSET, budget_estimate=_UNSET):
     """Partially update trip fields. Only updates fields explicitly passed.
     Sentinel _UNSET distinguishes "not provided" from None (which clears a nullable field).
     """
@@ -171,9 +220,33 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
     if end_date is not _UNSET:                   trip.end_date = end_date
     if description is not _UNSET:                trip.description = description
     if currency_code is not _UNSET:              trip.currency_code = currency_code
+    if timezone is not _UNSET:                   trip.timezone = timezone
     if budget_estimate is not _UNSET:            trip.budget_estimate = budget_estimate
     trip.save()
     return trip
+
+
+# -------- Timeline read --------
+
+def get_trip_timeline(trip: Trip):
+    """Return ordered timeline sections with prefetched activities for read-only rendering."""
+    sections_qs = (
+        trip.timeline_sections
+        .all()
+        .order_by("section_date", "position", "created_at")
+        .prefetch_related(
+            Prefetch(
+                "activities",
+                queryset=(
+                    trip.timeline_activities.model.objects
+                    .order_by("position", "created_at")
+                    .select_related("custom_type", "assignee_user")
+                ),
+            )
+        )
+    )
+    custom_types = trip.timeline_custom_types.all().order_by("name", "created_at")
+    return list(sections_qs), list(custom_types)
 
 
 # -------- Invite helpers --------

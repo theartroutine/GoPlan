@@ -18,6 +18,7 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
   const router = useRouter();
   const [startDate, setStartDate] = useState<string>(trip.start_date);
   const [endDate, setEndDate] = useState<string>(trip.end_date);
+  const [timezone, setTimezone] = useState<string>(trip.timezone);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -98,6 +99,10 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
       payload.cover_image_url = permanentCoverUrl;
     }
 
+    if (timezone && timezone !== trip.timezone) {
+      payload.timezone = timezone;
+    }
+
     try {
       await bffUpdateTrip(trip.id, payload);
       router.push(`/trips/${trip.id}/overview`);
@@ -148,6 +153,18 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
             minDate={endMinDate}
           />
         </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="timezone">Trip timezone *</Label>
+        <Input
+          id="timezone"
+          name="timezone"
+          value={timezone}
+          onChange={(e) => setTimezone(e.target.value)}
+          placeholder="Asia/Ho_Chi_Minh"
+          required
+        />
+        <p className="text-xs text-muted-foreground">IANA timezone, e.g. Asia/Ho_Chi_Minh, Asia/Tokyo.</p>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="description">Description</Label>
