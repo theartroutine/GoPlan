@@ -12,6 +12,7 @@ from trips.views import (
     TimelineActivityDetailAPIView,
     TimelineActivityListCreateAPIView,
     TimelineActivityReorderAPIView,
+    TimelineActivityStatusAPIView,
     TimelineCustomTypeDetailAPIView,
     TimelineCustomTypeListCreateAPIView,
     TimelineSectionDetailAPIView,
@@ -42,6 +43,7 @@ urlpatterns = [
     path("<uuid:trip_id>/timeline/sections/<uuid:section_id>/activities", TimelineActivityListCreateAPIView.as_view(), name="timeline-activities"),
     path("<uuid:trip_id>/timeline/sections/<uuid:section_id>/activities/reorder", TimelineActivityReorderAPIView.as_view(), name="timeline-activities-reorder"),
     path("<uuid:trip_id>/timeline/activities/<uuid:activity_id>", TimelineActivityDetailAPIView.as_view(), name="timeline-activity-detail"),
+    path("<uuid:trip_id>/timeline/activities/<uuid:activity_id>/status", TimelineActivityStatusAPIView.as_view(), name="timeline-activity-status"),
     path("<uuid:trip_id>/timeline/custom-types", TimelineCustomTypeListCreateAPIView.as_view(), name="timeline-custom-types"),
     path("<uuid:trip_id>/timeline/custom-types/<uuid:type_id>", TimelineCustomTypeDetailAPIView.as_view(), name="timeline-custom-type-detail"),
 ]

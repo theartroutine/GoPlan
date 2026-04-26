@@ -15,6 +15,7 @@ from trips.models import (
     InvitationStatus,
     MemberStatus,
     TimelineActivity,
+    TimelineActivityStatus,
     TimelineActivityTimeMode,
     TimelineCustomType,
     TimelineLocationMode,
@@ -124,6 +125,36 @@ class TimelineInvalidAssigneeError(TripServiceError):
 
 class TimelineInvalidCustomTypeError(TripServiceError):
     error_code = "INVALID_CUSTOM_TYPE"
+
+
+_CAPTAIN_ACTIVITY_STATUS_TARGETS = {
+    TimelineActivityStatus.UPCOMING: {
+        TimelineActivityStatus.IN_PROGRESS,
+        TimelineActivityStatus.DONE,
+        TimelineActivityStatus.CANCELLED,
+    },
+    TimelineActivityStatus.IN_PROGRESS: {
+        TimelineActivityStatus.UPCOMING,
+        TimelineActivityStatus.DONE,
+        TimelineActivityStatus.CANCELLED,
+    },
+    TimelineActivityStatus.DONE: {
+        TimelineActivityStatus.IN_PROGRESS,
+        TimelineActivityStatus.UPCOMING,
+        TimelineActivityStatus.CANCELLED,
+    },
+    TimelineActivityStatus.CANCELLED: {TimelineActivityStatus.UPCOMING},
+}
+
+_ASSIGNEE_ACTIVITY_STATUS_TARGETS = {
+    TimelineActivityStatus.UPCOMING: {TimelineActivityStatus.IN_PROGRESS},
+    TimelineActivityStatus.IN_PROGRESS: {
+        TimelineActivityStatus.UPCOMING,
+        TimelineActivityStatus.DONE,
+    },
+    TimelineActivityStatus.DONE: set(),
+    TimelineActivityStatus.CANCELLED: set(),
+}
 
 
 # -------- Services --------
@@ -1012,6 +1043,43 @@ def reorder_timeline_activities(trip_id, section_id, *, actor, ordered_activity_
             activity.save(update_fields=["position", "updated_by", "updated_at"])
             new_order.append(activity)
     return new_order
+
+
+def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str) -> TimelineActivity:
+    """Update operational activity status. Captain follows full state machine; assignee has limited transitions."""
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _assert_not_terminal(trip)
+        try:
+            activity = TimelineActivity.objects.select_for_update().get(pk=activity_id, trip=trip)
+        except TimelineActivity.DoesNotExist:
+            raise TimelineActivityNotFoundError("Activity not found.")
+
+        try:
+            membership = TripMember.objects.get(
+                trip=trip, user=actor, status=MemberStatus.ACTIVE
+            )
+        except TripMember.DoesNotExist:
+            raise NotTripMemberError("You are not an active member of this trip.")
+
+        if status == activity.status:
+            return activity
+
+        if membership.role == TripRole.CAPTAIN:
+            allowed_targets = _CAPTAIN_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
+            if status not in allowed_targets:
+                raise StatusTransitionError("This activity status transition is not allowed.")
+        else:
+            if activity.assignee_user_id is None or activity.assignee_user_id != actor.id:
+                raise TripPermissionError("Only the captain or assigned member can update this activity status.")
+            allowed_targets = _ASSIGNEE_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
+            if status not in allowed_targets:
+                raise TripPermissionError("Assigned members cannot perform this activity status transition.")
+
+        activity.status = status
+        activity.updated_by = actor
+        activity.save(update_fields=["status", "updated_by", "updated_at"])
+    return activity
 
 
 # -------- Custom type mutations --------

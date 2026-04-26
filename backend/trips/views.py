@@ -23,6 +23,7 @@ from trips.serializers import (
     TripListItemSerializer,
     TripMemberSerializer,
     TripResponseSerializer,
+    UpdateTimelineActivityStatusSerializer,
     UpdateTripSerializer,
     build_timeline_response,
     serialize_activity,
@@ -74,6 +75,7 @@ from trips.services import (
     reorder_timeline_activities,
     send_trip_invitations,
     start_trip,
+    update_timeline_activity_status,
     update_trip,
 )
 
@@ -363,6 +365,7 @@ class TripTimelineAPIView(APIView):
             custom_types=custom_types,
             is_captain=is_captain,
             is_terminal=is_terminal,
+            viewer_user_id=request.user.id,
         )
         return Response(payload, status=status.HTTP_200_OK)
 
@@ -419,6 +422,8 @@ def _handle_common(exc):
         return _err(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
     if isinstance(exc, TimelineInvalidCustomTypeError):
         return _err(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, StatusTransitionError):
+        return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
     return None
 
 
@@ -521,7 +526,17 @@ class TimelineActivityListCreateAPIView(APIView):
             if mapped is not None:
                 return mapped
             raise
-        return Response({"activity": serialize_activity(activity)}, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "activity": serialize_activity(
+                    activity,
+                    viewer_user_id=request.user.id,
+                    is_captain=True,
+                    is_terminal=False,
+                )
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class TimelineActivityReorderAPIView(APIView):
@@ -544,7 +559,18 @@ class TimelineActivityReorderAPIView(APIView):
                 return mapped
             raise
         return Response(
-            {"activities": [serialize_activity(a) for a in activities]}, status=status.HTTP_200_OK
+            {
+                "activities": [
+                    serialize_activity(
+                        a,
+                        viewer_user_id=request.user.id,
+                        is_captain=True,
+                        is_terminal=False,
+                    )
+                    for a in activities
+                ]
+            },
+            status=status.HTTP_200_OK,
         )
 
 
@@ -567,7 +593,16 @@ class TimelineActivityDetailAPIView(APIView):
             if mapped is not None:
                 return mapped
             raise
-        return Response({"activity": serialize_activity(activity)})
+        return Response(
+            {
+                "activity": serialize_activity(
+                    activity,
+                    viewer_user_id=request.user.id,
+                    is_captain=True,
+                    is_terminal=False,
+                )
+            }
+        )
 
     def delete(self, request, trip_id, activity_id):
         try:
@@ -580,6 +615,31 @@ class TimelineActivityDetailAPIView(APIView):
                 return mapped
             raise
         return Response({}, status=status.HTTP_200_OK)
+
+
+class TimelineActivityStatusAPIView(APIView):
+    permission_classes = TRIP_PERMISSIONS
+    throttle_scope = "trips_timeline_activity_status"
+
+    def post(self, request, trip_id, activity_id):
+        serializer = UpdateTimelineActivityStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            activity = update_timeline_activity_status(
+                trip_id=trip_id,
+                activity_id=activity_id,
+                actor=request.user,
+                status=serializer.validated_data["status"],
+            )
+        except Exception as exc:
+            mapped = _handle_common(exc)
+            if mapped is not None:
+                return mapped
+            raise
+        return Response(
+            {"activity_id": str(activity.id), "status": activity.status},
+            status=status.HTTP_200_OK,
+        )
 
 
 class TimelineCustomTypeListCreateAPIView(APIView):

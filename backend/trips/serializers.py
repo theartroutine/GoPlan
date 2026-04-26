@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from decimal import Decimal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from django.utils.text import slugify
 from rest_framework import serializers
 
 from trips.models import (
     MemberStatus,
     TimelineActivity,
+    TimelineActivityStatus,
     TimelineActivityTimeMode,
     TimelineCustomType,
     TimelineLocationMode,
@@ -235,7 +239,82 @@ class TripInvitationSerializer(serializers.ModelSerializer):
 
 # -------- Timeline read --------
 
-def _activity_payload(activity: TimelineActivity) -> dict:
+def _format_map_decimal(value) -> str:
+    if isinstance(value, Decimal):
+        return format(value.normalize(), "f")
+    return str(value)
+
+
+def _build_timeline_open_url(activity: TimelineActivity) -> str | None:
+    if activity.location_mode == TimelineLocationMode.STRUCTURED:
+        title = activity.place_title or activity.location_label
+        if activity.place_lat is not None and activity.place_lng is not None:
+            slug = slugify(title) or "place"
+            lat = _format_map_decimal(activity.place_lat)
+            lng = _format_map_decimal(activity.place_lng)
+            return f"https://share.here.com/l/{lat},{lng},{slug}"
+        query = title or activity.place_address
+    else:
+        query = activity.location_label
+
+    if not query:
+        return None
+    return f"https://share.here.com/r/{quote(query, safe='')}"
+
+
+_CAPTAIN_STATUS_TARGETS = {
+    TimelineActivityStatus.UPCOMING: {
+        TimelineActivityStatus.IN_PROGRESS,
+        TimelineActivityStatus.DONE,
+        TimelineActivityStatus.CANCELLED,
+    },
+    TimelineActivityStatus.IN_PROGRESS: {
+        TimelineActivityStatus.UPCOMING,
+        TimelineActivityStatus.DONE,
+        TimelineActivityStatus.CANCELLED,
+    },
+    TimelineActivityStatus.DONE: {
+        TimelineActivityStatus.IN_PROGRESS,
+        TimelineActivityStatus.UPCOMING,
+        TimelineActivityStatus.CANCELLED,
+    },
+    TimelineActivityStatus.CANCELLED: {TimelineActivityStatus.UPCOMING},
+}
+
+_ASSIGNEE_STATUS_TARGETS = {
+    TimelineActivityStatus.UPCOMING: {TimelineActivityStatus.IN_PROGRESS},
+    TimelineActivityStatus.IN_PROGRESS: {
+        TimelineActivityStatus.UPCOMING,
+        TimelineActivityStatus.DONE,
+    },
+    TimelineActivityStatus.DONE: set(),
+    TimelineActivityStatus.CANCELLED: set(),
+}
+
+
+def _can_update_any_status(
+    activity: TimelineActivity,
+    *,
+    viewer_user_id,
+    is_captain: bool,
+    is_terminal: bool,
+) -> bool:
+    if is_terminal:
+        return False
+    if is_captain:
+        return bool(_CAPTAIN_STATUS_TARGETS.get(activity.status))
+    if activity.assignee_user_id is None or activity.assignee_user_id != viewer_user_id:
+        return False
+    return bool(_ASSIGNEE_STATUS_TARGETS.get(activity.status))
+
+
+def _activity_payload(
+    activity: TimelineActivity,
+    *,
+    viewer_user_id=None,
+    is_captain: bool = False,
+    is_terminal: bool = True,
+) -> dict:
     if activity.system_type:
         activity_type = system_type_payload(activity.system_type)
     elif activity.custom_type_id is not None:
@@ -269,7 +348,9 @@ def _activity_payload(activity: TimelineActivity) -> dict:
         "location_label": activity.location_label,
         "location_note": activity.location_note,
         "place": place,
+        "open_url": _build_timeline_open_url(activity),
     }
+    can_edit = is_captain and not is_terminal
 
     return {
         "id": str(activity.id),
@@ -289,10 +370,26 @@ def _activity_payload(activity: TimelineActivity) -> dict:
         "booking_reference": activity.booking_reference,
         "external_link": activity.external_link,
         "reminder_offsets_minutes": [],
+        "capabilities": {
+            "can_edit": can_edit,
+            "can_delete": can_edit,
+            "can_update_status": _can_update_any_status(
+                activity,
+                viewer_user_id=viewer_user_id,
+                is_captain=is_captain,
+                is_terminal=is_terminal,
+            ),
+        },
     }
 
 
-def _section_payload(section: TimelineSection) -> dict:
+def _section_payload(
+    section: TimelineSection,
+    *,
+    viewer_user_id=None,
+    is_captain: bool = False,
+    is_terminal: bool = True,
+) -> dict:
     return {
         "id": str(section.id),
         "kind": section.kind,
@@ -300,7 +397,15 @@ def _section_payload(section: TimelineSection) -> dict:
         "label": section.label,
         "is_label_custom": section.is_label_custom,
         "position": section.position,
-        "activities": [_activity_payload(a) for a in section.activities.all()],
+        "activities": [
+            _activity_payload(
+                a,
+                viewer_user_id=viewer_user_id,
+                is_captain=is_captain,
+                is_terminal=is_terminal,
+            )
+            for a in section.activities.all()
+        ],
     }
 
 
@@ -500,6 +605,10 @@ class ReorderActivitiesSerializer(serializers.Serializer):
         return value
 
 
+class UpdateTimelineActivityStatusSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=TimelineActivityStatus.choices)
+
+
 # -------- Custom type serializers --------
 
 class CreateCustomTypeSerializer(serializers.Serializer):
@@ -533,8 +642,19 @@ def serialize_section(section: TimelineSection) -> dict:
     return _section_payload(section)
 
 
-def serialize_activity(activity: TimelineActivity) -> dict:
-    return _activity_payload(activity)
+def serialize_activity(
+    activity: TimelineActivity,
+    *,
+    viewer_user_id=None,
+    is_captain: bool = False,
+    is_terminal: bool = True,
+) -> dict:
+    return _activity_payload(
+        activity,
+        viewer_user_id=viewer_user_id,
+        is_captain=is_captain,
+        is_terminal=is_terminal,
+    )
 
 
 def serialize_custom_type(ct: TimelineCustomType) -> dict:
@@ -555,6 +675,7 @@ def build_timeline_response(
     custom_types: list[TimelineCustomType],
     is_captain: bool,
     is_terminal: bool,
+    viewer_user_id,
 ) -> dict:
     can_edit = is_captain and not is_terminal
     return {
@@ -576,5 +697,13 @@ def build_timeline_response(
             }
             for ct in custom_types
         ],
-        "sections": [_section_payload(s) for s in sections],
+        "sections": [
+            _section_payload(
+                s,
+                viewer_user_id=viewer_user_id,
+                is_captain=is_captain,
+                is_terminal=is_terminal,
+            )
+            for s in sections
+        ],
     }

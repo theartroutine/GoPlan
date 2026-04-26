@@ -183,6 +183,7 @@ REST_FRAMEWORK = {
         'trips_timeline_activities': '240/hour',
         'trips_timeline_activities_reorder': '120/hour',
         'trips_timeline_activity_detail': '240/hour',
+        'trips_timeline_activity_status': '240/hour',
         'trips_timeline_custom_types': '60/hour',
         'trips_timeline_custom_type_detail': '60/hour',
         'ws_ticket_refresh': '20/minute',

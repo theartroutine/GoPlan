@@ -20,6 +20,7 @@ import {
   bffPatchTimelineSection,
   bffReorderTimelineActivities,
   bffReorderTimelineSections,
+  bffUpdateTimelineActivityStatus,
 } from "@/features/trips/infrastructure/trips-api";
 import { TimelineActivityForm } from "@/features/trips/presentation/timeline-activity-form";
 import { TimelineActivityNode } from "@/features/trips/presentation/timeline-activity-node";
@@ -230,6 +231,16 @@ export function TimelineTab() {
     }
   }
 
+  async function handleUpdateActivityStatus(activity: TimelineActivity, status: TimelineActivity["status"]) {
+    setActionError(null);
+    try {
+      await bffUpdateTimelineActivityStatus(tripId, activity.id, { status });
+      await refetch();
+    } catch (err) {
+      setActionError(extractError(err, "Failed to update activity status."));
+    }
+  }
+
   // -------- Render --------
   // Group sections by date for sibling reorder scope.
   const sectionsByDate = new Map<string, TimelineSection[]>();
@@ -387,7 +398,10 @@ export function TimelineTab() {
                             />
                           )}
                           <div className="flex-1">
-                            <TimelineActivityNode activity={activity} />
+                            <TimelineActivityNode
+                              activity={activity}
+                              onStatusChange={(nextStatus) => handleUpdateActivityStatus(activity, nextStatus)}
+                            />
                           </div>
                           {canEdit && (
                             <div className="flex flex-col gap-1">

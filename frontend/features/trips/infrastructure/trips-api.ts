@@ -14,6 +14,7 @@ import type {
   TimelineCustomTypeMeta,
   TimelineResponse,
   TimelineSection,
+  UpdateActivityStatusPayload,
   TripDetail,
   TripDetailResponse,
   TripInvitation,
@@ -173,6 +174,18 @@ export async function bffReorderTimelineActivities(
 ): Promise<{ activities: TimelineActivity[] }> {
   const res = await bff.post<{ activities: TimelineActivity[] }>(
     `/api/trips/${tripId}/timeline/sections/${sectionId}/activities/reorder`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function bffUpdateTimelineActivityStatus(
+  tripId: string,
+  activityId: string,
+  payload: UpdateActivityStatusPayload,
+): Promise<{ activity_id: string; status: TimelineActivity["status"] }> {
+  const res = await bff.post<{ activity_id: string; status: TimelineActivity["status"] }>(
+    `/api/trips/${tripId}/timeline/activities/${activityId}/status`,
     payload,
   );
   return res.data;

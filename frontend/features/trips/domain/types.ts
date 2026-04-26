@@ -163,6 +163,13 @@ export type TimelineLocation = {
   location_label: string;
   location_note: string;
   place: TimelinePlace | null;
+  open_url: string | null;
+};
+
+export type TimelineActivityCapabilities = {
+  can_edit: boolean;
+  can_delete: boolean;
+  can_update_status: boolean;
 };
 
 export type TimelineActivity = {
@@ -183,6 +190,7 @@ export type TimelineActivity = {
   booking_reference: string;
   external_link: string;
   reminder_offsets_minutes: number[];
+  capabilities: TimelineActivityCapabilities;
 };
 
 export type TimelineSection = {
@@ -260,6 +268,10 @@ export type PatchActivityPayload = Partial<CreateActivityPayload>;
 
 export type ReorderActivitiesPayload = {
   ordered_activity_ids: string[];
+};
+
+export type UpdateActivityStatusPayload = {
+  status: TimelineActivityStatus;
 };
 
 export type CreateCustomTypePayload = {

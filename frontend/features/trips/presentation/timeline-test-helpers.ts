@@ -51,7 +51,7 @@ export function buildTimelineActivity(
     position: 0,
     activity_type: { kind: "SYSTEM", code: "TRANSPORTATION", label: "Transportation", color_token: "sky", icon_key: "bus" },
     assignee: null,
-    location: { location_mode: "MANUAL", location_label: "", location_note: "", place: null },
+    location: { location_mode: "MANUAL", location_label: "", location_note: "", open_url: null, place: null },
     note: "",
     meeting_point: "",
     contact_name: "",
@@ -59,6 +59,7 @@ export function buildTimelineActivity(
     booking_reference: "",
     external_link: "",
     reminder_offsets_minutes: [],
+    capabilities: { can_edit: false, can_delete: false, can_update_status: false },
     ...overrides,
   };
 }
