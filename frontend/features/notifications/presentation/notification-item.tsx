@@ -6,6 +6,7 @@ import type {
   TripInvitationRespondedPayload,
   TripMemberRemovedPayload,
 } from "@/features/notifications/domain/types";
+import { TimelineReminderNotification } from "@/features/notifications/presentation/timeline-reminder-notification";
 import { TripInvitationNotification } from "@/features/notifications/presentation/trip-invitation-notification";
 import { formatRelativeTime } from "@/shared/utils/relative-time";
 
@@ -35,6 +36,9 @@ function renderSimpleText(notification: Notification): string {
     case "TRIP_INVITATION":
       // Handled by TripInvitationNotification before this function is called; never reached
       return "";
+    case "TRIP_TIMELINE_REMINDER":
+      // Handled by TimelineReminderNotification before this function is called; never reached
+      return "";
     default: {
       const _exhaustive: never = notification.notification_type;
       void _exhaustive;
@@ -62,6 +66,15 @@ export function NotificationItem({
         notification={notification}
         onAccept={onAcceptInvitation ?? (async () => {})}
         onDecline={onDeclineInvitation ?? (async () => {})}
+      />
+    );
+  }
+
+  if (notification.notification_type === "TRIP_TIMELINE_REMINDER") {
+    return (
+      <TimelineReminderNotification
+        notification={notification}
+        onMarkRead={onMarkRead}
       />
     );
   }

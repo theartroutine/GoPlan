@@ -14,6 +14,7 @@ class NotificationType(models.TextChoices):
     TRIP_INVITATION_DECLINED = "TRIP_INVITATION_DECLINED", "Trip Invitation Declined"
     TRIP_CANCELLED = "TRIP_CANCELLED", "Trip Cancelled"
     TRIP_MEMBER_REMOVED = "TRIP_MEMBER_REMOVED", "Trip Member Removed"
+    TRIP_TIMELINE_REMINDER = "TRIP_TIMELINE_REMINDER", "Trip Timeline Reminder"
 
 
 class Notification(models.Model):

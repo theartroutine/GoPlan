@@ -63,6 +63,22 @@ services:
       redis-messaging:
         condition: service_healthy
 
+  # -------- Timeline Reminder Dispatcher --------
+  timeline-reminder-dispatcher:
+    image: backend:latest
+    container_name: timeline-reminder-dispatcher-goplan
+    command: bash -c "python manage.py migrate && while true; do python manage.py dispatch_timeline_reminders; sleep 60; done"
+    volumes:
+      - ./backend:/app:Z
+      - mediadata:/app/media_files
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgresql-goplan:
+        condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
+
 volumes:
   pgdata: {}
   redisdata: {}

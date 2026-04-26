@@ -120,6 +120,25 @@ class NotificationPayloadValidationTests(APITestCase):
 
         self.assertEqual(Notification.objects.count(), 0)
 
+    def test_validate_timeline_reminder_payload_schema(self):
+        payload = {
+            "trip_id": "trip-1",
+            "trip_name": "Da Lat Weekend",
+            "activity_id": "activity-1",
+            "activity_title": "Board train",
+            "section_label": "Day 1",
+            "activity_date": "2026-06-01",
+            "activity_time": "09:00",
+            "location_label": "Central station",
+        }
+
+        result = validate_notification_payload(
+            NotificationType.TRIP_TIMELINE_REMINDER,
+            payload,
+        )
+
+        self.assertEqual(result, payload)
+
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
 class CreateNotificationWSTests(TransactionTestCase):

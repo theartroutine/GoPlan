@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -15,6 +16,7 @@ from trips.models import (
     InvitationStatus,
     MemberStatus,
     TimelineActivity,
+    TimelineActivityReminder,
     TimelineActivityStatus,
     TimelineActivityTimeMode,
     TimelineCustomType,
@@ -154,6 +156,11 @@ _ASSIGNEE_ACTIVITY_STATUS_TARGETS = {
     },
     TimelineActivityStatus.DONE: set(),
     TimelineActivityStatus.CANCELLED: set(),
+}
+
+_TIMELINE_REMINDER_DISPATCH_TRIP_STATUSES = {
+    TripStatus.PLANNING,
+    TripStatus.ONGOING,
 }
 
 
@@ -296,9 +303,13 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
     if end_date is not _UNSET:                   trip.end_date = end_date
     if description is not _UNSET:                trip.description = description
     if currency_code is not _UNSET:              trip.currency_code = currency_code
+    old_timezone = trip.timezone
+    timezone_changed = timezone is not _UNSET and timezone != old_timezone
     if timezone is not _UNSET:                   trip.timezone = timezone
     if budget_estimate is not _UNSET:            trip.budget_estimate = budget_estimate
     trip.save()
+    if timezone_changed:
+        regenerate_unsent_trip_reminders(trip)
     return trip
 
 
@@ -317,6 +328,7 @@ def get_trip_timeline(trip: Trip):
                     trip.timeline_activities.model.objects
                     .order_by("position", "created_at")
                     .select_related("custom_type", "assignee_user")
+                    .prefetch_related("reminders")
                 ),
             )
         )
@@ -769,11 +781,14 @@ def patch_section(trip_id, section_id, *, actor, label=_UNSET_TIMELINE, section_
                 section.label = label
                 section.is_label_custom = True
                 update_fields.extend(["label", "is_label_custom"])
+            section_date_changed = section_date is not _UNSET_TIMELINE and section_date != section.section_date
             if section_date is not _UNSET_TIMELINE:
                 section.section_date = section_date
                 update_fields.append("section_date")
             section.updated_by = actor
             section.save(update_fields=update_fields)
+            if section_date_changed:
+                regenerate_unsent_section_reminders(section)
     return section
 
 
@@ -835,6 +850,130 @@ def _resolve_custom_type(trip, custom_type_id) -> TimelineCustomType:
     return ct
 
 
+# -------- Timeline reminder helpers --------
+
+def _activity_supports_reminders(activity: TimelineActivity) -> bool:
+    return activity.time_mode in (
+        TimelineActivityTimeMode.AT_TIME,
+        TimelineActivityTimeMode.TIME_RANGE,
+    ) and activity.start_time is not None
+
+
+def _activity_start_utc(activity: TimelineActivity):
+    if not _activity_supports_reminders(activity):
+        return None
+    local_start = datetime.combine(
+        activity.section.section_date,
+        activity.start_time,
+        tzinfo=ZoneInfo(activity.trip.timezone),
+    )
+    return local_start.astimezone(dt_timezone.utc)
+
+
+def _configured_reminder_offsets(activity: TimelineActivity) -> list[int]:
+    return sorted(
+        set(activity.reminders.values_list("offset_minutes_before", flat=True)),
+        reverse=True,
+    )
+
+
+def replace_unsent_activity_reminders(activity: TimelineActivity, offsets: list[int]) -> None:
+    """Replace unsent reminder rows for an activity, preserving sent history."""
+    activity.reminders.filter(sent_at__isnull=True).delete()
+    if not offsets or not _activity_supports_reminders(activity):
+        return
+
+    activity_start_utc = _activity_start_utc(activity)
+    if activity_start_utc is None:
+        return
+
+    for offset in sorted(set(offsets), reverse=True):
+        due_at_utc = activity_start_utc - timedelta(minutes=offset)
+        TimelineActivityReminder.objects.get_or_create(
+            activity=activity,
+            offset_minutes_before=offset,
+            due_at_utc=due_at_utc,
+        )
+
+
+def regenerate_unsent_activity_reminders(activity: TimelineActivity) -> None:
+    replace_unsent_activity_reminders(activity, _configured_reminder_offsets(activity))
+
+
+def regenerate_unsent_section_reminders(section: TimelineSection) -> None:
+    activities = (
+        section.activities
+        .select_related("trip", "section")
+        .prefetch_related("reminders")
+    )
+    for activity in activities:
+        regenerate_unsent_activity_reminders(activity)
+
+
+def regenerate_unsent_trip_reminders(trip: Trip) -> None:
+    activities = (
+        trip.timeline_activities
+        .select_related("trip", "section")
+        .prefetch_related("reminders")
+    )
+    for activity in activities:
+        regenerate_unsent_activity_reminders(activity)
+
+
+def _timeline_reminder_payload(reminder: TimelineActivityReminder) -> dict[str, str]:
+    activity = reminder.activity
+    return {
+        "trip_id": str(activity.trip_id),
+        "trip_name": activity.trip.name,
+        "activity_id": str(activity.id),
+        "activity_title": activity.title,
+        "section_label": activity.section.label,
+        "activity_date": activity.section.section_date.isoformat(),
+        "activity_time": activity.start_time.strftime("%H:%M") if activity.start_time else "",
+        "location_label": activity.location_label,
+    }
+
+
+def dispatch_due_timeline_reminders(*, now=None) -> int:
+    """Send due timeline reminders to active trip members and mark rows sent."""
+    now = now or timezone.now()
+    dispatched = 0
+    with transaction.atomic():
+        reminders = list(
+            TimelineActivityReminder.objects
+            .select_for_update()
+            .select_related("activity", "activity__trip", "activity__section")
+            .filter(
+                sent_at__isnull=True,
+                due_at_utc__lte=now,
+                activity__status__in=[
+                    TimelineActivityStatus.UPCOMING,
+                    TimelineActivityStatus.IN_PROGRESS,
+                    TimelineActivityStatus.DONE,
+                ],
+                activity__trip__status__in=_TIMELINE_REMINDER_DISPATCH_TRIP_STATUSES,
+            )
+            .order_by("due_at_utc", "created_at")
+        )
+        for reminder in reminders:
+            recipients = (
+                reminder.activity.trip.memberships
+                .filter(status=MemberStatus.ACTIVE)
+                .select_related("user")
+            )
+            payload = _timeline_reminder_payload(reminder)
+            for membership in recipients:
+                create_notification(
+                    recipient=membership.user,
+                    notification_type=NotificationType.TRIP_TIMELINE_REMINDER,
+                    payload=payload,
+                )
+                dispatched += 1
+            reminder.sent_at = now
+            reminder.save(update_fields=["sent_at"])
+    return dispatched
+
+
 def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> TimelineActivity:
     """Create an activity in the given section. Captain only."""
     with transaction.atomic():
@@ -883,6 +1022,10 @@ def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> Timel
             external_link=data.get("external_link", ""),
             created_by=actor,
             updated_by=actor,
+        )
+        replace_unsent_activity_reminders(
+            activity,
+            data.get("reminder_offsets_minutes", []),
         )
     return activity
 
@@ -938,6 +1081,11 @@ def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> Timel
             activity = TimelineActivity.objects.select_for_update().get(pk=activity_id, trip=trip)
         except TimelineActivity.DoesNotExist:
             raise TimelineActivityNotFoundError("Activity not found.")
+
+        existing_offsets = _configured_reminder_offsets(activity)
+        should_regenerate_reminders = bool(
+            {"time_mode", "start_time", "reminder_offsets_minutes"} & set(data.keys())
+        )
 
         try:
             _apply_activity_patch_invariants(activity, data, trip)
@@ -999,6 +1147,9 @@ def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> Timel
 
         activity.updated_by = actor
         activity.save()
+        if should_regenerate_reminders:
+            offsets = data.get("reminder_offsets_minutes", existing_offsets)
+            replace_unsent_activity_reminders(activity, offsets)
     return activity
 
 

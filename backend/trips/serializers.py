@@ -369,7 +369,10 @@ def _activity_payload(
         "contact_phone": activity.contact_phone,
         "booking_reference": activity.booking_reference,
         "external_link": activity.external_link,
-        "reminder_offsets_minutes": [],
+        "reminder_offsets_minutes": sorted(
+            {r.offset_minutes_before for r in activity.reminders.all()},
+            reverse=True,
+        ),
         "capabilities": {
             "can_edit": can_edit,
             "can_delete": can_edit,
@@ -559,6 +562,10 @@ class CreateTimelineActivitySerializer(serializers.Serializer):
         _validate_activity_time_fields(
             data["time_mode"], data.get("start_time"), data.get("end_time")
         )
+        if data["time_mode"] == TimelineActivityTimeMode.ALL_DAY and data.get("reminder_offsets_minutes"):
+            raise serializers.ValidationError(
+                {"reminder_offsets_minutes": "ALL_DAY activities cannot have reminders."}
+            )
         _validate_activity_type_selection(
             data.get("system_type", ""), data.get("custom_type_id")
         )
@@ -594,6 +601,13 @@ class PatchTimelineActivitySerializer(serializers.Serializer):
 
     def validate_reminder_offsets_minutes(self, value):
         return _validate_reminder_offsets(value)
+
+    def validate(self, data):
+        if data.get("time_mode") == TimelineActivityTimeMode.ALL_DAY and data.get("reminder_offsets_minutes"):
+            raise serializers.ValidationError(
+                {"reminder_offsets_minutes": "ALL_DAY activities cannot have reminders."}
+            )
+        return data
 
 
 class ReorderActivitiesSerializer(serializers.Serializer):
