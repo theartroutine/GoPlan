@@ -14,6 +14,10 @@ from shared.utils.identity import canonical_pair
 from trips.models import (
     InvitationStatus,
     MemberStatus,
+    TimelineActivity,
+    TimelineActivityTimeMode,
+    TimelineCustomType,
+    TimelineLocationMode,
     TimelineSection,
     TimelineSectionKind,
     Trip,
@@ -79,6 +83,47 @@ class StatusTransitionError(TripServiceError):
 
 class TripTerminalError(StatusTransitionError):
     error_code = "TRIP_TERMINAL"
+
+
+# Timeline-specific errors
+class TimelineSectionNotFoundError(TripServiceError):
+    error_code = "SECTION_NOT_FOUND"
+
+
+class TimelineActivityNotFoundError(TripServiceError):
+    error_code = "ACTIVITY_NOT_FOUND"
+
+
+class TimelineCustomTypeNotFoundError(TripServiceError):
+    error_code = "CUSTOM_TYPE_NOT_FOUND"
+
+
+class TimelineSectionNotEmptyError(TripServiceError):
+    error_code = "SECTION_NOT_EMPTY"
+
+
+class TimelineCustomTypeInUseError(TripServiceError):
+    error_code = "CUSTOM_TYPE_IN_USE"
+
+
+class TimelineCustomTypeDuplicateError(TripServiceError):
+    error_code = "CUSTOM_TYPE_DUPLICATE"
+
+
+class TimelineInvalidReorderScopeError(TripServiceError):
+    error_code = "INVALID_REORDER_SCOPE"
+
+
+class TimelineSystemDayLockError(TripServiceError):
+    error_code = "SYSTEM_DAY_LOCKED"
+
+
+class TimelineInvalidAssigneeError(TripServiceError):
+    error_code = "INVALID_ASSIGNEE"
+
+
+class TimelineInvalidCustomTypeError(TripServiceError):
+    error_code = "INVALID_CUSTOM_TYPE"
 
 
 # -------- Services --------
@@ -611,3 +656,429 @@ def leave_trip(trip_id, actor) -> TripMember:
         membership.save(update_fields=["status", "left_at"])
 
     return membership
+
+
+# -------- Timeline mutation helpers --------
+
+def _generated_day_label_for(trip: Trip, section_date) -> str | None:
+    """Return the generated 'Day N' label expected for this section_date inside the trip range."""
+    if not trip.start_date or not trip.end_date:
+        return None
+    if section_date < trip.start_date or section_date > trip.end_date:
+        return None
+    delta = (section_date - trip.start_date).days
+    return f"Day {delta + 1}"
+
+
+def _ensure_captain_can_mutate(trip, actor):
+    _assert_captain(trip, actor)
+    _assert_not_terminal(trip)
+
+
+def _get_locked_trip(trip_id) -> Trip:
+    try:
+        return Trip.objects.select_for_update().get(pk=trip_id)
+    except Trip.DoesNotExist:
+        raise TripNotFoundError("Trip not found.")
+
+
+# -------- Section mutations --------
+
+def create_special_section(trip_id, *, actor, section_date, label) -> TimelineSection:
+    """Create a SPECIAL_DAY section. Captain only. Positions after existing siblings."""
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+
+        siblings_count = TimelineSection.objects.filter(
+            trip=trip, section_date=section_date
+        ).count()
+        section = TimelineSection.objects.create(
+            trip=trip,
+            kind=TimelineSectionKind.SPECIAL_DAY,
+            section_date=section_date,
+            label=label,
+            is_label_custom=True,
+            position=siblings_count,
+            created_by=actor,
+            updated_by=actor,
+        )
+    return section
+
+
+_UNSET_TIMELINE = object()
+
+
+def patch_section(trip_id, section_id, *, actor, label=_UNSET_TIMELINE, section_date=_UNSET_TIMELINE) -> TimelineSection:
+    """Patch a section. SYSTEM_DAY can only patch label. SPECIAL_DAY can patch label and section_date."""
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+        try:
+            section = TimelineSection.objects.select_for_update().get(pk=section_id, trip=trip)
+        except TimelineSection.DoesNotExist:
+            raise TimelineSectionNotFoundError("Section not found.")
+
+        if section.kind == TimelineSectionKind.SYSTEM_DAY:
+            if section_date is not _UNSET_TIMELINE:
+                raise TimelineSystemDayLockError("Cannot change section_date of a SYSTEM_DAY section.")
+            if label is not _UNSET_TIMELINE:
+                generated = _generated_day_label_for(trip, section.section_date)
+                if generated is not None and label == generated:
+                    section.label = label
+                    section.is_label_custom = False
+                else:
+                    section.label = label
+                    section.is_label_custom = True
+                section.updated_by = actor
+                section.save(update_fields=["label", "is_label_custom", "updated_by", "updated_at"])
+        else:
+            update_fields = ["updated_by", "updated_at"]
+            if label is not _UNSET_TIMELINE:
+                section.label = label
+                section.is_label_custom = True
+                update_fields.extend(["label", "is_label_custom"])
+            if section_date is not _UNSET_TIMELINE:
+                section.section_date = section_date
+                update_fields.append("section_date")
+            section.updated_by = actor
+            section.save(update_fields=update_fields)
+    return section
+
+
+def delete_section(trip_id, section_id, *, actor) -> None:
+    """Delete a section. Only allowed if activities.count() == 0."""
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+        try:
+            section = TimelineSection.objects.select_for_update().get(pk=section_id, trip=trip)
+        except TimelineSection.DoesNotExist:
+            raise TimelineSectionNotFoundError("Section not found.")
+        if section.activities.count() > 0:
+            raise TimelineSectionNotEmptyError("Cannot delete a section that still contains activities.")
+        section.delete()
+
+
+def reorder_sections(trip_id, *, actor, section_date, ordered_section_ids) -> list[TimelineSection]:
+    """Rewrite sibling positions to 0..n-1. Strict scope: same trip + same section_date, full set."""
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+
+        siblings = list(
+            TimelineSection.objects
+            .select_for_update()
+            .filter(trip=trip, section_date=section_date)
+            .order_by("position", "created_at")
+        )
+        sibling_ids = {str(s.id) for s in siblings}
+        submitted_ids = [str(sid) for sid in ordered_section_ids]
+        if set(submitted_ids) != sibling_ids or len(submitted_ids) != len(siblings):
+            raise TimelineInvalidReorderScopeError("ordered_section_ids must contain exactly the sibling sections.")
+
+        new_order = []
+        for pos, sid in enumerate(submitted_ids):
+            section = next(s for s in siblings if str(s.id) == sid)
+            section.position = pos
+            section.updated_by = actor
+            section.save(update_fields=["position", "updated_by", "updated_at"])
+            new_order.append(section)
+    return new_order
+
+
+# -------- Activity mutations --------
+
+def _assert_active_member(trip, user_id):
+    if not TripMember.objects.filter(
+        trip=trip, user_id=user_id, status=MemberStatus.ACTIVE
+    ).exists():
+        raise TimelineInvalidAssigneeError("Assignee must be an active member of this trip.")
+
+
+def _resolve_custom_type(trip, custom_type_id) -> TimelineCustomType:
+    try:
+        ct = TimelineCustomType.objects.get(pk=custom_type_id, trip=trip)
+    except TimelineCustomType.DoesNotExist:
+        raise TimelineInvalidCustomTypeError("Custom type does not belong to this trip.")
+    return ct
+
+
+def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> TimelineActivity:
+    """Create an activity in the given section. Captain only."""
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+        try:
+            section = TimelineSection.objects.select_for_update().get(pk=section_id, trip=trip)
+        except TimelineSection.DoesNotExist:
+            raise TimelineSectionNotFoundError("Section not found.")
+
+        custom_type = None
+        if data.get("custom_type_id") is not None:
+            custom_type = _resolve_custom_type(trip, data["custom_type_id"])
+
+        if data.get("assignee_user_id") is not None:
+            _assert_active_member(trip, data["assignee_user_id"])
+
+        place = data.get("place") or {}
+        location_mode = data.get("location_mode", TimelineLocationMode.MANUAL)
+
+        activity = TimelineActivity.objects.create(
+            trip=trip,
+            section=section,
+            title=data["title"],
+            time_mode=data["time_mode"],
+            start_time=data.get("start_time"),
+            end_time=data.get("end_time"),
+            system_type=data.get("system_type", "") if custom_type is None else "",
+            custom_type=custom_type,
+            position=section.activities.count(),
+            assignee_user_id=data.get("assignee_user_id"),
+            location_mode=location_mode,
+            location_label=data.get("location_label", ""),
+            location_note=data.get("location_note", ""),
+            place_provider=place.get("provider", "") if location_mode == TimelineLocationMode.STRUCTURED else "",
+            place_provider_id=place.get("provider_id", "") if location_mode == TimelineLocationMode.STRUCTURED else "",
+            place_title=place.get("title", "") if location_mode == TimelineLocationMode.STRUCTURED else "",
+            place_address=place.get("address", "") if location_mode == TimelineLocationMode.STRUCTURED else "",
+            place_lat=place.get("lat") if location_mode == TimelineLocationMode.STRUCTURED else None,
+            place_lng=place.get("lng") if location_mode == TimelineLocationMode.STRUCTURED else None,
+            note=data.get("note", ""),
+            meeting_point=data.get("meeting_point", ""),
+            contact_name=data.get("contact_name", ""),
+            contact_phone=data.get("contact_phone", ""),
+            booking_reference=data.get("booking_reference", ""),
+            external_link=data.get("external_link", ""),
+            created_by=actor,
+            updated_by=actor,
+        )
+    return activity
+
+
+def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict, trip: Trip) -> None:
+    """Validate that the merged final state still satisfies cross-field invariants."""
+    from trips.serializers import (
+        _validate_activity_location,
+        _validate_activity_time_fields,
+        _validate_activity_type_selection,
+    )
+
+    final_time_mode = data.get("time_mode", activity.time_mode)
+    final_start = data["start_time"] if "start_time" in data else activity.start_time
+    final_end = data["end_time"] if "end_time" in data else activity.end_time
+    _validate_activity_time_fields(final_time_mode, final_start, final_end)
+
+    final_system_type = data.get("system_type", activity.system_type)
+    if "custom_type_id" in data:
+        final_custom_type_id = data["custom_type_id"]
+    else:
+        final_custom_type_id = activity.custom_type_id
+    if final_custom_type_id is not None:
+        final_system_type = ""
+    _validate_activity_type_selection(final_system_type, final_custom_type_id)
+
+    final_location_mode = data.get("location_mode", activity.location_mode)
+    if final_location_mode == TimelineLocationMode.MANUAL:
+        # Switching to or staying in MANUAL implicitly clears any existing place.
+        final_place = data.get("place")
+    elif "place" in data:
+        final_place = data["place"]
+    else:
+        if activity.place_provider_id:
+            final_place = {
+                "provider": activity.place_provider,
+                "provider_id": activity.place_provider_id,
+                "title": activity.place_title,
+            }
+        else:
+            final_place = None
+    _validate_activity_location(final_location_mode, final_place)
+
+
+def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> TimelineActivity:
+    """Partial update of activity content fields. Captain only."""
+    from rest_framework import serializers as drf_serializers
+
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+        try:
+            activity = TimelineActivity.objects.select_for_update().get(pk=activity_id, trip=trip)
+        except TimelineActivity.DoesNotExist:
+            raise TimelineActivityNotFoundError("Activity not found.")
+
+        try:
+            _apply_activity_patch_invariants(activity, data, trip)
+        except drf_serializers.ValidationError:
+            raise
+
+        if "custom_type_id" in data:
+            if data["custom_type_id"] is None:
+                activity.custom_type = None
+            else:
+                ct = _resolve_custom_type(trip, data["custom_type_id"])
+                activity.custom_type = ct
+                activity.system_type = ""
+
+        if "system_type" in data and activity.custom_type_id is None:
+            activity.system_type = data["system_type"]
+
+        if "assignee_user_id" in data:
+            if data["assignee_user_id"] is None:
+                activity.assignee_user_id = None
+            else:
+                _assert_active_member(trip, data["assignee_user_id"])
+                activity.assignee_user_id = data["assignee_user_id"]
+
+        simple_fields = (
+            "title", "time_mode", "start_time", "end_time",
+            "location_mode", "location_label", "location_note",
+            "note", "meeting_point", "contact_name", "contact_phone",
+            "booking_reference", "external_link",
+        )
+        for f in simple_fields:
+            if f in data:
+                setattr(activity, f, data[f])
+
+        if "place" in data:
+            place = data["place"] or {}
+            location_mode = data.get("location_mode", activity.location_mode)
+            if location_mode == TimelineLocationMode.STRUCTURED and place:
+                activity.place_provider = place.get("provider", "")
+                activity.place_provider_id = place.get("provider_id", "")
+                activity.place_title = place.get("title", "")
+                activity.place_address = place.get("address", "")
+                activity.place_lat = place.get("lat")
+                activity.place_lng = place.get("lng")
+            else:
+                activity.place_provider = ""
+                activity.place_provider_id = ""
+                activity.place_title = ""
+                activity.place_address = ""
+                activity.place_lat = None
+                activity.place_lng = None
+        elif "location_mode" in data and data["location_mode"] == TimelineLocationMode.MANUAL:
+            activity.place_provider = ""
+            activity.place_provider_id = ""
+            activity.place_title = ""
+            activity.place_address = ""
+            activity.place_lat = None
+            activity.place_lng = None
+
+        activity.updated_by = actor
+        activity.save()
+    return activity
+
+
+def delete_timeline_activity(trip_id, activity_id, *, actor) -> None:
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+        try:
+            activity = TimelineActivity.objects.select_for_update().get(pk=activity_id, trip=trip)
+        except TimelineActivity.DoesNotExist:
+            raise TimelineActivityNotFoundError("Activity not found.")
+        activity.delete()
+
+
+def reorder_timeline_activities(trip_id, section_id, *, actor, ordered_activity_ids) -> list[TimelineActivity]:
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+        try:
+            section = TimelineSection.objects.get(pk=section_id, trip=trip)
+        except TimelineSection.DoesNotExist:
+            raise TimelineSectionNotFoundError("Section not found.")
+
+        siblings = list(
+            TimelineActivity.objects
+            .select_for_update()
+            .filter(trip=trip, section=section)
+            .order_by("position", "created_at")
+        )
+        sibling_ids = {str(a.id) for a in siblings}
+        submitted_ids = [str(aid) for aid in ordered_activity_ids]
+        if set(submitted_ids) != sibling_ids or len(submitted_ids) != len(siblings):
+            raise TimelineInvalidReorderScopeError(
+                "ordered_activity_ids must contain exactly the sibling activities."
+            )
+
+        new_order = []
+        for pos, aid in enumerate(submitted_ids):
+            activity = next(a for a in siblings if str(a.id) == aid)
+            activity.position = pos
+            activity.updated_by = actor
+            activity.save(update_fields=["position", "updated_by", "updated_at"])
+            new_order.append(activity)
+    return new_order
+
+
+# -------- Custom type mutations --------
+
+def create_custom_type(trip_id, *, actor, name, color_token="slate", icon_key="tag") -> TimelineCustomType:
+    from trips.serializers import normalize_custom_type_name
+
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+
+        normalized = normalize_custom_type_name(name)
+        if TimelineCustomType.objects.filter(trip=trip, normalized_name=normalized).exists():
+            raise TimelineCustomTypeDuplicateError("A custom type with this name already exists for this trip.")
+
+        try:
+            ct = TimelineCustomType.objects.create(
+                trip=trip,
+                name=name,
+                normalized_name=normalized,
+                color_token=color_token,
+                icon_key=icon_key,
+                created_by=actor,
+            )
+        except IntegrityError:
+            raise TimelineCustomTypeDuplicateError("A custom type with this name already exists for this trip.")
+    return ct
+
+
+def patch_custom_type(trip_id, type_id, *, actor, data: dict) -> TimelineCustomType:
+    from trips.serializers import normalize_custom_type_name
+
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+        try:
+            ct = TimelineCustomType.objects.select_for_update().get(pk=type_id, trip=trip)
+        except TimelineCustomType.DoesNotExist:
+            raise TimelineCustomTypeNotFoundError("Custom type not found.")
+
+        if "name" in data:
+            new_name = data["name"]
+            new_normalized = normalize_custom_type_name(new_name)
+            if new_normalized != ct.normalized_name and TimelineCustomType.objects.filter(
+                trip=trip, normalized_name=new_normalized
+            ).exclude(pk=ct.pk).exists():
+                raise TimelineCustomTypeDuplicateError("A custom type with this name already exists for this trip.")
+            ct.name = new_name
+            ct.normalized_name = new_normalized
+        if "color_token" in data:
+            ct.color_token = data["color_token"]
+        if "icon_key" in data:
+            ct.icon_key = data["icon_key"]
+        if "is_active" in data:
+            ct.is_active = data["is_active"]
+        ct.save()
+    return ct
+
+
+def delete_custom_type(trip_id, type_id, *, actor) -> None:
+    with transaction.atomic():
+        trip = _get_locked_trip(trip_id)
+        _ensure_captain_can_mutate(trip, actor)
+        try:
+            ct = TimelineCustomType.objects.select_for_update().get(pk=type_id, trip=trip)
+        except TimelineCustomType.DoesNotExist:
+            raise TimelineCustomTypeNotFoundError("Custom type not found.")
+        if TimelineActivity.objects.filter(custom_type=ct).exists():
+            raise TimelineCustomTypeInUseError("Custom type is still used by timeline activities.")
+        ct.delete()

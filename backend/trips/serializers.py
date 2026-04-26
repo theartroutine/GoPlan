@@ -7,7 +7,9 @@ from rest_framework import serializers
 from trips.models import (
     MemberStatus,
     TimelineActivity,
+    TimelineActivityTimeMode,
     TimelineCustomType,
+    TimelineLocationMode,
     TimelineSection,
     TimelineSystemType,
     Trip,
@@ -299,6 +301,250 @@ def _section_payload(section: TimelineSection) -> dict:
         "is_label_custom": section.is_label_custom,
         "position": section.position,
         "activities": [_activity_payload(a) for a in section.activities.all()],
+    }
+
+
+_REMINDER_PRESET_OFFSETS = {10080, 1440, 120, 30, 15}
+_MAX_REMINDER_OFFSETS = 5
+
+
+def normalize_custom_type_name(value: str) -> str:
+    """Lowercase + collapse whitespace + strip."""
+    return " ".join(value.lower().split())
+
+
+def _validate_reminder_offsets(value):
+    if value is None:
+        return value
+    if not isinstance(value, list):
+        raise serializers.ValidationError("reminder_offsets_minutes must be a list of integers.")
+    if len(value) > _MAX_REMINDER_OFFSETS:
+        raise serializers.ValidationError(
+            f"reminder_offsets_minutes can have at most {_MAX_REMINDER_OFFSETS} entries."
+        )
+    if len(set(value)) != len(value):
+        raise serializers.ValidationError("reminder_offsets_minutes entries must be unique.")
+    for v in value:
+        if not isinstance(v, int) or isinstance(v, bool):
+            raise serializers.ValidationError("reminder_offsets_minutes entries must be integers.")
+        if v not in _REMINDER_PRESET_OFFSETS:
+            raise serializers.ValidationError(
+                "reminder_offsets_minutes must use allowed presets only."
+            )
+    return value
+
+
+# -------- Section serializers --------
+
+class CreateSpecialSectionSerializer(serializers.Serializer):
+    section_date = serializers.DateField()
+    label        = serializers.CharField(max_length=120)
+
+
+class PatchSectionSerializer(serializers.Serializer):
+    label        = serializers.CharField(max_length=120, required=False)
+    section_date = serializers.DateField(required=False)
+
+
+class ReorderSectionsSerializer(serializers.Serializer):
+    section_date        = serializers.DateField()
+    ordered_section_ids = serializers.ListField(child=serializers.UUIDField(), min_length=1)
+
+    def validate_ordered_section_ids(self, value):
+        if len(value) != len({str(v) for v in value}):
+            raise serializers.ValidationError("ordered_section_ids must not contain duplicates.")
+        return value
+
+
+# -------- Activity serializers --------
+
+class _PlaceSerializer(serializers.Serializer):
+    provider     = serializers.CharField(max_length=16)
+    provider_id  = serializers.CharField(max_length=255)
+    title        = serializers.CharField(max_length=200)
+    address      = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    lat          = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
+    lng          = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
+
+
+def _validate_activity_time_fields(time_mode: str, start_time, end_time) -> None:
+    if time_mode == TimelineActivityTimeMode.ALL_DAY:
+        if start_time is not None or end_time is not None:
+            raise serializers.ValidationError(
+                {"time_mode": "ALL_DAY activities cannot provide start_time or end_time."}
+            )
+    elif time_mode == TimelineActivityTimeMode.AT_TIME:
+        if start_time is None:
+            raise serializers.ValidationError({"start_time": "This field is required."})
+        if end_time is not None:
+            raise serializers.ValidationError(
+                {"time_mode": "AT_TIME activities cannot provide end_time."}
+            )
+    elif time_mode == TimelineActivityTimeMode.TIME_RANGE:
+        if start_time is None:
+            raise serializers.ValidationError({"start_time": "This field is required."})
+        if end_time is None:
+            raise serializers.ValidationError({"end_time": "This field is required."})
+        if end_time <= start_time:
+            raise serializers.ValidationError(
+                {"end_time": "end_time must be strictly after start_time."}
+            )
+
+
+def _validate_activity_type_selection(system_type: str, custom_type_id) -> None:
+    has_system = bool(system_type)
+    has_custom = custom_type_id is not None
+    if has_system and has_custom:
+        raise serializers.ValidationError(
+            {"system_type": "Provide exactly one of system_type or custom_type_id."}
+        )
+    if not has_system and not has_custom:
+        raise serializers.ValidationError(
+            {"system_type": "Either system_type or custom_type_id is required."}
+        )
+    if has_system and system_type not in TimelineSystemType.values:
+        raise serializers.ValidationError({"system_type": "Unknown system_type."})
+
+
+def _validate_activity_location(location_mode: str, place) -> None:
+    if location_mode == TimelineLocationMode.STRUCTURED:
+        if not place:
+            raise serializers.ValidationError({"place": "place is required when location_mode is STRUCTURED."})
+        for required_field in ("provider", "provider_id", "title"):
+            if not place.get(required_field):
+                raise serializers.ValidationError(
+                    {f"place.{required_field}": "This field is required for STRUCTURED locations."}
+                )
+    elif location_mode == TimelineLocationMode.MANUAL:
+        if place:
+            raise serializers.ValidationError(
+                {"place": "place must be null when location_mode is MANUAL."}
+            )
+
+
+class CreateTimelineActivitySerializer(serializers.Serializer):
+    title                    = serializers.CharField(max_length=140)
+    time_mode                = serializers.ChoiceField(choices=TimelineActivityTimeMode.choices)
+    start_time               = serializers.TimeField(required=False, allow_null=True)
+    end_time                 = serializers.TimeField(required=False, allow_null=True)
+    system_type              = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
+    custom_type_id           = serializers.UUIDField(required=False, allow_null=True)
+    assignee_user_id         = serializers.UUIDField(required=False, allow_null=True)
+    location_mode            = serializers.ChoiceField(
+        choices=TimelineLocationMode.choices,
+        default=TimelineLocationMode.MANUAL,
+    )
+    location_label           = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    location_note            = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    place                    = _PlaceSerializer(required=False, allow_null=True)
+    note                     = serializers.CharField(required=False, allow_blank=True, default="")
+    meeting_point            = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    contact_name             = serializers.CharField(max_length=120, required=False, allow_blank=True, default="")
+    contact_phone            = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
+    booking_reference        = serializers.CharField(max_length=120, required=False, allow_blank=True, default="")
+    external_link            = serializers.URLField(max_length=500, required=False, allow_blank=True, default="")
+    reminder_offsets_minutes = serializers.ListField(
+        child=serializers.IntegerField(), required=False, default=list
+    )
+
+    def validate_reminder_offsets_minutes(self, value):
+        return _validate_reminder_offsets(value)
+
+    def validate(self, data):
+        _validate_activity_time_fields(
+            data["time_mode"], data.get("start_time"), data.get("end_time")
+        )
+        _validate_activity_type_selection(
+            data.get("system_type", ""), data.get("custom_type_id")
+        )
+        _validate_activity_location(
+            data.get("location_mode", TimelineLocationMode.MANUAL), data.get("place")
+        )
+        return data
+
+
+class PatchTimelineActivitySerializer(serializers.Serializer):
+    title                    = serializers.CharField(max_length=140, required=False)
+    time_mode                = serializers.ChoiceField(choices=TimelineActivityTimeMode.choices, required=False)
+    start_time               = serializers.TimeField(required=False, allow_null=True)
+    end_time                 = serializers.TimeField(required=False, allow_null=True)
+    system_type              = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    custom_type_id           = serializers.UUIDField(required=False, allow_null=True)
+    assignee_user_id         = serializers.UUIDField(required=False, allow_null=True)
+    location_mode            = serializers.ChoiceField(
+        choices=TimelineLocationMode.choices, required=False
+    )
+    location_label           = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    location_note            = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    place                    = _PlaceSerializer(required=False, allow_null=True)
+    note                     = serializers.CharField(required=False, allow_blank=True)
+    meeting_point            = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    contact_name             = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    contact_phone            = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    booking_reference        = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    external_link            = serializers.URLField(max_length=500, required=False, allow_blank=True)
+    reminder_offsets_minutes = serializers.ListField(
+        child=serializers.IntegerField(), required=False
+    )
+
+    def validate_reminder_offsets_minutes(self, value):
+        return _validate_reminder_offsets(value)
+
+
+class ReorderActivitiesSerializer(serializers.Serializer):
+    ordered_activity_ids = serializers.ListField(child=serializers.UUIDField(), min_length=1)
+
+    def validate_ordered_activity_ids(self, value):
+        if len(value) != len({str(v) for v in value}):
+            raise serializers.ValidationError("ordered_activity_ids must not contain duplicates.")
+        return value
+
+
+# -------- Custom type serializers --------
+
+class CreateCustomTypeSerializer(serializers.Serializer):
+    name        = serializers.CharField(max_length=40)
+    color_token = serializers.CharField(max_length=24, required=False, default="slate")
+    icon_key    = serializers.CharField(max_length=32, required=False, default="tag")
+
+    def validate_name(self, value):
+        normalized = normalize_custom_type_name(value)
+        if not normalized:
+            raise serializers.ValidationError("Name cannot be blank.")
+        return value
+
+
+class PatchCustomTypeSerializer(serializers.Serializer):
+    name        = serializers.CharField(max_length=40, required=False)
+    color_token = serializers.CharField(max_length=24, required=False)
+    icon_key    = serializers.CharField(max_length=32, required=False)
+    is_active   = serializers.BooleanField(required=False)
+
+    def validate_name(self, value):
+        normalized = normalize_custom_type_name(value)
+        if not normalized:
+            raise serializers.ValidationError("Name cannot be blank.")
+        return value
+
+
+# -------- Section/Activity single payloads (mutation responses) --------
+
+def serialize_section(section: TimelineSection) -> dict:
+    return _section_payload(section)
+
+
+def serialize_activity(activity: TimelineActivity) -> dict:
+    return _activity_payload(activity)
+
+
+def serialize_custom_type(ct: TimelineCustomType) -> dict:
+    return {
+        "id": str(ct.id),
+        "name": ct.name,
+        "normalized_name": ct.normalized_name,
+        "color_token": ct.color_token,
+        "icon_key": ct.icon_key,
+        "is_active": ct.is_active,
     }
 
 

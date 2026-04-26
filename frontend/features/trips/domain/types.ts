@@ -209,6 +209,72 @@ export type TimelineResponse = {
   sections: TimelineSection[];
 };
 
+// -------- Timeline mutation payloads (Phase 2) --------
+
+export type CreateSectionPayload = {
+  section_date: string;
+  label: string;
+};
+
+export type PatchSectionPayload = Partial<{
+  label: string;
+  section_date: string;
+}>;
+
+export type ReorderSectionsPayload = {
+  section_date: string;
+  ordered_section_ids: string[];
+};
+
+export type ActivityPlacePayload = {
+  provider: string;
+  provider_id: string;
+  title: string;
+  address?: string;
+  lat?: number | null;
+  lng?: number | null;
+};
+
+export type CreateActivityPayload = {
+  title: string;
+  time_mode: TimelineActivityTimeMode;
+  start_time?: string | null;
+  end_time?: string | null;
+  system_type?: string;
+  custom_type_id?: string | null;
+  assignee_user_id?: string | null;
+  location_mode?: TimelineLocationMode;
+  location_label?: string;
+  location_note?: string;
+  place?: ActivityPlacePayload | null;
+  note?: string;
+  meeting_point?: string;
+  contact_name?: string;
+  contact_phone?: string;
+  booking_reference?: string;
+  external_link?: string;
+  reminder_offsets_minutes?: number[];
+};
+
+export type PatchActivityPayload = Partial<CreateActivityPayload>;
+
+export type ReorderActivitiesPayload = {
+  ordered_activity_ids: string[];
+};
+
+export type CreateCustomTypePayload = {
+  name: string;
+  color_token?: string;
+  icon_key?: string;
+};
+
+export type PatchCustomTypePayload = Partial<{
+  name: string;
+  color_token: string;
+  icon_key: string;
+  is_active: boolean;
+}>;
+
 export type TripInvitation = {
   id: string;
   invitee: { id: string; display_name: string; identify_tag: string | null };
