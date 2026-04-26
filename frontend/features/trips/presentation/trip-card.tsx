@@ -1,10 +1,9 @@
 import Link from "next/link";
-import Image from "next/image";
 import { CalendarDays, MapPin, Users } from "lucide-react";
 
 import { formatDateOnly } from "@/features/trips/domain/date-only";
-import { getTripCoverUrl } from "@/features/trips/domain/get-trip-cover-url";
 import type { TripListItem } from "@/features/trips/domain/types";
+import { TripCoverImage } from "@/features/trips/presentation/trip-cover-image";
 import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge";
 
 export function TripCard({ trip }: { trip: TripListItem }) {
@@ -29,8 +28,8 @@ export function TripCard({ trip }: { trip: TripListItem }) {
       className="group block overflow-hidden rounded-3xl border border-black/10 bg-card shadow-[0_10px_30px_-20px_rgba(0,0,0,0.55)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_64px_-34px_rgba(0,0,0,0.7)]"
     >
       <div className="relative aspect-[4/5] min-h-80 w-full">
-        <Image
-          src={getTripCoverUrl(trip.cover_image_url)}
+        <TripCoverImage
+          coverUrl={trip.cover_image_url}
           alt={`${trip.name} cover`}
           fill
           className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"

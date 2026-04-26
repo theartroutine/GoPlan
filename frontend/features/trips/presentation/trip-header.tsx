@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { MapPin, PencilLine } from "lucide-react";
 
-import { getTripCoverUrl } from "@/features/trips/domain/get-trip-cover-url";
 import { bffCancelTrip } from "@/features/trips/infrastructure/trips-api";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
+import { TripCoverImage } from "@/features/trips/presentation/trip-cover-image";
 import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge";
 import {
   AlertDialog,
@@ -57,8 +56,8 @@ export function TripHeader() {
       <div className="relative h-56 sm:h-64 lg:h-72">
         {/* Image layer */}
         <div className="absolute inset-0 overflow-hidden">
-          <Image
-            src={getTripCoverUrl(trip.cover_image_url)}
+          <TripCoverImage
+            coverUrl={trip.cover_image_url}
             alt={`${trip.name} cover`}
             fill
             className="object-cover"
