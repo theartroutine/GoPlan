@@ -77,6 +77,7 @@ class TimelineActivityCrudTests(APITestCase):
             self._create_url(), self._valid_payload(), format="json", **_auth(self.member)
         )
         self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.data["error_code"], "NOT_CAPTAIN")
 
     def test_at_time_requires_start_time(self):
         payload = self._valid_payload()

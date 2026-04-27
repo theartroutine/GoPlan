@@ -48,7 +48,7 @@ class TimelineCustomTypeTests(APITestCase):
         )
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.data["custom_type"]["name"], "Coffee Stop")
-        self.assertEqual(res.data["custom_type"]["normalized_name"], "coffee stop")
+        self.assertEqual(res.data["custom_type"]["normalized_name"], "coffee-stop")
         self.assertTrue(res.data["custom_type"]["is_active"])
 
     def test_member_cannot_create_403(self):
@@ -56,6 +56,7 @@ class TimelineCustomTypeTests(APITestCase):
             self._list_url(), {"name": "Coffee"}, format="json", **_auth(self.member)
         )
         self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.data["error_code"], "NOT_CAPTAIN")
 
     def test_duplicate_name_returns_409(self):
         self.client.post(
@@ -63,6 +64,16 @@ class TimelineCustomTypeTests(APITestCase):
         )
         res = self.client.post(
             self._list_url(), {"name": "  COFFEE  "}, format="json", **_auth(self.captain)
+        )
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "CUSTOM_TYPE_DUPLICATE")
+
+    def test_slug_equivalent_name_returns_409(self):
+        self.client.post(
+            self._list_url(), {"name": "Coffee Stop"}, format="json", **_auth(self.captain)
+        )
+        res = self.client.post(
+            self._list_url(), {"name": "Coffee-Stop"}, format="json", **_auth(self.captain)
         )
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "CUSTOM_TYPE_DUPLICATE")
@@ -94,7 +105,7 @@ class TimelineCustomTypeTests(APITestCase):
             **_auth(self.captain),
         )
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data["custom_type"]["normalized_name"], "coffee & tea")
+        self.assertEqual(res.data["custom_type"]["normalized_name"], "coffee-tea")
 
     def test_patch_rename_collision_409(self):
         TimelineCustomType.objects.create(

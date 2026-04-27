@@ -88,6 +88,24 @@ class TripListPagination(CursorPagination):
     cursor_query_param = "cursor"
 
 
+def _has_invalid_timezone_error(errors) -> bool:
+    timezone_errors = errors.get("timezone")
+    if timezone_errors is None:
+        return False
+    return any(getattr(error, "code", None) == "invalid_timezone" for error in timezone_errors)
+
+
+def _validate_trip_serializer(serializer):
+    if serializer.is_valid():
+        return None
+    if _has_invalid_timezone_error(serializer.errors):
+        return Response(
+            {"detail": "Invalid trip timezone.", "error_code": "INVALID_TIMEZONE"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 class TripListCreateAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
     throttle_scope = "trips_list_create"
@@ -101,7 +119,9 @@ class TripListCreateAPIView(APIView):
 
     def post(self, request):
         serializer = CreateTripSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        invalid_response = _validate_trip_serializer(serializer)
+        if invalid_response is not None:
+            return invalid_response
         d = serializer.validated_data
         trip = create_trip(
             captain=request.user,
@@ -166,7 +186,9 @@ class TripDetailUpdateAPIView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         serializer = UpdateTripSerializer(data=request.data, context={"trip": trip})
-        serializer.is_valid(raise_exception=True)
+        invalid_response = _validate_trip_serializer(serializer)
+        if invalid_response is not None:
+            return invalid_response
         d = serializer.validated_data
         updated = update_trip(
             trip,

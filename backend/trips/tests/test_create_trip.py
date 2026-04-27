@@ -133,7 +133,10 @@ class CreateTripTests(APITestCase):
         }
         response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
         self.assertEqual(response.status_code, 400)
-        self.assertIn("timezone", response.data)
+        self.assertEqual(
+            response.data,
+            {"detail": "Invalid trip timezone.", "error_code": "INVALID_TIMEZONE"},
+        )
 
     def test_create_trip_seeds_system_day_sections(self):
         payload = {

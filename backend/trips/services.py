@@ -52,6 +52,10 @@ class TripPermissionError(TripServiceError):
     error_code = "PERMISSION_DENIED"
 
 
+class NotTripCaptainError(TripPermissionError):
+    error_code = "NOT_CAPTAIN"
+
+
 class CannotRemoveSelfError(TripServiceError):
     error_code = "CANNOT_REMOVE_SELF"
 
@@ -217,14 +221,29 @@ def create_trip(
 # -------- Timeline system-day sync --------
 
 def sync_system_day_sections(trip: Trip) -> None:
-    """Generate SYSTEM_DAY sections for the trip's full date range.
-
-    Phase 1 minimum: only used at trip creation. Range-update sync rules
-    (extend / shrink / shift) are implemented in later phases.
-    """
+    """Sync SYSTEM_DAY sections to the trip's current date range."""
     if not trip.start_date or not trip.end_date:
         return
-    existing = {s.section_date: s for s in trip.timeline_sections.filter(kind=TimelineSectionKind.SYSTEM_DAY)}
+
+    system_sections = list(
+        trip.timeline_sections
+        .filter(kind=TimelineSectionKind.SYSTEM_DAY)
+        .order_by("section_date", "created_at")
+    )
+    for section in system_sections:
+        if trip.start_date <= section.section_date <= trip.end_date:
+            continue
+        if section.activities.exists():
+            section.kind = TimelineSectionKind.SPECIAL_DAY
+            section.is_label_custom = True
+            section.save(update_fields=["kind", "is_label_custom", "updated_at"])
+        else:
+            section.delete()
+
+    existing = {
+        s.section_date: s
+        for s in trip.timeline_sections.filter(kind=TimelineSectionKind.SYSTEM_DAY)
+    }
     current = trip.start_date
     index = 0
     while current <= trip.end_date:
@@ -291,25 +310,38 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
     """Partially update trip fields. Only updates fields explicitly passed.
     Sentinel _UNSET distinguishes "not provided" from None (which clears a nullable field).
     """
-    if name is not _UNSET:                       trip.name = name
-    if destination is not _UNSET:                trip.destination = destination
-    if destination_provider is not _UNSET:       trip.destination_provider = destination_provider
-    if destination_provider_id is not _UNSET:    trip.destination_provider_id = destination_provider_id
-    if destination_lat is not _UNSET:            trip.destination_lat = destination_lat
-    if destination_lng is not _UNSET:            trip.destination_lng = destination_lng
-    if destination_country_code is not _UNSET:   trip.destination_country_code = destination_country_code
-    if cover_image_url is not _UNSET:            trip.cover_image_url = cover_image_url
-    if start_date is not _UNSET:                 trip.start_date = start_date
-    if end_date is not _UNSET:                   trip.end_date = end_date
-    if description is not _UNSET:                trip.description = description
-    if currency_code is not _UNSET:              trip.currency_code = currency_code
-    old_timezone = trip.timezone
-    timezone_changed = timezone is not _UNSET and timezone != old_timezone
-    if timezone is not _UNSET:                   trip.timezone = timezone
-    if budget_estimate is not _UNSET:            trip.budget_estimate = budget_estimate
-    trip.save()
-    if timezone_changed:
-        regenerate_unsent_trip_reminders(trip)
+    with transaction.atomic():
+        trip = Trip.objects.select_for_update().get(pk=trip.pk)
+        old_start_date = trip.start_date
+        old_end_date = trip.end_date
+        old_timezone = trip.timezone
+
+        if name is not _UNSET:                       trip.name = name
+        if destination is not _UNSET:                trip.destination = destination
+        if destination_provider is not _UNSET:       trip.destination_provider = destination_provider
+        if destination_provider_id is not _UNSET:    trip.destination_provider_id = destination_provider_id
+        if destination_lat is not _UNSET:            trip.destination_lat = destination_lat
+        if destination_lng is not _UNSET:            trip.destination_lng = destination_lng
+        if destination_country_code is not _UNSET:   trip.destination_country_code = destination_country_code
+        if cover_image_url is not _UNSET:            trip.cover_image_url = cover_image_url
+        if start_date is not _UNSET:                 trip.start_date = start_date
+        if end_date is not _UNSET:                   trip.end_date = end_date
+        if description is not _UNSET:                trip.description = description
+        if currency_code is not _UNSET:              trip.currency_code = currency_code
+        if timezone is not _UNSET:                   trip.timezone = timezone
+        if budget_estimate is not _UNSET:            trip.budget_estimate = budget_estimate
+
+        date_range_changed = (
+            trip.start_date != old_start_date
+            or trip.end_date != old_end_date
+        )
+        timezone_changed = trip.timezone != old_timezone
+
+        trip.save()
+        if date_range_changed:
+            sync_system_day_sections(trip)
+        if timezone_changed:
+            regenerate_unsent_trip_reminders(trip)
     return trip
 
 
@@ -714,7 +746,13 @@ def _generated_day_label_for(trip: Trip, section_date) -> str | None:
 
 
 def _ensure_captain_can_mutate(trip, actor):
-    _assert_captain(trip, actor)
+    if not TripMember.objects.filter(
+        trip=trip,
+        user=actor,
+        role=TripRole.CAPTAIN,
+        status=MemberStatus.ACTIVE,
+    ).exists():
+        raise NotTripCaptainError("Only the trip captain can perform this action.")
     _assert_not_terminal(trip)
 
 

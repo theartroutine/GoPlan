@@ -77,6 +77,7 @@ class TimelineSectionCrudTests(APITestCase):
             **_auth(self.member),
         )
         self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.data["error_code"], "NOT_CAPTAIN")
 
     def test_terminal_trip_blocks_section_create_409(self):
         self.trip.status = TripStatus.COMPLETED

@@ -81,7 +81,7 @@ def _validate_iana_timezone(value: str) -> str:
     try:
         ZoneInfo(value)
     except (ZoneInfoNotFoundError, ValueError, TypeError):
-        raise serializers.ValidationError("Invalid trip timezone.")
+        raise serializers.ValidationError("Invalid trip timezone.", code="invalid_timezone")
     return value
 
 
@@ -417,8 +417,8 @@ _MAX_REMINDER_OFFSETS = 5
 
 
 def normalize_custom_type_name(value: str) -> str:
-    """Lowercase + collapse whitespace + strip."""
-    return " ".join(value.lower().split())
+    """Return slugified custom type name for per-trip uniqueness."""
+    return slugify(value.strip(), allow_unicode=True)
 
 
 def _validate_reminder_offsets(value):

@@ -72,7 +72,10 @@ class UpdateTripTests(APITestCase):
     def test_captain_update_invalid_timezone_400(self):
         res = self.client.patch(self._url(), {"timezone": "Not/A_Zone"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 400)
-        self.assertIn("timezone", res.data)
+        self.assertEqual(
+            res.data,
+            {"detail": "Invalid trip timezone.", "error_code": "INVALID_TIMEZONE"},
+        )
 
     def test_trip_detail_response_includes_timezone(self):
         res = self.client.get(self._url(), **_auth(self.captain))
