@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -8,7 +8,19 @@ import {
 } from "@/features/trips/presentation/timeline-test-helpers";
 
 const tripsApiMock = vi.hoisted(() => ({
+  bffCreateTimelineActivity: vi.fn(),
+  bffCreateTimelineCustomType: vi.fn(),
+  bffCreateTimelineSection: vi.fn(),
+  bffDeleteTimelineActivity: vi.fn(),
+  bffDeleteTimelineCustomType: vi.fn(),
+  bffDeleteTimelineSection: vi.fn(),
   bffGetTimeline: vi.fn(),
+  bffPatchTimelineActivity: vi.fn(),
+  bffPatchTimelineCustomType: vi.fn(),
+  bffPatchTimelineSection: vi.fn(),
+  bffReorderTimelineActivities: vi.fn(),
+  bffReorderTimelineSections: vi.fn(),
+  bffUpdateTimelineActivityStatus: vi.fn(),
 }));
 
 vi.mock("@/features/trips/infrastructure/trips-api", () => tripsApiMock);
@@ -21,6 +33,7 @@ import { TimelineTab } from "@/features/trips/presentation/timeline-tab";
 
 describe("TimelineTab", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.resetAllMocks();
   });
 
@@ -75,5 +88,55 @@ describe("TimelineTab", () => {
     tripsApiMock.bffGetTimeline.mockRejectedValueOnce(new Error("boom"));
     render(<TimelineTab />);
     expect(await screen.findByText("Failed to load timeline.")).not.toBeNull();
+  });
+
+  it("opens the special day form with the shared date picker entry point", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [],
+      }),
+    );
+
+    render(<TimelineTab />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add special day" }));
+
+    expect(screen.getByText("Date *")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Pick a date" })).not.toBeNull();
+  });
+
+  it("opens an alert dialog before deleting a custom activity type", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        custom_types: [
+          {
+            id: "custom-1",
+            name: "Coffee",
+            normalized_name: "coffee",
+            color_token: "amber",
+            icon_key: "cup",
+            is_active: true,
+          },
+        ],
+        sections: [],
+      }),
+    );
+
+    render(<TimelineTab />);
+    fireEvent.click(await screen.findByRole("button", { name: "Manage types" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByText("Delete custom type?")).not.toBeNull();
+    expect(screen.getByText('This will permanently delete "Coffee".')).not.toBeNull();
   });
 });

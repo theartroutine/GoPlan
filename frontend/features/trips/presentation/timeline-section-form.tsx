@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { TimelineSection } from "@/features/trips/domain/types";
 import { Button } from "@/shared/ui/button";
+import { DatePicker } from "@/shared/ui/date-picker";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 
@@ -13,13 +14,54 @@ type Props = {
   submitting?: boolean;
   errorMessage?: string | null;
   onCancel: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onSubmit: (payload: { label: string; section_date?: string }) => void;
 };
 
-export function TimelineSectionForm({ initial, submitting, errorMessage, onCancel, onSubmit }: Props) {
+export function TimelineSectionForm(props: Props) {
+  const formKey = props.initial?.id ?? "create";
+
+  return <TimelineSectionFormFields key={formKey} {...props} />;
+}
+
+function TimelineSectionFormFields({
+  initial,
+  submitting,
+  errorMessage,
+  onCancel,
+  onDirtyChange,
+  onSubmit,
+}: Props) {
   const [label, setLabel] = useState(initial?.label ?? "");
   const [sectionDate, setSectionDate] = useState(initial?.section_date ?? "");
+  const dirtyRef = useRef(false);
+  const onDirtyChangeRef = useRef(onDirtyChange);
   const isSystem = initial?.kind === "SYSTEM_DAY";
+
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
+  }, [onDirtyChange]);
+
+  useEffect(() => {
+    dirtyRef.current = false;
+    onDirtyChangeRef.current?.(false);
+  }, []);
+
+  function markDirty() {
+    if (dirtyRef.current) return;
+    dirtyRef.current = true;
+    onDirtyChangeRef.current?.(true);
+  }
+
+  function handleLabelChange(value: string) {
+    markDirty();
+    setLabel(value);
+  }
+
+  function handleDateChange(value: string) {
+    markDirty();
+    setSectionDate(value);
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -43,19 +85,20 @@ export function TimelineSectionForm({ initial, submitting, errorMessage, onCance
         <Input
           id="section-label"
           value={label}
-          onChange={(e) => setLabel(e.target.value)}
+          onChange={(e) => handleLabelChange(e.target.value)}
+          disabled={!!submitting}
           required
         />
       </div>
       {!isSystem && (
         <div className="space-y-1.5">
           <Label htmlFor="section-date">Date *</Label>
-          <Input
+          <DatePicker
             id="section-date"
-            type="date"
             value={sectionDate}
-            onChange={(e) => setSectionDate(e.target.value)}
-            required
+            onChange={(date) => handleDateChange(date ?? "")}
+            placeholder="Pick a date"
+            disabled={submitting}
           />
         </div>
       )}
@@ -64,7 +107,7 @@ export function TimelineSectionForm({ initial, submitting, errorMessage, onCance
         <Button type="submit" disabled={!!submitting}>
           {submitting ? "Saving…" : initial ? "Save section" : "Add section"}
         </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={!!submitting}>
           Cancel
         </Button>
       </div>
