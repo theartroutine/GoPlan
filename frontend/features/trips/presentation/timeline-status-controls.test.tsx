@@ -44,6 +44,20 @@ describe("TimelineActivityNode operational controls", () => {
     expect(screen.getByText("Sample activity").closest("[data-status='DONE']")).toBeTruthy();
   });
 
+  it("renders flexible activities with a schedule label", () => {
+    render(
+      <TimelineActivityNode
+        activity={buildTimelineActivity({
+          time_mode: "FLEXIBLE",
+          start_time: null,
+          end_time: null,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Flexible")).not.toBeNull();
+  });
+
   it("renders operational details and opens map URLs", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 

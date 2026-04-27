@@ -37,6 +37,7 @@ export function ActivityLocationField({
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
@@ -81,6 +82,7 @@ export function ActivityLocationField({
       setIsOpen(false);
       setIsLoading(false);
       setActiveIndex(-1);
+      setSearchError(null);
       return;
     }
 
@@ -97,6 +99,13 @@ export function ActivityLocationField({
         setSuggestions(results);
         setIsOpen(results.length > 0);
         setActiveIndex(-1);
+        setSearchError(null);
+      } catch {
+        if (controller.signal.aborted || requestId !== suggestRequestIdRef.current) return;
+        setSuggestions([]);
+        setIsOpen(false);
+        setActiveIndex(-1);
+        setSearchError("Location search is unavailable. You can still enter a place manually.");
       } finally {
         if (suggestAbortRef.current === controller) {
           suggestAbortRef.current = null;
@@ -118,6 +127,7 @@ export function ActivityLocationField({
       lookupAbortRef.current = null;
       lookupRequestIdRef.current += 1;
       pendingSelectionQueryRef.current = "";
+      setSearchError(null);
       onChange({ label: event.target.value, place: null });
     },
     [onChange],
@@ -131,6 +141,7 @@ export function ActivityLocationField({
       suggestAbortRef.current?.abort();
       lookupAbortRef.current?.abort();
       pendingSelectionQueryRef.current = suggestion.title;
+      setSearchError(null);
       onChange({ label: suggestion.title, place: null });
 
       const controller = new AbortController();
@@ -244,6 +255,12 @@ export function ActivityLocationField({
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {searchError ? (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          {searchError}
+        </p>
       ) : null}
     </div>
   );

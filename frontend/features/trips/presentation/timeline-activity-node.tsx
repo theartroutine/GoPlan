@@ -13,6 +13,7 @@ import {
 
 function formatTimeRange(activity: TimelineActivity): string {
   if (activity.time_mode === "ALL_DAY") return "All day";
+  if (activity.time_mode === "FLEXIBLE") return "Flexible";
   const start = activity.start_time?.slice(0, 5) ?? "";
   if (activity.time_mode === "AT_TIME") return start;
   const end = activity.end_time?.slice(0, 5) ?? "";
@@ -35,6 +36,7 @@ const STATUS_PILL_TONE: Record<TimelineActivity["status"], string> = {
 
 type Props = {
   activity: TimelineActivity;
+  isCurrent?: boolean;
   onStatusChange?: (status: TimelineActivityStatus) => void;
 };
 
@@ -73,7 +75,7 @@ function formatStatusLabel(status: TimelineActivityStatus): string {
   return status.replace("_", " ");
 }
 
-export function TimelineActivityNode({ activity, onStatusChange }: Props) {
+export function TimelineActivityNode({ activity, isCurrent = false, onStatusChange }: Props) {
   const timeText = formatTimeRange(activity);
   const typeLabel = activity.activity_type?.label ?? null;
   const buttons = activity.capabilities.can_update_status ? statusButtons(activity) : [];
@@ -91,8 +93,13 @@ export function TimelineActivityNode({ activity, onStatusChange }: Props) {
 
   return (
     <div
+      data-current={isCurrent ? "true" : undefined}
       data-status={activity.status}
-      className={`rounded-lg border p-3 shadow-sm ${CARD_STATUS_TONE[activity.status]}`}
+      className={[
+        "rounded-lg border p-3 shadow-sm",
+        CARD_STATUS_TONE[activity.status],
+        isCurrent ? "ring-2 ring-primary/40" : "",
+      ].join(" ")}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

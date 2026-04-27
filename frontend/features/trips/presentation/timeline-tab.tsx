@@ -11,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -37,6 +37,7 @@ import { TimelineCustomTypesModal } from "@/features/trips/presentation/timeline
 import { TimelineSectionModal } from "@/features/trips/presentation/timeline-section-modal";
 import {
   getDefaultFocusedSectionId,
+  getNowMarkerPlacement,
   groupActivitiesForDay,
   limitActivityGroup,
 } from "@/features/trips/presentation/timeline-view-model";
@@ -75,6 +76,7 @@ type DeleteDialogState =
   | { kind: "section"; section: TimelineSection };
 
 type ActivityGroups = ReturnType<typeof groupActivitiesForDay>;
+type NowMarkerPlacement = ReturnType<typeof getNowMarkerPlacement>;
 
 function TimelineSkeleton() {
   return (
@@ -162,6 +164,47 @@ function sectionPositionLabel(sectionDate: string, timeZone: string): string {
   return sectionDate < today ? "Past" : "Upcoming";
 }
 
+function parseOpenSectionIds(value: string | null, sectionIds: Set<string>): Set<string> {
+  if (!value) return new Set();
+
+  return new Set(
+    value
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => sectionIds.has(id)),
+  );
+}
+
+function isNowMarkerBefore(activity: TimelineActivity, placement: NowMarkerPlacement): boolean {
+  return (
+    (placement.kind === "before" && placement.activityId === activity.id) ||
+    (placement.kind === "inside" && placement.activityId === activity.id)
+  );
+}
+
+function isNowMarkerAfter(activity: TimelineActivity, placement: NowMarkerPlacement): boolean {
+  return (
+    (placement.kind === "between" && placement.previousActivityId === activity.id) ||
+    (placement.kind === "after" && placement.activityId === activity.id)
+  );
+}
+
+function isCurrentActivity(activity: TimelineActivity, placement: NowMarkerPlacement): boolean {
+  return placement.kind === "inside" && placement.activityId === activity.id;
+}
+
+function NowMarkerItem({ markerKey }: { markerKey: string }) {
+  return (
+    <li key={markerKey} className="flex items-center gap-2 py-1 text-xs font-medium text-primary">
+      <span className="h-px min-w-6 flex-1 bg-primary/40" />
+      <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5">
+        Now
+      </span>
+      <span className="h-px min-w-6 flex-1 bg-primary/40" />
+    </li>
+  );
+}
+
 function IconButton({
   label,
   children,
@@ -240,11 +283,16 @@ export function TimelineTab() {
     [data?.sections],
   );
   const querySectionId = searchParams.get("section");
+  const queryOpenSections = searchParams.get("openSections");
   const resolvedFocusedSectionId = useMemo(() => {
     if (!data) return null;
     if (querySectionId && sectionIds.has(querySectionId)) return querySectionId;
     return getDefaultFocusedSectionId(data.sections, data.trip_timezone);
   }, [data, querySectionId, sectionIds]);
+  const queryOpenSectionIds = useMemo(
+    () => parseOpenSectionIds(queryOpenSections, sectionIds),
+    [queryOpenSections, sectionIds],
+  );
   const effectiveFocusedSectionId =
     focusedSectionId && sectionIds.has(focusedSectionId)
       ? focusedSectionId
@@ -258,7 +306,8 @@ export function TimelineTab() {
   useEffect(() => {
     if (!data) return;
     setFocusedSectionId(resolvedFocusedSectionId);
-  }, [data, resolvedFocusedSectionId, searchParamString]);
+    setOpenSectionIds(queryOpenSectionIds);
+  }, [data, queryOpenSectionIds, resolvedFocusedSectionId, searchParamString]);
 
   useEffect(() => {
     if (!effectiveFocusedSectionId) return;
@@ -274,10 +323,11 @@ export function TimelineTab() {
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!data) return null;
 
-  const canEdit = data.permissions.can_edit_timeline;
-  const canCreateSections = canEdit && data.permissions.can_create_sections;
-  const canManageCustomTypes = canEdit && data.permissions.can_manage_custom_types;
-  const hasAnyActivity = data.sections.some((section) => section.activities.length > 0);
+  const timelineData = data;
+  const canEdit = timelineData.permissions.can_edit_timeline;
+  const canCreateSections = canEdit && timelineData.permissions.can_create_sections;
+  const canManageCustomTypes = canEdit && timelineData.permissions.can_manage_custom_types;
+  const hasAnyActivity = timelineData.sections.some((section) => section.activities.length > 0);
 
   function openActivityModal(next: ActivityModalState) {
     setActionError(null);
@@ -299,18 +349,40 @@ export function TimelineTab() {
     setSectionModal({ kind: "closed" });
   }
 
-  function focusSection(sectionId: string) {
-    setFocusedSectionId(sectionId);
-    setOpenSectionIds((current) => {
-      const next = new Set(current);
-      next.add(sectionId);
-      return next;
-    });
+  function serializeOpenSectionIds(openIds: Set<string>): string {
+    return timelineData.sections
+      .map((section) => section.id)
+      .filter((sectionId) => openIds.has(sectionId))
+      .join(",");
+  }
 
+  function replaceFocusedSectionUrl(sectionId: string, openIds: Set<string>) {
     const params = new URLSearchParams(searchParamString);
+    const nextOpenIds = new Set(
+      Array.from(openIds).filter((openSectionId) => sectionIds.has(openSectionId)),
+    );
+    nextOpenIds.add(sectionId);
     params.set("section", sectionId);
+
+    if (nextOpenIds.size > 1) {
+      params.set("openSections", serializeOpenSectionIds(nextOpenIds));
+    } else {
+      params.delete("openSections");
+    }
+
     const nextQuery = params.toString();
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }
+
+  function focusSection(sectionId: string) {
+    const nextOpenSectionIds = new Set(openSectionIds);
+    if (effectiveFocusedSectionId) {
+      nextOpenSectionIds.add(effectiveFocusedSectionId);
+    }
+    nextOpenSectionIds.add(sectionId);
+    setFocusedSectionId(sectionId);
+    setOpenSectionIds(nextOpenSectionIds);
+    replaceFocusedSectionUrl(sectionId, nextOpenSectionIds);
   }
 
   function toggleSection(sectionId: string, isOpen: boolean, isFocused: boolean) {
@@ -320,11 +392,12 @@ export function TimelineTab() {
     }
     if (isFocused) return;
 
-    setOpenSectionIds((current) => {
-      const next = new Set(current);
-      next.delete(sectionId);
-      return next;
-    });
+    const nextOpenSectionIds = new Set(openSectionIds);
+    nextOpenSectionIds.delete(sectionId);
+    setOpenSectionIds(nextOpenSectionIds);
+    if (effectiveFocusedSectionId) {
+      replaceFocusedSectionUrl(effectiveFocusedSectionId, nextOpenSectionIds);
+    }
   }
 
   function expandGroup(groupKey: string) {
@@ -472,7 +545,12 @@ export function TimelineTab() {
     );
   }
 
-  function renderActivityGroup(label: string, activities: TimelineActivity[], groupKey: string) {
+  function renderActivityGroup(
+    label: string,
+    activities: TimelineActivity[],
+    groupKey: string,
+    nowMarkerPlacement: NowMarkerPlacement = { kind: "none" },
+  ) {
     if (activities.length === 0) return null;
 
     const { visible, hiddenCount } = limitActivityGroup(
@@ -489,15 +567,24 @@ export function TimelineTab() {
         </div>
         <ol className="space-y-2">
           {visible.map((activity) => (
-            <li key={activity.id} className="flex items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <TimelineActivityNode
-                  activity={activity}
-                  onStatusChange={(nextStatus) => void handleUpdateActivityStatus(activity, nextStatus)}
-                />
-              </div>
-              {renderActivityActions(activity)}
-            </li>
+            <Fragment key={activity.id}>
+              {isNowMarkerBefore(activity, nowMarkerPlacement) ? (
+                <NowMarkerItem markerKey={`${activity.id}:now-before`} />
+              ) : null}
+              <li className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <TimelineActivityNode
+                    activity={activity}
+                    isCurrent={isCurrentActivity(activity, nowMarkerPlacement)}
+                    onStatusChange={(nextStatus) => void handleUpdateActivityStatus(activity, nextStatus)}
+                  />
+                </div>
+                {renderActivityActions(activity)}
+              </li>
+              {isNowMarkerAfter(activity, nowMarkerPlacement) ? (
+                <NowMarkerItem markerKey={`${activity.id}:now-after`} />
+              ) : null}
+            </Fragment>
           ))}
         </ol>
         {hiddenCount > 0 && (
@@ -516,6 +603,11 @@ export function TimelineTab() {
 
   function renderSectionContent(section: TimelineSection) {
     const groups = groupActivitiesForDay(section.activities);
+    const nowMarkerPlacement =
+      effectiveFocusedSectionId === section.id &&
+      section.section_date === localDate(timelineData.trip_timezone)
+        ? getNowMarkerPlacement(groups.timeline, timelineData.trip_timezone)
+        : ({ kind: "none" } satisfies NowMarkerPlacement);
 
     if (section.activities.length === 0) {
       return (
@@ -528,7 +620,7 @@ export function TimelineTab() {
     return (
       <div className="space-y-4">
         {renderActivityGroup("All-day", groups.allDay, `${section.id}:all-day`)}
-        {renderActivityGroup("Timeline", groups.timeline, `${section.id}:timeline`)}
+        {renderActivityGroup("Timeline", groups.timeline, `${section.id}:timeline`, nowMarkerPlacement)}
         {renderActivityGroup("Flexible", groups.flexible, `${section.id}:flexible`)}
       </div>
     );
@@ -595,10 +687,10 @@ export function TimelineTab() {
       {!hasAnyActivity && <TimelineEmptyState canEdit={canEdit} />}
 
       <div className="space-y-4">
-        {data.sections.map((section) => {
+        {timelineData.sections.map((section) => {
           const isFocused = effectiveFocusedSectionId === section.id;
           const isOpen = visibleOpenSectionIds.has(section.id);
-          const datePosition = sectionPositionLabel(section.section_date, data.trip_timezone);
+          const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
 
           return (
             <section key={section.id} className="relative pl-7">
@@ -679,8 +771,8 @@ export function TimelineTab() {
         mode={activityModal.kind === "edit" ? "edit" : "create"}
         initial={activityModal.kind === "edit" ? activityModal.activity : undefined}
         members={members}
-        systemTypes={data.system_types}
-        customTypes={data.custom_types}
+        systemTypes={timelineData.system_types}
+        customTypes={timelineData.custom_types}
         submitting={submitting}
         errorMessage={actionError}
         onOpenChange={(open) => {
@@ -716,7 +808,7 @@ export function TimelineTab() {
       <TimelineCustomTypesModal
         open={customTypesOpen}
         tripId={tripId}
-        customTypes={data.custom_types}
+        customTypes={timelineData.custom_types}
         onOpenChange={setCustomTypesOpen}
         onChanged={handleCustomTypesChanged}
       />

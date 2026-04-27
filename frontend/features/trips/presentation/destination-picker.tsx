@@ -120,6 +120,15 @@ export function DestinationPicker({
         setSuggestions(results);
         setIsOpen(results.length > 0);
         setActiveIndex(-1);
+      } catch {
+        if (controller.signal.aborted || requestId !== requestIdRef.current) {
+          return;
+        }
+
+        lastRequestedQueryRef.current = normalizedQuery;
+        setSuggestions([]);
+        setIsOpen(false);
+        setActiveIndex(-1);
       } finally {
         if (suggestAbortRef.current === controller) {
           suggestAbortRef.current = null;

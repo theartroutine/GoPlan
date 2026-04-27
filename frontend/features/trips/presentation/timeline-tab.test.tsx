@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildTimelineActivity,
@@ -50,7 +50,12 @@ describe("TimelineTab", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.resetAllMocks();
+    vi.useRealTimers();
     navigationMock.currentSearchParams = "";
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("shows the loading skeleton while the request is in flight", () => {
@@ -187,6 +192,37 @@ describe("TimelineTab", () => {
     expect(screen.queryByText("System day activity")).toBeNull();
   });
 
+  it("persists additional open sections in the URL", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [
+          buildTimelineSection({
+            id: "section-1",
+            label: "Day 1",
+            section_date: "2026-06-01",
+            activities: [buildTimelineActivity({ title: "Breakfast" })],
+          }),
+          buildTimelineSection({
+            id: "section-2",
+            label: "Day 2",
+            section_date: "2026-06-02",
+            position: 1,
+            activities: [buildTimelineActivity({ title: "Lunch" })],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Day 2/i }));
+
+    expect(navigationMock.replace).toHaveBeenCalledWith(
+      "/trips/trip-1/timeline?section=section-2&openSections=section-1%2Csection-2",
+      { scroll: false },
+    );
+  });
+
   it("groups expanded day activities by all-day timeline and flexible", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
@@ -207,9 +243,50 @@ describe("TimelineTab", () => {
 
     expect(await screen.findByText("All-day")).not.toBeNull();
     expect(screen.getByText("Timeline")).not.toBeNull();
-    expect(screen.getByText("Flexible")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Flexible" })).not.toBeNull();
     expect(screen.getByText("Beach day")).not.toBeNull();
     expect(screen.getByText("Breakfast")).not.toBeNull();
     expect(screen.getByText("Buy souvenirs")).not.toBeNull();
+  });
+
+  it("renders a now marker in the focused current day timeline", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-01T03:30:00.000Z") });
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        trip_timezone: "Asia/Ho_Chi_Minh",
+        sections: [
+          buildTimelineSection({
+            id: "today",
+            section_date: "2026-06-01",
+            activities: [
+              buildTimelineActivity({
+                id: "breakfast",
+                title: "Breakfast",
+                time_mode: "AT_TIME",
+                start_time: "08:00:00",
+                position: 0,
+              }),
+              buildTimelineActivity({
+                id: "museum",
+                title: "Museum",
+                time_mode: "TIME_RANGE",
+                start_time: "10:00:00",
+                end_time: "12:00:00",
+                position: 1,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Now")).not.toBeNull();
+    expect(screen.getByText("Museum").closest("[data-current='true']")).toBeTruthy();
   });
 });
