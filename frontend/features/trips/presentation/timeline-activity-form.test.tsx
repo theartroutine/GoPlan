@@ -104,6 +104,59 @@ describe("TimelineActivityForm", () => {
     expect(screen.getByText(/end time must be after start time/i)).toBeTruthy();
   });
 
+  it("submits FLEXIBLE without times or reminders", () => {
+    const onSubmit = vi.fn();
+    render(
+      <TimelineActivityForm
+        members={MEMBERS}
+        systemTypes={SYSTEM_TYPES}
+        customTypes={CUSTOM_TYPES}
+        onCancel={() => {}}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/title/i), { target: { value: "Free coffee stop" } });
+    fireEvent.change(screen.getByLabelText(/schedule/i), { target: { value: "FLEXIBLE" } });
+    fireEvent.click(screen.getByRole("button", { name: /add activity/i }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      time_mode: "FLEXIBLE",
+      start_time: null,
+      end_time: null,
+      reminder_offsets_minutes: [],
+    });
+  });
+
+  it("clears reminders when switching from AT_TIME to ALL_DAY", () => {
+    const onSubmit = vi.fn();
+    render(
+      <TimelineActivityForm
+        members={MEMBERS}
+        systemTypes={SYSTEM_TYPES}
+        customTypes={CUSTOM_TYPES}
+        onCancel={() => {}}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/title/i), { target: { value: "Museum day" } });
+    fireEvent.change(screen.getByLabelText(/start time/i), { target: { value: "09:00" } });
+    fireEvent.click(screen.getByText("More Details"));
+    fireEvent.click(screen.getByRole("button", { name: "30m" }));
+    fireEvent.change(screen.getByLabelText(/schedule/i), { target: { value: "ALL_DAY" } });
+    fireEvent.click(screen.getByRole("button", { name: /add activity/i }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      time_mode: "ALL_DAY",
+      start_time: null,
+      end_time: null,
+      reminder_offsets_minutes: [],
+    });
+  });
+
   it("uses location search lookup for structured location payloads", async () => {
     vi.mocked(bffSuggestLocations).mockResolvedValue([
       {
@@ -134,11 +187,8 @@ describe("TimelineActivityForm", () => {
 
     fireEvent.change(screen.getByLabelText(/title/i), { target: { value: "Coffee stop" } });
     fireEvent.change(screen.getByLabelText(/start time/i), { target: { value: "08:00" } });
-    fireEvent.change(screen.getByLabelText(/location mode/i), {
-      target: { value: "STRUCTURED" },
-    });
 
-    fireEvent.change(screen.getByLabelText(/location search/i), {
+    fireEvent.change(screen.getByLabelText("Location"), {
       target: { value: "Ho Xuan" },
     });
     await waitFor(() => {
@@ -147,7 +197,6 @@ describe("TimelineActivityForm", () => {
 
     fireEvent.mouseDown(await screen.findByText("Ho Xuan Huong"));
     await waitFor(() => expect(bffLookupLocation).toHaveBeenCalledWith("here:place:1", expect.any(AbortSignal)));
-    await waitFor(() => expect(screen.getByText("Ho Xuan Huong, Da Lat, Lam Dong")).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: /add activity/i }));
 
