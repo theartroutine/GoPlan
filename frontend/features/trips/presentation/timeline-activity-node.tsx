@@ -1,9 +1,15 @@
 "use client";
 
-import { Clock, ExternalLink, MapPin } from "lucide-react";
+import { ChevronDown, Clock, ExternalLink, MapPin } from "lucide-react";
 
 import type { TimelineActivity, TimelineActivityStatus } from "@/features/trips/domain/types";
 import { Button } from "@/shared/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 
 function formatTimeRange(activity: TimelineActivity): string {
   if (activity.time_mode === "ALL_DAY") return "All day";
@@ -13,11 +19,18 @@ function formatTimeRange(activity: TimelineActivity): string {
   return start && end ? `${start} – ${end}` : start || end;
 }
 
-const STATUS_TONE: Record<TimelineActivity["status"], string> = {
-  UPCOMING: "bg-muted text-muted-foreground",
-  IN_PROGRESS: "bg-sky-100 text-sky-900",
-  DONE: "bg-emerald-100 text-emerald-900",
-  CANCELLED: "bg-rose-100 text-rose-900",
+const CARD_STATUS_TONE: Record<TimelineActivity["status"], string> = {
+  UPCOMING: "border-border/60 bg-card",
+  IN_PROGRESS: "border-sky-200 bg-sky-50/70",
+  DONE: "border-border/50 bg-card opacity-70",
+  CANCELLED: "border-rose-200 bg-rose-50/50 opacity-70",
+};
+
+const STATUS_PILL_TONE: Record<TimelineActivity["status"], string> = {
+  UPCOMING: "border-border text-muted-foreground",
+  IN_PROGRESS: "border-sky-200 bg-sky-100 text-sky-900",
+  DONE: "border-emerald-200 bg-emerald-100 text-emerald-900",
+  CANCELLED: "border-rose-200 bg-rose-100 text-rose-900",
 };
 
 type Props = {
@@ -56,10 +69,16 @@ function statusButtons(activity: TimelineActivity): Array<{ label: string; statu
   return buttons;
 }
 
+function formatStatusLabel(status: TimelineActivityStatus): string {
+  return status.replace("_", " ");
+}
+
 export function TimelineActivityNode({ activity, onStatusChange }: Props) {
   const timeText = formatTimeRange(activity);
   const typeLabel = activity.activity_type?.label ?? null;
   const buttons = activity.capabilities.can_update_status ? statusButtons(activity) : [];
+  const canOpenStatusMenu = Boolean(onStatusChange && buttons.length > 0);
+  const statusLabel = formatStatusLabel(activity.status);
   const hasDetails = Boolean(
     activity.note ||
       activity.meeting_point ||
@@ -71,7 +90,10 @@ export function TimelineActivityNode({ activity, onStatusChange }: Props) {
   );
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card p-3 shadow-sm">
+    <div
+      data-status={activity.status}
+      className={`rounded-lg border p-3 shadow-sm ${CARD_STATUS_TONE[activity.status]}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{activity.title}</p>
@@ -89,9 +111,38 @@ export function TimelineActivityNode({ activity, onStatusChange }: Props) {
             )}
           </div>
         </div>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${STATUS_TONE[activity.status]}`}>
-          {activity.status.replace("_", " ")}
-        </span>
+        {canOpenStatusMenu ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                aria-label="Change status"
+                className={`shrink-0 uppercase ${STATUS_PILL_TONE[activity.status]}`}
+              >
+                {activity.status === "UPCOMING" ? "Status" : statusLabel}
+                <ChevronDown className="size-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {buttons.map((button) => (
+                <DropdownMenuItem
+                  key={`${button.status}-${button.label}`}
+                  onSelect={() => onStatusChange?.(button.status)}
+                >
+                  {button.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : activity.status !== "UPCOMING" ? (
+          <span
+            className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase ${STATUS_PILL_TONE[activity.status]}`}
+          >
+            {statusLabel}
+          </span>
+        ) : null}
       </div>
       {(activity.location.location_label || activity.location.place?.title) && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -141,21 +192,6 @@ export function TimelineActivityNode({ activity, onStatusChange }: Props) {
             </div>
           )}
         </dl>
-      )}
-      {buttons.length > 0 && onStatusChange && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {buttons.map((button) => (
-            <Button
-              key={`${button.status}-${button.label}`}
-              type="button"
-              size="xs"
-              variant="outline"
-              onClick={() => onStatusChange(button.status)}
-            >
-              {button.label}
-            </Button>
-          ))}
-        </div>
       )}
       {activity.assignee && (
         <p className="mt-2 text-[11px] text-muted-foreground">

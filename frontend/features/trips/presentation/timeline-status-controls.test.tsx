@@ -5,21 +5,25 @@ import { TimelineActivityNode } from "@/features/trips/presentation/timeline-act
 import { buildTimelineActivity } from "@/features/trips/presentation/timeline-test-helpers";
 
 describe("TimelineActivityNode operational controls", () => {
-  it("calls status update when an activity can be started", () => {
+  it("renders in-progress status as a pill menu", () => {
     const onStatusChange = vi.fn();
     render(
       <TimelineActivityNode
         activity={buildTimelineActivity({
-          status: "UPCOMING",
+          status: "IN_PROGRESS",
           capabilities: { can_edit: false, can_delete: false, can_update_status: true },
         })}
         onStatusChange={onStatusChange}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Start activity" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: /change status/i }), {
+      key: "Enter",
+      code: "Enter",
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: /mark done/i }));
 
-    expect(onStatusChange).toHaveBeenCalledWith("IN_PROGRESS");
+    expect(onStatusChange).toHaveBeenCalledWith("DONE");
   });
 
   it("does not render status controls when status updates are not allowed", () => {
@@ -33,6 +37,11 @@ describe("TimelineActivityNode operational controls", () => {
     );
 
     expect(screen.queryByRole("button", { name: "Start activity" })).toBeNull();
+  });
+
+  it("mutes done activities", () => {
+    render(<TimelineActivityNode activity={buildTimelineActivity({ status: "DONE" })} />);
+    expect(screen.getByText("Sample activity").closest("[data-status='DONE']")).toBeTruthy();
   });
 
   it("renders operational details and opens map URLs", () => {
