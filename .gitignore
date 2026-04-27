@@ -32,7 +32,11 @@ report/
 .worktrees/
 
 # Superpowers plan output — keep docs/superpowers/specs/ trackable
-docs/
+docs/*
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/specs/
+!docs/superpowers/specs/**
 
 # Personal notes
 notes/
