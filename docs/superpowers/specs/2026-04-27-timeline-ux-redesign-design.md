@@ -58,7 +58,15 @@ Keep the existing manual status model:
 - `DONE`
 - `CANCELLED`
 
-Status is manually managed by captain-capable users. It must not be automatically derived from current time.
+Status is manually managed by users who have status-update capability. It must not be automatically derived from current time.
+
+Permission rules must preserve the current backend contract:
+
+- Captains can use the full status state machine allowed by the backend.
+- Assigned non-captain members can use the limited assignee workflow: `UPCOMING` -> `IN_PROGRESS`, and `IN_PROGRESS` -> `UPCOMING` or `DONE`.
+- Assigned non-captain members cannot cancel activities, restore cancelled activities, or reopen done activities.
+- Unassigned non-captain members cannot update activity status.
+- Frontend status menus must use the API-provided activity capabilities instead of inferring capability only from trip role.
 
 Time position and status are separate:
 
@@ -78,15 +86,19 @@ Use a Focused Day Timeline.
 
 Default focus rules:
 
-- Before trip start: focus Day 01.
-- During the trip: focus the day matching "today" in `trip_timezone`.
-- After trip end: focus the last system day.
-- If the user explicitly opens/focuses another Day, persist that in the URL query so reload returns to the same context.
+- First compute local today from `trip_timezone`.
+- If one or more sections have `section_date` equal to local today, focus the system Day for that date when it exists; otherwise focus the first same-date special section by timeline order.
+- If no section matches local today and local today is before trip start, focus Day 01.
+- If no section matches local today and local today is after trip end, focus the last system day.
+- If the user explicitly opens/focuses another Day, persist that section in the URL query so reload returns to the same context.
+
+URL state must identify `TimelineSection.id`, not only a date. Multiple sections can share the same `section_date` because a system day and one or more special day sections can be siblings on the same date.
 
 Suggested query state:
 
-- `day=YYYY-MM-DD` for the focused day.
-- Optional `openDays=YYYY-MM-DD,YYYY-MM-DD` if multiple open days need to persist.
+- `section=<section_id>` for the focused section.
+- Optional `openSections=<section_id>,<section_id>` if multiple open sections need to persist.
+- Date values may be used for display and default focus derivation, but not as the persisted section identity.
 
 ## Day Content
 
@@ -96,7 +108,15 @@ An expanded Day groups activities into:
 - `Timeline`: `AT_TIME` and `TIME_RANGE`
 - `Flexible`: `FLEXIBLE`
 
-The Timeline group is ordered by time, then existing position as a tie-breaker. All-day and Flexible groups use the existing position order.
+The Timeline group is ordered by time. Existing position is only a tie-breaker for scheduled activities with the same time. All-day and Flexible groups use the existing position order.
+
+Reorder policy:
+
+- Do not show generic up/down reorder controls for the time-ordered Timeline group, because changing position cannot move a scheduled activity before an earlier time.
+- Captains reorder scheduled activities by editing their start/end times.
+- All-day and Flexible groups may keep compact reorder controls because those groups are position-ordered.
+- If grouped reorder uses the current backend full-section reorder endpoint, the frontend must submit the complete section activity ID list while only changing the relative order inside the target group and preserving all other activity IDs.
+- If that scoped reorder behavior is not implemented in the first pass, hide reorder controls in grouped Timeline UI and keep reorder out of scope for this redesign.
 
 Each group initially shows 5 activities. If there are more, show `Show N more` for that group only. Expanding one group should not expand other groups.
 
@@ -114,7 +134,7 @@ Show the `Now` marker only when:
 - Today falls within the trip or special section date being displayed.
 - The Day is the focused/current Day.
 - `trip_timezone` is available.
-- There are scheduled activities or a useful position can be calculated within the day.
+- There is at least one scheduled activity in the Timeline group.
 
 Rules:
 
@@ -122,6 +142,20 @@ Rules:
 - For `TIME_RANGE`, use `start_time` and `end_time`; if current time is inside the range, style the activity as currently active.
 - `ALL_DAY` and `FLEXIBLE` do not determine the Now marker position.
 - If no scheduled activities exist in the focused Day, show the Day as current but do not force an artificial Now marker into all-day/flexible groups.
+
+Marker placement must be deterministic:
+
+- Before the first scheduled item when current local time is earlier than the first scheduled `start_time`.
+- Immediately before an `AT_TIME` activity when current local time equals its `start_time`.
+- Between two scheduled items when current local time is after the previous item's effective end and before the next item's `start_time`.
+- Inside a `TIME_RANGE` activity when current local time is greater than or equal to `start_time` and earlier than `end_time`; style that card as currently active.
+- After the last scheduled item when current local time is later than the last scheduled item's effective end.
+- With only one scheduled activity, apply the same before/inside/after rules.
+
+Effective end:
+
+- `AT_TIME` uses its `start_time` as an instant.
+- `TIME_RANGE` uses `end_time`.
 
 ## Activity Card UI
 
@@ -164,7 +198,10 @@ Use modals for:
 Modal behavior:
 
 - Background overlay dims the app.
-- Close via cancel, Escape, and outside click where safe.
+- Pristine modals can close via cancel, Escape, and outside click.
+- Dirty Add/Edit Activity and Add/Edit Day modals must not silently close from outside click or Escape; show an unsaved-changes confirmation before discarding input.
+- Manage Types must guard dirty create/edit inputs before closing, but completed row actions do not need a dirty-state guard.
+- While a submit/delete/status action is in flight, disable close controls that would interrupt the request.
 - Form submission shows loading state.
 - Successful create/update/delete actions use toast feedback.
 - Errors appear inline in the modal and may also use a destructive toast when appropriate.
@@ -196,6 +233,9 @@ Reminder rules:
 
 - Reminders are only available for `AT_TIME` and `TIME_RANGE`.
 - `ALL_DAY` and `FLEXIBLE` do not support reminders in this design.
+- When switching an activity to `ALL_DAY` or `FLEXIBLE`, the frontend must clear disabled reminder selections and send `reminder_offsets_minutes: []`.
+- Backend must delete unsent reminder rows when an activity moves to a no-reminder mode or loses `start_time`.
+- Sent reminder history can remain in the database for audit/history, but serialized `reminder_offsets_minutes` must be `[]` for no-reminder modes.
 
 Validation:
 
@@ -203,7 +243,7 @@ Validation:
 - `TIME_RANGE` requires `start_time` and `end_time`; `end_time` must be after `start_time`.
 - `ALL_DAY` requires no start/end time.
 - `FLEXIBLE` requires no start/end time.
-- When changing an existing activity from a scheduled mode to `ALL_DAY` or `FLEXIBLE`, the frontend must send `start_time: null` and `end_time: null`; the backend must persist both fields as null.
+- When changing an existing activity from a scheduled mode to `ALL_DAY` or `FLEXIBLE`, the frontend must send `start_time: null`, `end_time: null`, and `reminder_offsets_minutes: []`; the backend must persist both time fields as null and clear unsent reminders.
 
 ## Location UX
 
@@ -247,6 +287,8 @@ Required:
 - Update serializer validation to allow `FLEXIBLE` with no start/end time.
 - Reject reminders for `FLEXIBLE`.
 - Ensure existing reminder generation only runs for `AT_TIME` and `TIME_RANGE`.
+- Ensure switching to `ALL_DAY` or `FLEXIBLE` clears unsent reminder rows and serializes empty reminder offsets.
+- Preserve assigned-member status transitions currently allowed by the backend.
 - Add tests for `FLEXIBLE` create/update behavior.
 
 No schema migration is required if `time_mode` is a string choice without a database enum constraint. A migration may still be generated if Django detects choice metadata changes; review it before committing.
@@ -259,6 +301,7 @@ Required:
 - Update create/patch payload handling.
 - Update activity form schedule selector.
 - Update grouping logic in the timeline view.
+- Use section IDs, not dates, for focused/open section URL state.
 - Update activity card time label formatting.
 - Update tests for `FLEXIBLE`, grouping, and modal behavior.
 
@@ -284,7 +327,8 @@ Backend:
 
 - Test creating `FLEXIBLE` activity without times.
 - Test rejecting `FLEXIBLE` reminders.
-- Test patching from scheduled to `FLEXIBLE` clears `start_time` and `end_time`.
+- Test patching from scheduled to `FLEXIBLE` clears `start_time`, `end_time`, serialized reminder offsets, and unsent reminder rows.
+- Test assigned-member status transitions remain allowed according to the existing limited state machine.
 - Run timeline activity CRUD tests.
 
 Frontend:
@@ -292,7 +336,9 @@ Frontend:
 - Test Activity modal submits correct payloads for all four schedule modes.
 - Test smart location field saves manual text and structured HERE selection correctly.
 - Test focused Day default selection from trip date/timezone logic.
+- Test focused/open section URL state uses section IDs and handles multiple sections on the same date.
 - Test grouped rendering: All-day, Timeline, Flexible.
+- Test Now marker placement before first item, inside a time range, between items, after last item, and with one scheduled item.
 - Test Status Pill Menu actions call existing status API.
 - Test Manage Types and Day forms open as modals.
 
