@@ -119,7 +119,7 @@ export type UpdateTripPayload = Partial<{
 // -------- Timeline (Phase 1: read-only) --------
 
 export type TimelineSectionKind = "SYSTEM_DAY" | "SPECIAL_DAY";
-export type TimelineActivityTimeMode = "ALL_DAY" | "AT_TIME" | "TIME_RANGE";
+export type TimelineActivityTimeMode = "ALL_DAY" | "AT_TIME" | "TIME_RANGE" | "FLEXIBLE";
 export type TimelineActivityStatus = "UPCOMING" | "IN_PROGRESS" | "DONE" | "CANCELLED";
 export type TimelineLocationMode = "MANUAL" | "STRUCTURED";
 
