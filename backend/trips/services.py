@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Prefetch, Q, Subquery
 from django.utils import timezone
+from rest_framework import serializers as drf_serializers
 
 from friends.models import Friendship
 from notifications.models import NotificationType
@@ -897,6 +898,16 @@ def _activity_supports_reminders(activity: TimelineActivity) -> bool:
     ) and activity.start_time is not None
 
 
+def _validate_activity_reminder_offsets_allowed(time_mode: str, offsets) -> None:
+    if time_mode in (
+        TimelineActivityTimeMode.ALL_DAY,
+        TimelineActivityTimeMode.FLEXIBLE,
+    ) and offsets:
+        raise drf_serializers.ValidationError(
+            {"reminder_offsets_minutes": f"{time_mode} activities cannot have reminders."}
+        )
+
+
 def _activity_start_utc(activity: TimelineActivity):
     if not _activity_supports_reminders(activity):
         return None
@@ -1031,6 +1042,10 @@ def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> Timel
 
         place = data.get("place") or {}
         location_mode = data.get("location_mode", TimelineLocationMode.MANUAL)
+        _validate_activity_reminder_offsets_allowed(
+            data["time_mode"],
+            data.get("reminder_offsets_minutes"),
+        )
 
         activity = TimelineActivity.objects.create(
             trip=trip,
@@ -1077,9 +1092,20 @@ def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict, tri
     )
 
     final_time_mode = data.get("time_mode", activity.time_mode)
-    final_start = data["start_time"] if "start_time" in data else activity.start_time
-    final_end = data["end_time"] if "end_time" in data else activity.end_time
+    if final_time_mode in (
+        TimelineActivityTimeMode.ALL_DAY,
+        TimelineActivityTimeMode.FLEXIBLE,
+    ):
+        final_start = data["start_time"] if "start_time" in data else None
+        final_end = data["end_time"] if "end_time" in data else None
+    else:
+        final_start = data["start_time"] if "start_time" in data else activity.start_time
+        final_end = data["end_time"] if "end_time" in data else activity.end_time
     _validate_activity_time_fields(final_time_mode, final_start, final_end)
+    _validate_activity_reminder_offsets_allowed(
+        final_time_mode,
+        data.get("reminder_offsets_minutes"),
+    )
 
     final_system_type = data.get("system_type", activity.system_type)
     if "custom_type_id" in data:
@@ -1110,8 +1136,6 @@ def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict, tri
 
 def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> TimelineActivity:
     """Partial update of activity content fields. Captain only."""
-    from rest_framework import serializers as drf_serializers
-
     with transaction.atomic():
         trip = _get_locked_trip(trip_id)
         _ensure_captain_can_mutate(trip, actor)
@@ -1157,6 +1181,13 @@ def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> Timel
         for f in simple_fields:
             if f in data:
                 setattr(activity, f, data[f])
+
+        if activity.time_mode in (
+            TimelineActivityTimeMode.ALL_DAY,
+            TimelineActivityTimeMode.FLEXIBLE,
+        ):
+            activity.start_time = None
+            activity.end_time = None
 
         if "place" in data:
             place = data["place"] or {}

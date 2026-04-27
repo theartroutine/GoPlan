@@ -292,6 +292,13 @@ _ASSIGNEE_STATUS_TARGETS = {
 }
 
 
+def _activity_supports_serialized_reminders(activity: TimelineActivity) -> bool:
+    return activity.time_mode in (
+        TimelineActivityTimeMode.AT_TIME,
+        TimelineActivityTimeMode.TIME_RANGE,
+    ) and activity.start_time is not None
+
+
 def _can_update_any_status(
     activity: TimelineActivity,
     *,
@@ -369,9 +376,13 @@ def _activity_payload(
         "contact_phone": activity.contact_phone,
         "booking_reference": activity.booking_reference,
         "external_link": activity.external_link,
-        "reminder_offsets_minutes": sorted(
-            {r.offset_minutes_before for r in activity.reminders.all()},
-            reverse=True,
+        "reminder_offsets_minutes": (
+            sorted(
+                {r.offset_minutes_before for r in activity.reminders.all()},
+                reverse=True,
+            )
+            if _activity_supports_serialized_reminders(activity)
+            else []
         ),
         "capabilities": {
             "can_edit": can_edit,
@@ -481,6 +492,11 @@ def _validate_activity_time_fields(time_mode: str, start_time, end_time) -> None
             raise serializers.ValidationError(
                 {"time_mode": "ALL_DAY activities cannot provide start_time or end_time."}
             )
+    elif time_mode == TimelineActivityTimeMode.FLEXIBLE:
+        if start_time is not None or end_time is not None:
+            raise serializers.ValidationError(
+                {"time_mode": "FLEXIBLE activities cannot provide start_time or end_time."}
+            )
     elif time_mode == TimelineActivityTimeMode.AT_TIME:
         if start_time is None:
             raise serializers.ValidationError({"start_time": "This field is required."})
@@ -497,6 +513,16 @@ def _validate_activity_time_fields(time_mode: str, start_time, end_time) -> None
             raise serializers.ValidationError(
                 {"end_time": "end_time must be strictly after start_time."}
             )
+
+
+def _validate_activity_reminder_mode(time_mode: str, reminder_offsets_minutes) -> None:
+    if time_mode in (
+        TimelineActivityTimeMode.ALL_DAY,
+        TimelineActivityTimeMode.FLEXIBLE,
+    ) and reminder_offsets_minutes:
+        raise serializers.ValidationError(
+            {"reminder_offsets_minutes": f"{time_mode} activities cannot have reminders."}
+        )
 
 
 def _validate_activity_type_selection(system_type: str, custom_type_id) -> None:
@@ -562,10 +588,9 @@ class CreateTimelineActivitySerializer(serializers.Serializer):
         _validate_activity_time_fields(
             data["time_mode"], data.get("start_time"), data.get("end_time")
         )
-        if data["time_mode"] == TimelineActivityTimeMode.ALL_DAY and data.get("reminder_offsets_minutes"):
-            raise serializers.ValidationError(
-                {"reminder_offsets_minutes": "ALL_DAY activities cannot have reminders."}
-            )
+        _validate_activity_reminder_mode(
+            data["time_mode"], data.get("reminder_offsets_minutes")
+        )
         _validate_activity_type_selection(
             data.get("system_type", ""), data.get("custom_type_id")
         )
@@ -603,10 +628,17 @@ class PatchTimelineActivitySerializer(serializers.Serializer):
         return _validate_reminder_offsets(value)
 
     def validate(self, data):
-        if data.get("time_mode") == TimelineActivityTimeMode.ALL_DAY and data.get("reminder_offsets_minutes"):
-            raise serializers.ValidationError(
-                {"reminder_offsets_minutes": "ALL_DAY activities cannot have reminders."}
-            )
+        if data.get("time_mode") in (
+            TimelineActivityTimeMode.ALL_DAY,
+            TimelineActivityTimeMode.FLEXIBLE,
+        ):
+            start_time = data["start_time"] if "start_time" in data else None
+            end_time = data["end_time"] if "end_time" in data else None
+            _validate_activity_time_fields(data["time_mode"], start_time, end_time)
+        _validate_activity_reminder_mode(
+            data["time_mode"] if "time_mode" in data else "",
+            data.get("reminder_offsets_minutes"),
+        )
         return data
 
 

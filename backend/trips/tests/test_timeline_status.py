@@ -174,3 +174,30 @@ class TimelineStatusTests(APITestCase):
         self.assertFalse(activities[str(manual.id)]["capabilities"]["can_edit"])
         self.assertIn("Gate%20B%20Bus%20Station", activities[str(manual.id)]["location"]["open_url"])
         self.assertIn("share.here.com/l/11.941,108.44,city-museum", activities[str(structured.id)]["location"]["open_url"])
+
+    def test_assigned_member_status_capability_matches_allowed_transition(self):
+        assigned = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            title="Assigned task",
+            assignee_user=self.assignee,
+            status=TimelineActivityStatus.UPCOMING,
+        )
+        unassigned = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            title="Unassigned task",
+            status=TimelineActivityStatus.UPCOMING,
+            position=1,
+        )
+
+        res = self.client.get(self._timeline_url(), **_auth(self.assignee))
+
+        self.assertEqual(res.status_code, 200)
+        activities = {
+            item["id"]: item
+            for section in res.data["sections"]
+            for item in section["activities"]
+        }
+        self.assertTrue(activities[str(assigned.id)]["capabilities"]["can_update_status"])
+        self.assertFalse(activities[str(unassigned.id)]["capabilities"]["can_update_status"])

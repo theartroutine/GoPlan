@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 
 from django.core.management import call_command
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
@@ -65,23 +66,43 @@ class TimelineReminderGenerationTests(APITestCase):
             datetime(2026, 6, 1, 1, 30, tzinfo=dt_timezone.utc),
         )
 
-    def test_all_day_activity_does_not_generate_reminders(self):
-        activity = create_timeline_activity(
-            self.trip.id,
-            self.section.id,
-            actor=self.captain,
-            data={
-                "title": "Free day",
-                "time_mode": TimelineActivityTimeMode.ALL_DAY,
-                "start_time": None,
-                "end_time": None,
-                "system_type": "FREE_TIME",
-                "location_mode": "MANUAL",
-                "reminder_offsets_minutes": [30],
-            },
-        )
+    def test_create_all_day_activity_rejects_reminders_through_service(self):
+        with self.assertRaises(ValidationError):
+            create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data={
+                    "title": "Free day",
+                    "time_mode": TimelineActivityTimeMode.ALL_DAY,
+                    "start_time": None,
+                    "end_time": None,
+                    "system_type": "FREE_TIME",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [30],
+                },
+            )
 
-        self.assertEqual(activity.reminders.count(), 0)
+        self.assertEqual(TimelineActivityReminder.objects.count(), 0)
+
+    def test_create_flexible_activity_rejects_reminders_through_service(self):
+        with self.assertRaises(ValidationError):
+            create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data={
+                    "title": "Free time",
+                    "time_mode": TimelineActivityTimeMode.FLEXIBLE,
+                    "start_time": None,
+                    "end_time": None,
+                    "system_type": "FREE_TIME",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [30],
+                },
+            )
+
+        self.assertEqual(TimelineActivityReminder.objects.count(), 0)
 
     def test_patch_start_time_regenerates_unsent_reminders_only(self):
         activity = create_timeline_activity(
@@ -158,6 +179,95 @@ class TimelineReminderGenerationTests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["activity"]["reminder_offsets_minutes"], [120, 30])
+
+    def test_flexible_activity_rejects_reminders_through_api(self):
+        url = f"/api/trips/{self.trip.id}/timeline/sections/{self.section.id}/activities"
+        response = self.client.post(
+            url,
+            {
+                "title": "Free time",
+                "time_mode": "FLEXIBLE",
+                "start_time": None,
+                "end_time": None,
+                "system_type": "FREE_TIME",
+                "location_mode": "MANUAL",
+                "reminder_offsets_minutes": [30],
+            },
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("reminder_offsets_minutes", response.data)
+
+    def test_patch_all_day_activity_rejects_reminders_through_service(self):
+        activity = create_timeline_activity(
+            self.trip.id,
+            self.section.id,
+            actor=self.captain,
+            data={
+                "title": "Free day",
+                "time_mode": TimelineActivityTimeMode.ALL_DAY,
+                "start_time": None,
+                "end_time": None,
+                "system_type": "FREE_TIME",
+                "location_mode": "MANUAL",
+            },
+        )
+
+        with self.assertRaises(ValidationError):
+            patch_timeline_activity(
+                self.trip.id,
+                activity.id,
+                actor=self.captain,
+                data={"reminder_offsets_minutes": [30]},
+            )
+
+        self.assertEqual(activity.reminders.count(), 0)
+
+    def test_patch_to_flexible_clears_unsent_reminders_and_serialized_offsets(self):
+        url = f"/api/trips/{self.trip.id}/timeline/sections/{self.section.id}/activities"
+        create_response = self.client.post(
+            url,
+            {
+                "title": "Coffee",
+                "time_mode": "AT_TIME",
+                "start_time": "09:00:00",
+                "system_type": "FOOD",
+                "location_mode": "MANUAL",
+                "reminder_offsets_minutes": [120, 30],
+            },
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(create_response.status_code, 201)
+        activity_id = create_response.data["activity"]["id"]
+        self.assertEqual(
+            TimelineActivityReminder.objects.filter(
+                activity_id=activity_id,
+                sent_at__isnull=True,
+            ).count(),
+            2,
+        )
+
+        patch_response = self.client.patch(
+            f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}",
+            {"time_mode": "FLEXIBLE"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertEqual(patch_response.data["activity"]["time_mode"], "FLEXIBLE")
+        self.assertIsNone(patch_response.data["activity"]["start_time"])
+        self.assertIsNone(patch_response.data["activity"]["end_time"])
+        self.assertEqual(patch_response.data["activity"]["reminder_offsets_minutes"], [])
+        self.assertFalse(
+            TimelineActivityReminder.objects.filter(
+                activity_id=activity_id,
+                sent_at__isnull=True,
+            ).exists()
+        )
 
 
 class TimelineReminderDispatchTests(APITestCase):

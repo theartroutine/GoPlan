@@ -41,6 +41,7 @@ class TimelineSectionKind(models.TextChoices):
 
 class TimelineActivityTimeMode(models.TextChoices):
     ALL_DAY    = "ALL_DAY",    "All Day"
+    FLEXIBLE   = "FLEXIBLE",   "Flexible"
     AT_TIME    = "AT_TIME",    "At Time"
     TIME_RANGE = "TIME_RANGE", "Time Range"
 

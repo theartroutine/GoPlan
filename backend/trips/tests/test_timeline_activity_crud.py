@@ -103,6 +103,29 @@ class TimelineActivityCrudTests(APITestCase):
         )
         self.assertEqual(res.status_code, 400)
 
+    def test_flexible_activity_allows_no_times(self):
+        res = self.client.post(
+            self._create_url(),
+            self._valid_payload(time_mode="FLEXIBLE", start_time=None, end_time=None),
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["activity"]["time_mode"], "FLEXIBLE")
+        self.assertIsNone(res.data["activity"]["start_time"])
+        self.assertIsNone(res.data["activity"]["end_time"])
+
+    def test_flexible_activity_rejects_times(self):
+        res = self.client.post(
+            self._create_url(),
+            self._valid_payload(time_mode="FLEXIBLE", start_time="06:30:00", end_time=None),
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 400)
+
     def test_time_range_requires_end_after_start(self):
         res = self.client.post(
             self._create_url(),
@@ -229,6 +252,28 @@ class TimelineActivityCrudTests(APITestCase):
         )
         # Existing activity has start_time but no end_time → invalid for TIME_RANGE
         self.assertEqual(res.status_code, 400)
+
+    def test_patch_scheduled_to_flexible_clears_times(self):
+        activity = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            time_mode="AT_TIME",
+        )
+
+        res = self.client.patch(
+            self._detail_url(activity.id),
+            {"time_mode": "FLEXIBLE"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["activity"]["time_mode"], "FLEXIBLE")
+        self.assertIsNone(res.data["activity"]["start_time"])
+        self.assertIsNone(res.data["activity"]["end_time"])
+        activity.refresh_from_db()
+        self.assertIsNone(activity.start_time)
+        self.assertIsNone(activity.end_time)
 
     # -------- Delete --------
 
