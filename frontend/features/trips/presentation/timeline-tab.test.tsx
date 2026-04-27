@@ -23,10 +23,25 @@ const tripsApiMock = vi.hoisted(() => ({
   bffUpdateTimelineActivityStatus: vi.fn(),
 }));
 
+const navigationMock = vi.hoisted(() => ({
+  currentSearchParams: "",
+  replace: vi.fn(),
+}));
+
+function mockUseSearchParams(value: string) {
+  navigationMock.currentSearchParams = value;
+}
+
 vi.mock("@/features/trips/infrastructure/trips-api", () => tripsApiMock);
 
 vi.mock("@/features/trips/presentation/trip-context", () => ({
   useTripContext: () => ({ tripId: "trip-1" }),
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/trips/trip-1/timeline",
+  useRouter: () => ({ replace: navigationMock.replace }),
+  useSearchParams: () => new URLSearchParams(navigationMock.currentSearchParams),
 }));
 
 import { TimelineTab } from "@/features/trips/presentation/timeline-tab";
@@ -35,6 +50,7 @@ describe("TimelineTab", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.resetAllMocks();
+    navigationMock.currentSearchParams = "";
   });
 
   it("shows the loading skeleton while the request is in flight", () => {
@@ -138,5 +154,62 @@ describe("TimelineTab", () => {
 
     expect(await screen.findByText("Delete custom type?")).not.toBeNull();
     expect(screen.getByText('This will permanently delete "Coffee".')).not.toBeNull();
+  });
+
+  it("uses section id query state when same-date sections exist", async () => {
+    mockUseSearchParams("section=special-1");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [
+          buildTimelineSection({
+            id: "system-1",
+            kind: "SYSTEM_DAY",
+            section_date: "2026-06-01",
+            label: "Day 1",
+            activities: [buildTimelineActivity({ id: "system-act", title: "System day activity" })],
+          }),
+          buildTimelineSection({
+            id: "special-1",
+            kind: "SPECIAL_DAY",
+            section_date: "2026-06-01",
+            label: "Preparation",
+            position: 1,
+            activities: [buildTimelineActivity({ id: "special-act", title: "Special day activity" })],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByText("Preparation")).not.toBeNull();
+    expect(screen.getByText("Special day activity")).not.toBeNull();
+    expect(screen.queryByText("System day activity")).toBeNull();
+  });
+
+  it("groups expanded day activities by all-day timeline and flexible", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [
+          buildTimelineSection({
+            id: "sec-1",
+            activities: [
+              buildTimelineActivity({ id: "all-day", title: "Beach day", time_mode: "ALL_DAY", start_time: null }),
+              buildTimelineActivity({ id: "timed", title: "Breakfast", time_mode: "AT_TIME", start_time: "08:00:00" }),
+              buildTimelineActivity({ id: "flex", title: "Buy souvenirs", time_mode: "FLEXIBLE", start_time: null }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByText("All-day")).not.toBeNull();
+    expect(screen.getByText("Timeline")).not.toBeNull();
+    expect(screen.getByText("Flexible")).not.toBeNull();
+    expect(screen.getByText("Beach day")).not.toBeNull();
+    expect(screen.getByText("Breakfast")).not.toBeNull();
+    expect(screen.getByText("Buy souvenirs")).not.toBeNull();
   });
 });

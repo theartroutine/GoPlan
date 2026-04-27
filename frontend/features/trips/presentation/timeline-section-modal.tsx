@@ -7,6 +7,7 @@ import { TimelineSectionForm } from "@/features/trips/presentation/timeline-sect
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
@@ -78,6 +79,10 @@ export function TimelineSectionModal({
   }
 
   const title = mode === "create" ? "Add Special Day" : "Edit Day";
+  const description =
+    mode === "create"
+      ? "Add a special timeline day for preparation, recovery, or side plans."
+      : "Update this day label or date while keeping timeline activities together.";
 
   return (
     <>
@@ -89,6 +94,7 @@ export function TimelineSectionModal({
         >
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
           <TimelineSectionForm
             initial={initial}
