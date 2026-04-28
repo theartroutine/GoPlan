@@ -230,3 +230,16 @@ export function findNowDividerIndex(sections: TimelineSection[], today: string):
   const index = sections.findIndex((section) => section.section_date === today);
   return index >= 0 ? index : null;
 }
+
+export function getActiveActivityIds(activities: TimelineActivity[], minutes: number): Set<string> {
+  const active = new Set<string>();
+  for (const activity of activities) {
+    if (activity.time_mode !== "TIME_RANGE") continue;
+    const start = timeToMinutes(activity.start_time);
+    const end = timeToMinutes(activity.end_time);
+    if (start !== null && end !== null && minutes >= start && minutes < end) {
+      active.add(activity.id);
+    }
+  }
+  return active;
+}

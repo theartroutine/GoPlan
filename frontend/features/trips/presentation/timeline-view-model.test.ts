@@ -6,6 +6,7 @@ import {
 } from "@/features/trips/presentation/timeline-test-helpers";
 import {
   findNowDividerIndex,
+  getActiveActivityIds,
   getDefaultFocusedSectionId,
   getNowMarkerPlacement,
   groupActivitiesForDay,
@@ -250,5 +251,62 @@ describe("findNowDividerIndex", () => {
 
   it("returns null for an empty sections array", () => {
     expect(findNowDividerIndex([], "2026-04-28")).toBeNull();
+  });
+});
+
+describe("getActiveActivityIds", () => {
+  it("returns IDs of all TIME_RANGE activities that cover the current minute", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: "09:00:00", end_time: "12:00:00" }),
+      buildTimelineActivity({ id: "b", time_mode: "TIME_RANGE", start_time: "10:00:00", end_time: "14:00:00" }),
+      buildTimelineActivity({ id: "c", time_mode: "TIME_RANGE", start_time: "14:00:00", end_time: "16:00:00" }),
+    ];
+    // 11:00 = 660 min — a and b overlap here, c has not started
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set(["a", "b"]));
+  });
+
+  it("treats the end boundary as exclusive", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: "09:00:00", end_time: "11:00:00" }),
+    ];
+    // exactly 11:00 = 660 min — activity just ended, should not be active
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set());
+  });
+
+  it("includes an activity that starts exactly at the current minute", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: "11:00:00", end_time: "13:00:00" }),
+    ];
+    // exactly 11:00 = 660 min — start boundary is inclusive
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set(["a"]));
+  });
+
+  it("ignores AT_TIME, ALL_DAY, and FLEXIBLE activities", () => {
+    const activities = [
+      buildTimelineActivity({ id: "at", time_mode: "AT_TIME", start_time: "11:00:00", end_time: null }),
+      buildTimelineActivity({ id: "all", time_mode: "ALL_DAY", start_time: null, end_time: null }),
+      buildTimelineActivity({ id: "flex", time_mode: "FLEXIBLE", start_time: null, end_time: null }),
+    ];
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set());
+  });
+
+  it("returns an empty set when no activity is active", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: "09:00:00", end_time: "10:00:00" }),
+    ];
+    // 14:00 = 840 min — activity ended hours ago
+    expect(getActiveActivityIds(activities, 840)).toEqual(new Set());
+  });
+
+  it("handles null start_time or end_time without throwing", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: null, end_time: "12:00:00" }),
+      buildTimelineActivity({ id: "b", time_mode: "TIME_RANGE", start_time: "09:00:00", end_time: null }),
+    ];
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set());
+  });
+
+  it("returns an empty set for an empty activities array", () => {
+    expect(getActiveActivityIds([], 660)).toEqual(new Set());
   });
 });
