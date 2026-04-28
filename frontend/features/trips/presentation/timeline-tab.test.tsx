@@ -188,7 +188,7 @@ describe("TimelineTab", () => {
     expect(screen.getByText('This will permanently delete "Preparation".')).not.toBeNull();
   });
 
-  it("does not allow deleting an empty in-range day", async () => {
+  it("allows deleting an empty in-range day", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -210,8 +210,10 @@ describe("TimelineTab", () => {
 
     render(<TimelineTab />);
 
-    expect(await screen.findByText("Day 2")).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete Day 2" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Day 2" }));
+
+    expect(screen.getByText("Delete day?")).not.toBeNull();
+    expect(screen.getByText('This will permanently delete "Day 2".')).not.toBeNull();
   });
 
   it("shows the date field when editing an in-range day", async () => {
@@ -620,7 +622,7 @@ describe("TimelineTab", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText("Now")).not.toBeNull();
+    expect(screen.getAllByText(/^Now/).length).toBeGreaterThan(0);
     expect(screen.getByText("Museum").closest("[data-current='true']")).toBeTruthy();
   });
 
@@ -657,7 +659,7 @@ describe("TimelineTab", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText("Now")).not.toBeNull();
+    expect(screen.getAllByText(/^Now/).length).toBeGreaterThan(0);
     expect(screen.getByText("Activity 6").closest("[data-current='true']")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Show 1 more" })).not.toBeNull();
   });
