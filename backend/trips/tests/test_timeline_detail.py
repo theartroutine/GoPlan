@@ -10,7 +10,6 @@ from trips.models import (
     MemberStatus,
     TimelineActivityTimeMode,
     TimelineLocationMode,
-    TimelineSectionKind,
     TripStatus,
 )
 from trips.tests.timeline_helpers import (
@@ -40,22 +39,22 @@ class TimelineDetailTests(APITestCase):
     def _url(self, trip_id=None):
         return f"/api/trips/{trip_id or self.trip.id}/timeline"
 
-    def test_captain_gets_200_with_system_days_and_metadata(self):
+    def test_captain_gets_200_with_timeline_days_and_metadata(self):
         res = self.client.get(self._url(), **_auth(self.captain))
         self.assertEqual(res.status_code, 200)
         data = res.data
         self.assertEqual(data["trip_timezone"], "Asia/Ho_Chi_Minh")
         self.assertTrue(data["permissions"]["can_edit_timeline"])
         self.assertTrue(data["permissions"]["can_manage_custom_types"])
-        # 8 system types, locked order, TRANSPORTATION first.
         self.assertEqual(len(data["system_types"]), 8)
         self.assertEqual(data["system_types"][0]["code"], "TRANSPORTATION")
         self.assertEqual(data["system_types"][-1]["code"], "OTHER")
-        # 3 system days for a 3-day trip.
         self.assertEqual(len(data["sections"]), 3)
         for idx, section in enumerate(data["sections"]):
-            self.assertEqual(section["kind"], TimelineSectionKind.SYSTEM_DAY)
+            self.assertNotIn("kind", section)
             self.assertEqual(section["label"], f"Day {idx + 1}")
+            self.assertEqual(section["position"], 0)
+            self.assertTrue(section["is_in_trip_range"])
             self.assertEqual(section["activities"], [])
 
     def test_member_gets_200_but_cannot_edit(self):
@@ -85,7 +84,6 @@ class TimelineDetailTests(APITestCase):
             trip=self.trip,
             section_date=self.trip.start_date,
             label="Special Morning",
-            kind=TimelineSectionKind.SPECIAL_DAY,
             position=10,
         )
         make_timeline_activity(
@@ -100,8 +98,9 @@ class TimelineDetailTests(APITestCase):
         )
         res = self.client.get(self._url(), **_auth(self.captain))
         self.assertEqual(res.status_code, 200)
-        # The new SPECIAL_DAY shares section_date with Day 1 system section but has higher position.
-        special = next(s for s in res.data["sections"] if s["kind"] == "SPECIAL_DAY")
+        # The extra timeline day shares section_date with Day 1 but has higher position.
+        special = next(s for s in res.data["sections"] if s["label"] == "Special Morning")
+        self.assertNotIn("kind", special)
         self.assertEqual(len(special["activities"]), 1)
         activity = special["activities"][0]
         self.assertEqual(activity["title"], "Bus to Da Lat")
