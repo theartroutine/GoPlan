@@ -400,16 +400,22 @@ def _activity_payload(
 def _section_payload(
     section: TimelineSection,
     *,
+    trip: Trip,
     viewer_user_id=None,
     is_captain: bool = False,
     is_terminal: bool = True,
 ) -> dict:
+    is_in_trip_range = (
+        trip.start_date is not None
+        and trip.end_date is not None
+        and trip.start_date <= section.section_date <= trip.end_date
+    )
     return {
         "id": str(section.id),
-        "kind": section.kind,
         "section_date": section.section_date.isoformat(),
         "label": section.label,
         "is_label_custom": section.is_label_custom,
+        "is_in_trip_range": is_in_trip_range,
         "position": section.position,
         "activities": [
             _activity_payload(
@@ -684,8 +690,8 @@ class PatchCustomTypeSerializer(serializers.Serializer):
 
 # -------- Section/Activity single payloads (mutation responses) --------
 
-def serialize_section(section: TimelineSection) -> dict:
-    return _section_payload(section)
+def serialize_section(section: TimelineSection, *, trip: Trip) -> dict:
+    return _section_payload(section, trip=trip)
 
 
 def serialize_activity(
@@ -746,6 +752,7 @@ def build_timeline_response(
         "sections": [
             _section_payload(
                 s,
+                trip=trip,
                 viewer_user_id=viewer_user_id,
                 is_captain=is_captain,
                 is_terminal=is_terminal,

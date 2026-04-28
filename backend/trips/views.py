@@ -44,9 +44,9 @@ from trips.services import (
     TimelineInvalidAssigneeError,
     TimelineInvalidCustomTypeError,
     TimelineInvalidReorderScopeError,
+    TimelineSectionDateConflictError,
     TimelineSectionNotEmptyError,
     TimelineSectionNotFoundError,
-    TimelineSystemDayLockError,
     TripNotFoundError,
     TripPermissionError,
     TripTerminalError,
@@ -54,7 +54,7 @@ from trips.services import (
     cancel_trip,
     complete_trip,
     create_custom_type,
-    create_special_section,
+    create_timeline_day,
     create_timeline_activity,
     create_trip,
     decline_invitation,
@@ -438,8 +438,8 @@ def _handle_common(exc):
         return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
     if isinstance(exc, TimelineInvalidReorderScopeError):
         return _err(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
-    if isinstance(exc, TimelineSystemDayLockError):
-        return _err(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, TimelineSectionDateConflictError):
+        return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
     if isinstance(exc, TimelineInvalidAssigneeError):
         return _err(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
     if isinstance(exc, TimelineInvalidCustomTypeError):
@@ -457,7 +457,7 @@ class TimelineSectionListCreateAPIView(APIView):
         serializer = CreateSpecialSectionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            section = create_special_section(
+            trip, section = create_timeline_day(
                 trip_id=trip_id,
                 actor=request.user,
                 section_date=serializer.validated_data["section_date"],
@@ -468,7 +468,7 @@ class TimelineSectionListCreateAPIView(APIView):
             if mapped is not None:
                 return mapped
             raise
-        return Response({"section": serialize_section(section)}, status=status.HTTP_201_CREATED)
+        return Response({"section": serialize_section(section, trip=trip)}, status=status.HTTP_201_CREATED)
 
 
 class TimelineSectionDetailAPIView(APIView):
@@ -484,7 +484,7 @@ class TimelineSectionDetailAPIView(APIView):
         if "section_date" in serializer.validated_data:
             kwargs["section_date"] = serializer.validated_data["section_date"]
         try:
-            section = patch_section(
+            trip, section = patch_section(
                 trip_id=trip_id, section_id=section_id, actor=request.user, **kwargs
             )
         except Exception as exc:
@@ -492,7 +492,7 @@ class TimelineSectionDetailAPIView(APIView):
             if mapped is not None:
                 return mapped
             raise
-        return Response({"section": serialize_section(section)})
+        return Response({"section": serialize_section(section, trip=trip)})
 
     def delete(self, request, trip_id, section_id):
         try:
@@ -513,7 +513,7 @@ class TimelineSectionReorderAPIView(APIView):
         serializer = ReorderSectionsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            sections = reorder_sections(
+            trip, sections = reorder_sections(
                 trip_id=trip_id,
                 actor=request.user,
                 section_date=serializer.validated_data["section_date"],
@@ -525,7 +525,7 @@ class TimelineSectionReorderAPIView(APIView):
                 return mapped
             raise
         return Response(
-            {"sections": [serialize_section(s) for s in sections]}, status=status.HTTP_200_OK
+            {"sections": [serialize_section(s, trip=trip) for s in sections]}, status=status.HTTP_200_OK
         )
 
 
