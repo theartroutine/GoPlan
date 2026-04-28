@@ -47,8 +47,8 @@ export function DestinationPicker({
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  // True when the user has committed to a selection (not just typed)
-  const [isCommitted, setIsCommitted] = useState(false);
+  // True when the current value should not trigger suggestions until the user edits it.
+  const [isCommitted, setIsCommitted] = useState(() => initialValue.trim().length > 0);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);

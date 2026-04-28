@@ -74,12 +74,14 @@ export function CreateTripForm() {
     setLoading(true);
 
     const form = new FormData(e.currentTarget);
+    const budgetEstimate = ((form.get("budget_estimate") as string | null) ?? "").trim();
     const payload: CreateTripPayload = {
       name:        (form.get("name") as string | null) ?? "",
       destination,
       start_date:  startDate,
       end_date:    endDate,
       description: (form.get("description") as string | null) || undefined,
+      ...(budgetEstimate && { budget_estimate: budgetEstimate }),
       ...(pickerValue && {
         destination_provider:     pickerValue.destination_provider,
         destination_provider_id:  pickerValue.destination_provider_id,
@@ -151,6 +153,18 @@ export function CreateTripForm() {
           required
         />
         <p className="text-xs text-muted-foreground">IANA timezone, e.g. Asia/Ho_Chi_Minh, Asia/Tokyo.</p>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="budget_estimate">Budget estimate</Label>
+        <Input
+          id="budget_estimate"
+          name="budget_estimate"
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="0.01"
+          placeholder="5000000"
+        />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="description">Description</Label>
