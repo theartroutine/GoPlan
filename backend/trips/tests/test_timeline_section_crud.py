@@ -60,16 +60,15 @@ class TimelineSectionCrudTests(APITestCase):
         self.assertEqual(section["position"], 0)
         self.assertFalse(section["is_in_trip_range"])
 
-    def test_section_position_starts_after_existing_siblings(self):
-        # Existing generated day at section_date, position 0
+    def test_create_day_rejects_existing_date(self):
         res = self.client.post(
             self._sections_url(),
             {"section_date": "2026-06-01", "label": "Morning special"},
             format="json",
             **_auth(self.captain),
         )
-        self.assertEqual(res.status_code, 201)
-        self.assertEqual(res.data["section"]["position"], 1)
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "SECTION_DATE_CONFLICT")
 
     def test_member_cannot_create_section_403(self):
         res = self.client.post(
