@@ -5,6 +5,7 @@ import {
   buildTimelineSection,
 } from "@/features/trips/presentation/timeline-test-helpers";
 import {
+  findNowDividerIndex,
   getDefaultFocusedSectionId,
   getNowMarkerPlacement,
   groupActivitiesForDay,
@@ -210,5 +211,44 @@ describe("timeline view model helpers", () => {
     );
 
     expect(placement).toEqual({ kind: "before", activityId: "breakfast" });
+  });
+});
+
+describe("findNowDividerIndex", () => {
+  it("returns the index of the section matching today", () => {
+    const sections = [
+      buildTimelineSection({ id: "a", section_date: "2026-04-26" }),
+      buildTimelineSection({ id: "b", section_date: "2026-04-27" }),
+      buildTimelineSection({ id: "c", section_date: "2026-04-28" }),
+    ];
+    expect(findNowDividerIndex(sections, "2026-04-27")).toBe(1);
+  });
+
+  it("returns null when today is before all sections", () => {
+    const sections = [
+      buildTimelineSection({ section_date: "2026-04-27" }),
+      buildTimelineSection({ section_date: "2026-04-28" }),
+    ];
+    expect(findNowDividerIndex(sections, "2026-04-25")).toBeNull();
+  });
+
+  it("returns null when today is after all sections", () => {
+    const sections = [
+      buildTimelineSection({ section_date: "2026-04-26" }),
+      buildTimelineSection({ section_date: "2026-04-27" }),
+    ];
+    expect(findNowDividerIndex(sections, "2026-04-29")).toBeNull();
+  });
+
+  it("returns the last index when today is the last section", () => {
+    const sections = [
+      buildTimelineSection({ id: "a", section_date: "2026-04-27" }),
+      buildTimelineSection({ id: "b", section_date: "2026-04-28" }),
+    ];
+    expect(findNowDividerIndex(sections, "2026-04-28")).toBe(1);
+  });
+
+  it("returns null for an empty sections array", () => {
+    expect(findNowDividerIndex([], "2026-04-28")).toBeNull();
   });
 });

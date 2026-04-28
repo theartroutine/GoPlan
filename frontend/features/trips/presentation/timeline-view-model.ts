@@ -225,3 +225,8 @@ function sortScheduledActivities(activities: TimelineActivity[]): TimelineActivi
 function chooseSectionForDate(sections: TimelineSection[], sectionDate: string): TimelineSection | null {
   return sections.find((section) => section.section_date === sectionDate) ?? null;
 }
+
+export function findNowDividerIndex(sections: TimelineSection[], today: string): number | null {
+  const index = sections.findIndex((section) => section.section_date === today);
+  return index >= 0 ? index : null;
+}
