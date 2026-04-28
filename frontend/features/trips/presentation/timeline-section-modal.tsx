@@ -78,10 +78,10 @@ export function TimelineSectionModal({
     onOpenChange(false);
   }
 
-  const title = mode === "create" ? "Add Special Day" : "Edit Day";
+  const title = mode === "create" ? "Add Day" : "Edit Day";
   const description =
     mode === "create"
-      ? "Add a special timeline day for preparation, recovery, or side plans."
+      ? "Add a timeline day for preparation, recovery, or side plans."
       : "Update this day label or date while keeping timeline activities together.";
 
   return (

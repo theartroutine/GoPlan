@@ -164,6 +164,10 @@ function sectionPositionLabel(sectionDate: string, timeZone: string): string {
   return sectionDate < today ? "Past" : "Upcoming";
 }
 
+function canDeleteDay(section: TimelineSection): boolean {
+  return !section.is_in_trip_range && section.activities.length === 0;
+}
+
 function parseOpenSectionIds(value: string | null, sectionIds: Set<string>): Set<string> {
   if (!value) return new Set();
 
@@ -421,7 +425,7 @@ export function TimelineTab() {
       toast.success("Day added");
       await refetch();
     } catch (err) {
-      setActionError(extractError(err, "Failed to create section."));
+      setActionError(extractError(err, "Failed to create day."));
     } finally {
       setSubmitting(false);
     }
@@ -436,7 +440,7 @@ export function TimelineTab() {
       toast.success("Day updated");
       await refetch();
     } catch (err) {
-      setActionError(extractError(err, "Failed to update section."));
+      setActionError(extractError(err, "Failed to update day."));
     } finally {
       setSubmitting(false);
     }
@@ -494,7 +498,7 @@ export function TimelineTab() {
           err,
           deleteDialog.kind === "activity"
             ? "Failed to delete activity."
-            : "Failed to delete section.",
+            : "Failed to delete day.",
         ),
       );
     } finally {
@@ -649,12 +653,12 @@ export function TimelineTab() {
   const deleteTitle =
     deleteDialog.kind === "activity"
       ? "Delete activity?"
-      : "Delete special day?";
+      : "Delete day?";
   const deleteDescription =
     deleteDialog.kind === "activity"
       ? `This will permanently delete "${deleteDialog.activity.title}".`
       : deleteDialog.kind === "section"
-        ? `This will permanently delete "${deleteDialog.section.label}" and its activities.`
+        ? `This will permanently delete "${deleteDialog.section.label}".`
         : "";
 
   return (
@@ -665,7 +669,7 @@ export function TimelineTab() {
           {canCreateSections && (
             <Button type="button" size="sm" onClick={() => openSectionModal({ kind: "create" })}>
               <Plus className="size-4" />
-              Add special day
+              Add day
             </Button>
           )}
           {canManageCustomTypes && (
@@ -737,7 +741,7 @@ export function TimelineTab() {
                         >
                           <Pencil className="size-3" />
                         </IconButton>
-                        {section.kind === "SPECIAL_DAY" && (
+                        {canDeleteDay(section) && (
                           <IconButton
                             label={`Delete ${section.label}`}
                             variant="destructive"
