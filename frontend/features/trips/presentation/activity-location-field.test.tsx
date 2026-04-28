@@ -68,6 +68,23 @@ describe("ActivityLocationField", () => {
     } satisfies ActivityLocationValue);
   });
 
+  it("does not suggest locations for an initial manual value until the user edits it", async () => {
+    vi.mocked(bffSuggestLocations).mockResolvedValue([]);
+    const onChange = vi.fn();
+    render(<Harness initial={{ label: "Hotel lobby", place: null }} onChange={onChange} />);
+
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(screen.getByLabelText("Location").getAttribute("aria-expanded")).toBe("false");
+    expect(bffSuggestLocations).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Location"), { target: { value: "Hotel lobby main" } });
+
+    await waitFor(() => {
+      expect(bffSuggestLocations).toHaveBeenCalledWith("Hotel lobby main", expect.any(AbortSignal));
+    });
+  });
+
   it("emits structured HERE place after suggestion selection", async () => {
     vi.mocked(bffSuggestLocations).mockResolvedValue([
       { provider: "here", provider_id: "here:1", title: "Ho Xuan Huong", subtitle: "Da Lat" },

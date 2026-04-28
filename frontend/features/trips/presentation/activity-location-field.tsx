@@ -45,6 +45,7 @@ export function ActivityLocationField({
   const pendingSelectionQueryRef = useRef("");
   const suggestRequestIdRef = useRef(0);
   const lookupRequestIdRef = useRef(0);
+  const skipInitialManualSuggestRef = useRef(value.label.trim().length > 0 && value.place === null);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -75,6 +76,7 @@ export function ActivityLocationField({
     if (
       disabled ||
       value.place !== null ||
+      skipInitialManualSuggestRef.current ||
       query.length < 2 ||
       query === pendingSelectionQueryRef.current
     ) {
@@ -127,6 +129,7 @@ export function ActivityLocationField({
       lookupAbortRef.current = null;
       lookupRequestIdRef.current += 1;
       pendingSelectionQueryRef.current = "";
+      skipInitialManualSuggestRef.current = false;
       setSearchError(null);
       onChange({ label: event.target.value, place: null });
     },
