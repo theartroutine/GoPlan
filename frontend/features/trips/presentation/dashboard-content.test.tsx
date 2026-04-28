@@ -74,6 +74,32 @@ describe("DashboardContent", () => {
     expect(screen.queryByText("Failed to load trips.")).toBeNull();
   });
 
+  it("formats non-VND trip budgets with the selected currency locale", async () => {
+    tripsApiMock.bffListTrips.mockResolvedValueOnce({
+      next: null,
+      previous: null,
+      results: [
+        {
+          id: "trip-2",
+          name: "US Road Trip",
+          destination: "California",
+          cover_image_url: "",
+          start_date: "2026-06-01",
+          end_date: "2026-06-05",
+          status: "PLANNING",
+          currency_code: "USD",
+          budget_estimate: "5000.00",
+          member_count: 4,
+          my_role: "CAPTAIN",
+        },
+      ],
+    } satisfies TripListResponse);
+
+    render(<DashboardContent />);
+
+    expect(await screen.findByText("~1,250 USD/person")).not.toBeNull();
+  });
+
   it("shows Try again after retries are exhausted and reloads trips on demand", async () => {
     tripsApiMock.bffListTrips
       .mockRejectedValueOnce(makeAxiosError(503))

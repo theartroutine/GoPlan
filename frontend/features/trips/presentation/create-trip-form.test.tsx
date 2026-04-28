@@ -72,13 +72,21 @@ describe("CreateTripForm", () => {
     tripsApiMock.bffCreateTrip.mockResolvedValue({ trip: { id: "trip-1" } });
   });
 
-  it("sends budget estimate when creating a trip", async () => {
+  it("shows a cancel link back to the trips dashboard", () => {
+    render(<CreateTripForm />);
+
+    const cancelLink = screen.getByRole("link", { name: /cancel/i });
+
+    expect(cancelLink.getAttribute("href")).toBe("/");
+  });
+
+  it("formats VND budget input and sends the default VND currency when creating a trip", async () => {
     render(<CreateTripForm />);
 
     fireEvent.change(screen.getByLabelText(/trip name/i), {
       target: { value: "Summer Trip" },
     });
-    fireEvent.change(screen.getByRole("combobox"), {
+    fireEvent.change(screen.getByLabelText(/destination/i), {
       target: { value: "Da Nang" },
     });
     fireEvent.change(screen.getByLabelText(/start date/i), {
@@ -88,17 +96,66 @@ describe("CreateTripForm", () => {
       target: { value: "2026-06-05" },
     });
     fireEvent.change(screen.getByLabelText(/budget estimate/i), {
-      target: { value: "5000000" },
+      target: { value: "1000" },
     });
+
+    expect((screen.getByLabelText(/budget estimate/i) as HTMLInputElement).value).toBe("1.000");
 
     fireEvent.click(screen.getByRole("button", { name: /create trip/i }));
 
     await waitFor(() => {
       expect(tripsApiMock.bffCreateTrip).toHaveBeenCalledWith(
         expect.objectContaining({
-          budget_estimate: "5000000",
+          currency_code: "VND",
+          budget_estimate: "1000",
         }),
       );
     });
+  });
+
+  it("sends the selected currency when creating a trip", async () => {
+    render(<CreateTripForm />);
+
+    fireEvent.change(screen.getByLabelText(/trip name/i), {
+      target: { value: "Summer Trip" },
+    });
+    fireEvent.change(screen.getByLabelText(/destination/i), {
+      target: { value: "Da Nang" },
+    });
+    fireEvent.change(screen.getByLabelText(/start date/i), {
+      target: { value: "2026-06-01" },
+    });
+    fireEvent.change(screen.getByLabelText(/end date/i), {
+      target: { value: "2026-06-05" },
+    });
+    fireEvent.change(screen.getByLabelText(/currency/i), {
+      target: { value: "USD" },
+    });
+    fireEvent.change(screen.getByLabelText(/budget estimate/i), {
+      target: { value: "1000.50" },
+    });
+
+    expect((screen.getByLabelText(/budget estimate/i) as HTMLInputElement).value).toBe("1000.50");
+
+    fireEvent.click(screen.getByRole("button", { name: /create trip/i }));
+
+    await waitFor(() => {
+      expect(tripsApiMock.bffCreateTrip).toHaveBeenCalledWith(
+        expect.objectContaining({
+          currency_code: "USD",
+          budget_estimate: "1000.50",
+        }),
+      );
+    });
+  });
+
+  it("recommends timezone options while creating a trip", () => {
+    render(<CreateTripForm />);
+
+    fireEvent.change(screen.getByLabelText(/trip timezone/i), {
+      target: { value: "Tokyo" },
+    });
+
+    expect(screen.getByRole("option", { name: "Asia/Tokyo" })).toBeTruthy();
   });
 });

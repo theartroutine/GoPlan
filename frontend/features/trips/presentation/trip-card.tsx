@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CalendarDays, MapPin, Users } from "lucide-react";
 
 import { formatDateOnly } from "@/features/trips/domain/date-only";
+import { formatTripMoneyAmount } from "@/features/trips/domain/money";
 import type { TripListItem } from "@/features/trips/domain/types";
 import { TripCoverImage } from "@/features/trips/presentation/trip-cover-image";
 import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge";
@@ -18,7 +19,7 @@ export function TripCard({ trip }: { trip: TripListItem }) {
   })}`;
   const budgetPerPerson =
     trip.budget_estimate && trip.member_count > 0
-      ? (parseFloat(trip.budget_estimate) / trip.member_count).toLocaleString("vi-VN")
+      ? formatTripMoneyAmount(parseFloat(trip.budget_estimate) / trip.member_count, trip.currency_code)
       : null;
   const destinationLabel = trip.destination || "No destination yet";
 

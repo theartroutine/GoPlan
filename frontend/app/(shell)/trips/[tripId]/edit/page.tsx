@@ -7,7 +7,7 @@ import { EditTripForm } from "@/features/trips/presentation/edit-trip-form";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 
 export default function EditTripPage() {
-  const { data } = useTripContext();
+  const { data, refresh } = useTripContext();
   const router = useRouter();
 
   useEffect(() => {
@@ -21,7 +21,7 @@ export default function EditTripPage() {
   return (
     <div className="mx-auto max-w-lg">
       <h1 className="mb-6 text-xl font-bold">Edit Trip</h1>
-      <EditTripForm trip={data.trip} />
+      <EditTripForm trip={data.trip} onSaved={refresh} />
     </div>
   );
 }

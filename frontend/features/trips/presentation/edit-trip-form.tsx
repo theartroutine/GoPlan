@@ -3,22 +3,39 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
+import {
+  apiBudgetToInputValue,
+  budgetInputToPayload,
+  normalizeBudgetInputForCurrencyChange,
+} from "@/features/trips/domain/money";
 import type { TripDetail, UpdateTripPayload } from "@/features/trips/domain/types";
 import { bffUpdateTrip } from "@/features/trips/infrastructure/trips-api";
+import { BudgetEstimateInput } from "@/features/trips/presentation/budget-estimate-input";
 import { CoverImagePicker } from "@/features/trips/presentation/cover-image-picker";
+import { CurrencySelect } from "@/features/trips/presentation/currency-select";
 import type { DestinationPickerValue } from "@/features/trips/presentation/destination-picker";
 import { DestinationPicker } from "@/features/trips/presentation/destination-picker";
+import { TimezonePicker } from "@/features/trips/presentation/timezone-picker";
 import { Button } from "@/shared/ui/button";
 import { DatePicker } from "@/shared/ui/date-picker";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Textarea } from "@/shared/ui/textarea";
 
-export function EditTripForm({ trip }: { trip: TripDetail }) {
+export function EditTripForm({
+  trip,
+  onSaved,
+}: {
+  trip: TripDetail;
+  onSaved?: () => Promise<void> | void;
+}) {
   const router = useRouter();
+  const initialBudgetEstimate = apiBudgetToInputValue(trip.budget_estimate, trip.currency_code);
   const [startDate, setStartDate] = useState<string>(trip.start_date);
   const [endDate, setEndDate] = useState<string>(trip.end_date);
   const [timezone, setTimezone] = useState<string>(trip.timezone);
+  const [currencyCode, setCurrencyCode] = useState<string>(trip.currency_code);
+  const [budgetEstimate, setBudgetEstimate] = useState<string>(() => initialBudgetEstimate);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -51,12 +68,20 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
     setPermanentCoverUrl(url);
   }
 
+  function handleCurrencyChange(nextCurrencyCode: string) {
+    setCurrencyCode(nextCurrencyCode);
+    setBudgetEstimate((currentBudgetEstimate) =>
+      normalizeBudgetInputForCurrencyChange(currentBudgetEstimate, nextCurrencyCode),
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
 
     const form = new FormData(e.currentTarget);
     const destination = pickerValue?.destination ?? rawDestination;
+    const submittedBudgetEstimate = budgetInputToPayload(budgetEstimate, currencyCode);
 
     if (!destination.trim()) {
       setError("Please enter a destination.");
@@ -66,7 +91,6 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
     setLoading(true);
 
     // Build base payload from non-destination fields.
-    const budgetEstimate = ((form.get("budget_estimate") as string | null) ?? "").trim();
     const payload: UpdateTripPayload = {
       name:        (form.get("name") as string) || undefined,
       start_date:  startDate || undefined,
@@ -104,12 +128,17 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
       payload.timezone = timezone;
     }
 
-    if (budgetEstimate !== (trip.budget_estimate ?? "")) {
-      payload.budget_estimate = budgetEstimate || null;
+    if (currencyCode !== trip.currency_code) {
+      payload.currency_code = currencyCode;
+    }
+
+    if (budgetEstimate !== initialBudgetEstimate) {
+      payload.budget_estimate = submittedBudgetEstimate || null;
     }
 
     try {
       await bffUpdateTrip(trip.id, payload);
+      await onSaved?.();
       router.push(`/trips/${trip.id}/overview`);
     } catch {
       setError("Failed to update trip. Please check your inputs and try again.");
@@ -161,28 +190,31 @@ export function EditTripForm({ trip }: { trip: TripDetail }) {
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="timezone">Trip timezone *</Label>
-        <Input
+        <TimezonePicker
           id="timezone"
-          name="timezone"
           value={timezone}
-          onChange={(e) => setTimezone(e.target.value)}
-          placeholder="Asia/Ho_Chi_Minh"
+          onChange={setTimezone}
           required
         />
-        <p className="text-xs text-muted-foreground">IANA timezone, e.g. Asia/Ho_Chi_Minh, Asia/Tokyo.</p>
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="budget_estimate">Budget estimate</Label>
-        <Input
-          id="budget_estimate"
-          name="budget_estimate"
-          type="number"
-          inputMode="decimal"
-          min="0"
-          step="0.01"
-          defaultValue={trip.budget_estimate ?? ""}
-          placeholder="5000000"
-        />
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div className="space-y-1.5">
+          <Label htmlFor="currency_code">Currency</Label>
+          <CurrencySelect
+            id="currency_code"
+            value={currencyCode}
+            onChange={handleCurrencyChange}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="budget_estimate">Budget estimate</Label>
+          <BudgetEstimateInput
+            id="budget_estimate"
+            value={budgetEstimate}
+            currencyCode={currencyCode}
+            onChange={setBudgetEstimate}
+          />
+        </div>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="description">Description</Label>
