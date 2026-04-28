@@ -195,9 +195,6 @@ function isNowMarkerAfter(activity: TimelineActivity, placement: NowMarkerPlacem
   );
 }
 
-function isCurrentActivity(activity: TimelineActivity, placement: NowMarkerPlacement): boolean {
-  return placement.kind === "inside" && placement.activityId === activity.id;
-}
 
 function getNowMarkerAnchorIndex(
   activities: TimelineActivity[],
@@ -229,14 +226,15 @@ function limitActivityGroupWithNowMarker(
   return limitActivityGroup(activities, expanded, visibleLimit);
 }
 
-function NowMarkerItem({ markerKey }: { markerKey: string }) {
+function NowMarkerItem({ markerKey, displayTime }: { markerKey: string; displayTime: string }) {
   return (
-    <li key={markerKey} className="flex items-center gap-2 py-1 text-xs font-medium text-primary">
-      <span className="h-px min-w-6 flex-1 bg-primary/40" />
-      <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5">
-        Now
+    <li key={markerKey} className="flex items-center gap-2 py-1 text-xs font-semibold text-primary">
+      <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+      <span className="h-0.5 min-w-6 flex-1 bg-primary/50" />
+      <span className="whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5">
+        Now · {displayTime}
       </span>
-      <span className="h-px min-w-6 flex-1 bg-primary/40" />
+      <span className="h-0.5 min-w-6 flex-1 bg-primary/50" />
     </li>
   );
 }
@@ -647,6 +645,8 @@ export function TimelineTab() {
     activities: TimelineActivity[],
     groupKey: string,
     nowMarkerPlacement: NowMarkerPlacement = { kind: "none" },
+    activeIds: Set<string> = new Set(),
+    displayTime = "",
   ) {
     if (activities.length === 0) return null;
 
@@ -667,18 +667,18 @@ export function TimelineTab() {
           {visible.map((activity) => (
             <Fragment key={activity.id}>
               {isNowMarkerBefore(activity, nowMarkerPlacement) ? (
-                <NowMarkerItem markerKey={`${activity.id}:now-before`} />
+                <NowMarkerItem markerKey={`${activity.id}:now-before`} displayTime={displayTime} />
               ) : null}
               <li>
                 <TimelineActivityNode
                   activity={activity}
                   actions={renderActivityActions(activity)}
-                  isCurrent={isCurrentActivity(activity, nowMarkerPlacement)}
+                  isCurrent={activeIds.has(activity.id)}
                   onStatusChange={(nextStatus) => void handleUpdateActivityStatus(activity, nextStatus)}
                 />
               </li>
               {isNowMarkerAfter(activity, nowMarkerPlacement) ? (
-                <NowMarkerItem markerKey={`${activity.id}:now-after`} />
+                <NowMarkerItem markerKey={`${activity.id}:now-after`} displayTime={displayTime} />
               ) : null}
             </Fragment>
           ))}
@@ -699,11 +699,13 @@ export function TimelineTab() {
 
   function renderSectionContent(section: TimelineSection) {
     const groups = groupActivitiesForDay(section.activities);
-    const nowMarkerPlacement =
-      effectiveFocusedSectionId === section.id &&
-      section.section_date === localDate(timelineData.trip_timezone)
-        ? getNowMarkerPlacement(groups.timeline, timelineData.trip_timezone)
-        : ({ kind: "none" } satisfies NowMarkerPlacement);
+    const isToday = effectiveFocusedSectionId === section.id && section.section_date === now.date;
+    const nowMarkerPlacement: NowMarkerPlacement = isToday
+      ? getNowMarkerPlacement(groups.timeline, timelineData.trip_timezone)
+      : { kind: "none" };
+    const activeIds = isToday
+      ? getActiveActivityIds(groups.timeline, now.minutes)
+      : new Set<string>();
 
     if (section.activities.length === 0) {
       return (
@@ -716,7 +718,7 @@ export function TimelineTab() {
     return (
       <div className="space-y-4">
         {renderActivityGroup("All-day", groups.allDay, `${section.id}:all-day`)}
-        {renderActivityGroup("Timeline", groups.timeline, `${section.id}:timeline`, nowMarkerPlacement)}
+        {renderActivityGroup("Timeline", groups.timeline, `${section.id}:timeline`, nowMarkerPlacement, activeIds, now.displayTime)}
         {renderActivityGroup("Flexible", groups.flexible, `${section.id}:flexible`)}
       </div>
     );
