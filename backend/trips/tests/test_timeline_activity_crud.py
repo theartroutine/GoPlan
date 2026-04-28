@@ -11,7 +11,6 @@ from trips.models import (
     TimelineActivity,
     TimelineCustomType,
     TimelineSection,
-    TimelineSectionKind,
 )
 from trips.tests.timeline_helpers import (
     make_timeline_activity,
@@ -36,9 +35,7 @@ class TimelineActivityCrudTests(APITestCase):
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 3),
         )
-        self.section = TimelineSection.objects.filter(
-            trip=self.trip, kind=TimelineSectionKind.SYSTEM_DAY
-        ).order_by("section_date").first()
+        self.section = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
 
     def _create_url(self, section_id=None):
         return f"/api/trips/{self.trip.id}/timeline/sections/{section_id or self.section.id}/activities"

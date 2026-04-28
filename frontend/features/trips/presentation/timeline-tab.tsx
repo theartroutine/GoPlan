@@ -164,6 +164,10 @@ function sectionPositionLabel(sectionDate: string, timeZone: string): string {
   return sectionDate < today ? "Past" : "Upcoming";
 }
 
+function canDeleteDay(section: TimelineSection): boolean {
+  return !section.is_in_trip_range && section.activities.length === 0;
+}
+
 function parseOpenSectionIds(value: string | null, sectionIds: Set<string>): Set<string> {
   if (!value) return new Set();
 
@@ -221,10 +225,6 @@ function limitActivityGroupWithNowMarker(
     anchorIndex === null ? initialLimit : Math.max(initialLimit, anchorIndex + 1);
 
   return limitActivityGroup(activities, expanded, visibleLimit);
-}
-
-function canDeleteSpecialDay(section: TimelineSection): boolean {
-  return section.kind === "SPECIAL_DAY" && section.activities.length === 0;
 }
 
 function NowMarkerItem({ markerKey }: { markerKey: string }) {
@@ -448,7 +448,7 @@ export function TimelineTab() {
       toast.success("Day added");
       await refetch();
     } catch (err) {
-      setActionError(extractError(err, "Failed to create section."));
+      setActionError(extractError(err, "Failed to create day."));
     } finally {
       setSubmitting(false);
     }
@@ -467,7 +467,7 @@ export function TimelineTab() {
       toast.success("Day updated");
       await refetch();
     } catch (err) {
-      setActionError(extractError(err, "Failed to update section."));
+      setActionError(extractError(err, "Failed to update day."));
     } finally {
       setSubmitting(false);
     }
@@ -525,7 +525,7 @@ export function TimelineTab() {
           err,
           deleteDialog.kind === "activity"
             ? "Failed to delete activity."
-            : "Failed to delete section.",
+            : "Failed to delete day.",
         ),
       );
     } finally {
@@ -686,7 +686,7 @@ export function TimelineTab() {
   const deleteTitle =
     deleteDialog.kind === "activity"
       ? "Delete activity?"
-      : "Delete special day?";
+      : "Delete day?";
   const deleteDescription =
     deleteDialog.kind === "activity"
       ? `This will permanently delete "${deleteDialog.activity.title}".`
@@ -702,7 +702,7 @@ export function TimelineTab() {
           {canCreateSections && (
             <Button type="button" size="sm" onClick={() => openSectionModal({ kind: "create" })}>
               <Plus className="size-4" />
-              Add special day
+              Add day
             </Button>
           )}
           {canManageCustomTypes && (
@@ -774,7 +774,7 @@ export function TimelineTab() {
                         >
                           <Pencil className="size-3" />
                         </IconButton>
-                        {canDeleteSpecialDay(section) && (
+                        {canDeleteDay(section) && (
                           <IconButton
                             label={`Delete ${section.label}`}
                             variant="destructive"

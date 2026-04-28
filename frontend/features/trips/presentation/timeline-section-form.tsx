@@ -9,7 +9,7 @@ import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 
 type Props = {
-  /** When initial is set, this acts as a patch form. SYSTEM_DAY only allows label edits. */
+  /** When initial is set, this acts as a patch form. */
   initial?: TimelineSection;
   submitting?: boolean;
   errorMessage?: string | null;
@@ -38,7 +38,6 @@ function TimelineSectionFormFields({
   const [sectionDate, setSectionDate] = useState(initial?.section_date ?? "");
   const dirtyRef = useRef(false);
   const onDirtyChangeRef = useRef(onDirtyChange);
-  const isSystem = initial?.kind === "SYSTEM_DAY";
   const unavailableDates = useMemo(
     () => unavailableSectionDates.filter((date) => date !== initial?.section_date),
     [initial?.section_date, unavailableSectionDates],
@@ -75,15 +74,15 @@ function TimelineSectionFormFields({
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!label.trim()) return;
+    if (!sectionDate) return;
     if (isSelectedDateUnavailable) return;
     if (initial) {
       const payload: { label: string; section_date?: string } = { label };
-      if (!isSystem && sectionDate && sectionDate !== initial.section_date) {
+      if (sectionDate !== initial.section_date) {
         payload.section_date = sectionDate;
       }
       onSubmit(payload);
     } else {
-      if (!sectionDate) return;
       onSubmit({ label, section_date: sectionDate });
     }
   }
@@ -100,25 +99,23 @@ function TimelineSectionFormFields({
           required
         />
       </div>
-      {!isSystem && (
-        <div className="space-y-1.5">
-          <Label htmlFor="section-date">Date *</Label>
-          <DatePicker
-            id="section-date"
-            value={sectionDate}
-            onChange={(date) => handleDateChange(date ?? "")}
-            placeholder="Pick a date"
-            disabled={submitting}
-            disabledDates={unavailableDates}
-          />
-        </div>
-      )}
+      <div className="space-y-1.5">
+        <Label htmlFor="section-date">Date *</Label>
+        <DatePicker
+          id="section-date"
+          value={sectionDate}
+          onChange={(date) => handleDateChange(date ?? "")}
+          placeholder="Pick a date"
+          disabled={submitting}
+          disabledDates={unavailableDates}
+        />
+      </div>
       {(dateError || errorMessage) && (
         <p className="text-sm text-destructive">{dateError ?? errorMessage}</p>
       )}
       <div className="flex gap-2">
         <Button type="submit" disabled={!!submitting || isSelectedDateUnavailable}>
-          {submitting ? "Saving…" : initial ? "Save section" : "Add section"}
+          {submitting ? "Saving…" : initial ? "Save day" : "Add day"}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel} disabled={!!submitting}>
           Cancel

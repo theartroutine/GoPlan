@@ -10,7 +10,6 @@ from trips.models import (
     TimelineActivityStatus,
     TimelineLocationMode,
     TimelineSection,
-    TimelineSectionKind,
     TripStatus,
 )
 from trips.tests.timeline_helpers import make_timeline_activity, make_trip_with_timeline
@@ -32,9 +31,7 @@ class TimelineStatusTests(APITestCase):
             end_date=date(2026, 6, 3),
             status=TripStatus.ONGOING,
         )
-        self.section = TimelineSection.objects.filter(
-            trip=self.trip, kind=TimelineSectionKind.SYSTEM_DAY
-        ).order_by("section_date").first()
+        self.section = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
 
     def _status_url(self, activity_id):
         return f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}/status"

@@ -111,7 +111,7 @@ describe("TimelineTab", () => {
     expect(await screen.findByText("Failed to load timeline.")).not.toBeNull();
   });
 
-  it("opens the special day form with the shared date picker entry point", async () => {
+  it("opens the day form with the shared date picker entry point", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -124,13 +124,15 @@ describe("TimelineTab", () => {
     );
 
     render(<TimelineTab />);
-    fireEvent.click(await screen.findByRole("button", { name: "Add special day" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add day" }));
 
+    expect(screen.getByRole("heading", { name: "Add Day" })).not.toBeNull();
+    expect(screen.getByText("Add a timeline day for preparation, recovery, or side plans.")).not.toBeNull();
     expect(screen.getByText("Date *")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Pick a date" })).not.toBeNull();
   });
 
-  it("disables dates that already have timeline days in the special day picker", async () => {
+  it("disables dates that already have timeline days in the day picker", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -149,13 +151,95 @@ describe("TimelineTab", () => {
     );
 
     render(<TimelineTab />);
-    fireEvent.click(await screen.findByRole("button", { name: "Add special day" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add day" }));
     vi.useFakeTimers({ now: new Date("2026-04-10T00:00:00.000Z") });
     fireEvent.click(screen.getByRole("button", { name: "Pick a date" }));
     vi.useRealTimers();
 
     const usedDateButton = screen.getByText("28").closest("button");
     expect(usedDateButton?.disabled).toBe(true);
+  });
+
+  it("allows deleting an empty extra day", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "empty-day",
+            label: "Preparation",
+            section_date: "2026-05-31",
+            is_in_trip_range: false,
+            activities: [],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Preparation" }));
+
+    expect(screen.getByText("Delete day?")).not.toBeNull();
+    expect(screen.getByText('This will permanently delete "Preparation".')).not.toBeNull();
+  });
+
+  it("does not allow deleting an empty in-range day", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "required-day",
+            label: "Day 2",
+            section_date: "2026-06-02",
+            is_in_trip_range: true,
+            activities: [],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByText("Day 2")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete Day 2" })).toBeNull();
+  });
+
+  it("shows the date field when editing an in-range day", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "in-range-day",
+            label: "Day 1",
+            section_date: "2026-06-01",
+            is_in_trip_range: true,
+            activities: [],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Day 1" }));
+
+    expect(screen.getByText("Date *")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Selected June 1st, 2026/i })).not.toBeNull();
   });
 
   it("opens an alert dialog before deleting a custom activity type", async () => {
@@ -214,24 +298,24 @@ describe("TimelineTab", () => {
   });
 
   it("uses section id query state when same-date sections exist", async () => {
-    mockUseSearchParams("section=special-1");
+    mockUseSearchParams("section=extra-1");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         sections: [
           buildTimelineSection({
             id: "system-1",
-            kind: "SYSTEM_DAY",
             section_date: "2026-06-01",
             label: "Day 1",
-            activities: [buildTimelineActivity({ id: "system-act", title: "System day activity" })],
+            is_in_trip_range: true,
+            activities: [buildTimelineActivity({ id: "system-act", title: "Trip day activity" })],
           }),
           buildTimelineSection({
-            id: "special-1",
-            kind: "SPECIAL_DAY",
+            id: "extra-1",
             section_date: "2026-06-01",
             label: "Preparation",
             position: 1,
-            activities: [buildTimelineActivity({ id: "special-act", title: "Special day activity" })],
+            is_in_trip_range: false,
+            activities: [buildTimelineActivity({ id: "extra-act", title: "Preparation activity" })],
           }),
         ],
       }),
@@ -240,8 +324,8 @@ describe("TimelineTab", () => {
     render(<TimelineTab />);
 
     expect(await screen.findByText("Preparation")).not.toBeNull();
-    expect(screen.getByText("Special day activity")).not.toBeNull();
-    expect(screen.queryByText("System day activity")).toBeNull();
+    expect(screen.getByText("Preparation activity")).not.toBeNull();
+    expect(screen.queryByText("Trip day activity")).toBeNull();
   });
 
   it("persists additional open sections in the URL", async () => {
@@ -578,7 +662,7 @@ describe("TimelineTab", () => {
     expect(screen.getByRole("button", { name: "Show 1 more" })).not.toBeNull();
   });
 
-  it("hides special day delete while the section still has activities", async () => {
+  it("hides extra day delete while the section still has activities", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -588,9 +672,10 @@ describe("TimelineTab", () => {
         },
         sections: [
           buildTimelineSection({
-            id: "special-1",
-            kind: "SPECIAL_DAY",
+            id: "extra-1",
             label: "Recovery",
+            section_date: "2026-06-03",
+            is_in_trip_range: false,
             activities: [buildTimelineActivity({ title: "Checkout" })],
           }),
         ],
@@ -603,7 +688,7 @@ describe("TimelineTab", () => {
     expect(screen.queryByRole("button", { name: "Delete Recovery" })).toBeNull();
   });
 
-  it("confirms deleting an empty special day without promising activity deletion", async () => {
+  it("confirms deleting an empty extra day without promising activity deletion", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -613,9 +698,10 @@ describe("TimelineTab", () => {
         },
         sections: [
           buildTimelineSection({
-            id: "special-1",
-            kind: "SPECIAL_DAY",
+            id: "extra-1",
             label: "Day 0",
+            section_date: "2026-05-31",
+            is_in_trip_range: false,
             activities: [],
           }),
         ],
@@ -626,7 +712,7 @@ describe("TimelineTab", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Delete Day 0" }));
 
-    expect(await screen.findByText("Delete special day?")).not.toBeNull();
+    expect(await screen.findByText("Delete day?")).not.toBeNull();
     expect(screen.getByText('This will permanently delete "Day 0".')).not.toBeNull();
     expect(screen.queryByText('This will permanently delete "Day 0" and its activities.')).toBeNull();
   });

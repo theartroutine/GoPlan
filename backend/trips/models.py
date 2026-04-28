@@ -34,11 +34,6 @@ class InvitationStatus(models.TextChoices):
     CANCELLED = "CANCELLED", "Cancelled"
 
 
-class TimelineSectionKind(models.TextChoices):
-    SYSTEM_DAY  = "SYSTEM_DAY",  "System Day"
-    SPECIAL_DAY = "SPECIAL_DAY", "Special Day"
-
-
 class TimelineActivityTimeMode(models.TextChoices):
     ALL_DAY    = "ALL_DAY",    "All Day"
     FLEXIBLE   = "FLEXIBLE",   "Flexible"
@@ -192,7 +187,6 @@ class TripInvitation(models.Model):
 class TimelineSection(models.Model):
     id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     trip            = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="timeline_sections")
-    kind            = models.CharField(max_length=16, choices=TimelineSectionKind.choices)
     section_date    = models.DateField()
     label           = models.CharField(max_length=120)
     is_label_custom = models.BooleanField(default=False)
@@ -216,7 +210,6 @@ class TimelineSection(models.Model):
         ordering = ["section_date", "position", "created_at"]
         indexes = [
             models.Index(fields=["trip", "section_date", "position"]),
-            models.Index(fields=["trip", "kind"]),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -226,7 +219,7 @@ class TimelineSection(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.label} ({self.kind} {self.section_date})"
+        return f"{self.label} ({self.section_date})"
 
 
 class TimelineCustomType(models.Model):

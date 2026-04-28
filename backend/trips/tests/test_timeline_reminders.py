@@ -15,7 +15,6 @@ from trips.models import (
     TimelineActivityReminder,
     TimelineActivityStatus,
     TimelineActivityTimeMode,
-    TimelineSectionKind,
     TripMember,
     TripRole,
     TripStatus,
@@ -38,7 +37,7 @@ class TimelineReminderGenerationTests(APITestCase):
             end_date=date(2026, 6, 1),
             timezone="Asia/Ho_Chi_Minh",
         )
-        self.section = self.trip.timeline_sections.get(kind=TimelineSectionKind.SYSTEM_DAY)
+        self.section = self.trip.timeline_sections.get(section_date=date(2026, 6, 1))
 
     def test_create_timed_activity_generates_timezone_correct_reminders(self):
         activity = create_timeline_activity(
@@ -289,7 +288,7 @@ class TimelineReminderDispatchTests(APITestCase):
             role=TripRole.MEMBER,
             status=MemberStatus.REMOVED,
         )
-        self.section = self.trip.timeline_sections.get(kind=TimelineSectionKind.SYSTEM_DAY)
+        self.section = self.trip.timeline_sections.get(section_date=date(2026, 6, 1))
 
     def _activity_with_due_reminder(self, *, trip_status=TripStatus.PLANNING, activity_status=TimelineActivityStatus.UPCOMING):
         self.trip.status = trip_status

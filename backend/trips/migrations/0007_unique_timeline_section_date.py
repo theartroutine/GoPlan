@@ -21,8 +21,26 @@ def merge_duplicate_timeline_sections(apps, schema_editor):
             .filter(trip_id=group["trip_id"], section_date=group["section_date"])
             .order_by("position", "created_at", "id")
         )
-        system_sections = [section for section in sections if section.kind == "SYSTEM_DAY"]
-        keeper = system_sections[0] if system_sections else sections[0]
+        section_ids = [section.pk for section in sections]
+        activity_counts = {
+            row["section_id"]: row["activity_count"]
+            for row in (
+                TimelineActivity.objects
+                .filter(section_id__in=section_ids)
+                .values("section_id")
+                .annotate(activity_count=Count("id"))
+            )
+        }
+
+        keeper = sorted(
+            sections,
+            key=lambda section: (
+                0 if activity_counts.get(section.pk, 0) > 0 else 1,
+                section.position,
+                section.created_at,
+                str(section.pk),
+            ),
+        )[0]
         duplicates = [section for section in sections if section.pk != keeper.pk]
 
         ordered_activity_ids = []
@@ -47,8 +65,6 @@ def merge_duplicate_timeline_sections(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    atomic = False
-
     dependencies = [
         ("trips", "0006_alter_timelineactivity_time_mode"),
     ]
@@ -68,5 +84,13 @@ class Migration(migrations.Migration):
                 fields=("trip", "section_date"),
                 name="timeline_section_unique_date_per_trip",
             ),
+        ),
+        migrations.RemoveIndex(
+            model_name="timelinesection",
+            name="trips_timel_trip_id_2a46aa_idx",
+        ),
+        migrations.RemoveField(
+            model_name="timelinesection",
+            name="kind",
         ),
     ]

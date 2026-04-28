@@ -1,7 +1,10 @@
+from unittest.mock import patch
+
 from rest_framework.test import APITestCase
 from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
+from trips.services import TimelineSectionDateConflictError
 
 
 def _auth(user):
@@ -76,6 +79,22 @@ class UpdateTripTests(APITestCase):
             res.data,
             {"detail": "Invalid trip timezone.", "error_code": "INVALID_TIMEZONE"},
         )
+
+    @patch("trips.views.update_trip")
+    def test_captain_update_maps_timeline_date_conflict_to_409(self, mock_update_trip):
+        mock_update_trip.side_effect = TimelineSectionDateConflictError(
+            "This date already has a timeline day."
+        )
+
+        res = self.client.patch(
+            self._url(),
+            {"start_date": "2026-06-02"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "SECTION_DATE_CONFLICT")
 
     def test_trip_detail_response_includes_timezone(self):
         res = self.client.get(self._url(), **_auth(self.captain))

@@ -23,7 +23,6 @@ from trips.models import (
     TimelineCustomType,
     TimelineLocationMode,
     TimelineSection,
-    TimelineSectionKind,
     Trip,
     TripInvitation,
     TripMember,
@@ -110,10 +109,6 @@ class TimelineSectionNotEmptyError(TripServiceError):
     error_code = "SECTION_NOT_EMPTY"
 
 
-class TimelineSectionDateConflictError(TripServiceError):
-    error_code = "SECTION_DATE_CONFLICT"
-
-
 class TimelineCustomTypeInUseError(TripServiceError):
     error_code = "CUSTOM_TYPE_IN_USE"
 
@@ -126,8 +121,8 @@ class TimelineInvalidReorderScopeError(TripServiceError):
     error_code = "INVALID_REORDER_SCOPE"
 
 
-class TimelineSystemDayLockError(TripServiceError):
-    error_code = "SYSTEM_DAY_LOCKED"
+class TimelineSectionDateConflictError(TripServiceError):
+    error_code = "SECTION_DATE_CONFLICT"
 
 
 class TimelineInvalidAssigneeError(TripServiceError):
@@ -193,7 +188,7 @@ def create_trip(
     timezone: str = "Asia/Ho_Chi_Minh",
     budget_estimate=None,
 ) -> Trip:
-    """Create a trip and add the creator as CAPTAIN. Auto-generates SYSTEM_DAY sections."""
+    """Create a trip and add the creator as CAPTAIN. Auto-generates timeline days."""
     with transaction.atomic():
         trip = Trip.objects.create(
             name=name,
@@ -219,65 +214,91 @@ def create_trip(
             role=TripRole.CAPTAIN,
             status=MemberStatus.ACTIVE,
         )
-        sync_system_day_sections(trip)
+        sync_timeline_days(trip)
     return trip
 
 
-# -------- Timeline system-day sync --------
+# -------- Timeline day sync --------
 
-def sync_system_day_sections(trip: Trip) -> None:
-    """Sync SYSTEM_DAY sections to the trip's current date range."""
+def _is_date_in_trip_range(trip: Trip, section_date) -> bool:
     if not trip.start_date or not trip.end_date:
-        return
+        return False
+    return trip.start_date <= section_date <= trip.end_date
 
-    system_sections = list(
-        trip.timeline_sections
-        .filter(kind=TimelineSectionKind.SYSTEM_DAY)
-        .order_by("section_date", "created_at")
-    )
-    for section in system_sections:
-        if trip.start_date <= section.section_date <= trip.end_date:
-            continue
-        if section.activities.exists():
-            section.kind = TimelineSectionKind.SPECIAL_DAY
-            section.is_label_custom = True
-            section.save(update_fields=["kind", "is_label_custom", "updated_at"])
-        else:
-            section.delete()
 
-    existing = {
-        s.section_date: s
-        for s in trip.timeline_sections.all().order_by("section_date", "position", "created_at")
-    }
-    current = trip.start_date
-    index = 0
-    while current <= trip.end_date:
-        expected_label = f"Day {index + 1}"
-        if current not in existing:
-            TimelineSection.objects.create(
-                trip=trip,
-                kind=TimelineSectionKind.SYSTEM_DAY,
-                section_date=current,
-                label=expected_label,
-                is_label_custom=False,
-                position=0,
-            )
-        else:
-            section = existing[current]
-            update_fields = []
-            if section.kind != TimelineSectionKind.SYSTEM_DAY:
-                section.kind = TimelineSectionKind.SYSTEM_DAY
-                section.position = 0
-                update_fields.extend(["kind", "position"])
-            if not section.is_label_custom:
+def _ensure_section_date_available(
+    trip: Trip,
+    section_date,
+    *,
+    exclude_section_id=None,
+) -> None:
+    sections = TimelineSection.objects.filter(trip=trip, section_date=section_date)
+    if exclude_section_id is not None:
+        sections = sections.exclude(pk=exclude_section_id)
+    if sections.exists():
+        raise TimelineSectionDateConflictError("This date already has a timeline day.")
+
+
+def sync_timeline_days(trip: Trip) -> None:
+    """Sync generated timeline days to the trip's current date range."""
+    with transaction.atomic():
+        trip = Trip.objects.select_for_update().get(pk=trip.pk)
+        if not trip.start_date or not trip.end_date:
+            return
+
+        sections = list(
+            TimelineSection.objects
+            .select_for_update()
+            .filter(trip=trip)
+            .order_by("section_date", "created_at")
+            .prefetch_related("activities")
+        )
+        for section in sections:
+            if _is_date_in_trip_range(trip, section.section_date):
+                continue
+            if section.is_label_custom:
+                continue
+            if section.activities.exists():
+                section.is_label_custom = True
+                section.save(update_fields=["is_label_custom", "updated_at"])
+            else:
+                section.delete()
+
+        existing = {
+            s.section_date: s
+            for s in TimelineSection.objects.select_for_update().filter(trip=trip)
+        }
+        current = trip.start_date
+        index = 0
+        while current <= trip.end_date:
+            expected_label = f"Day {index + 1}"
+            section = existing.get(current)
+            if section is None:
+                try:
+                    TimelineSection.objects.create(
+                        trip=trip,
+                        section_date=current,
+                        label=expected_label,
+                        is_label_custom=False,
+                        position=0,
+                    )
+                except IntegrityError as exc:
+                    raise TimelineSectionDateConflictError(
+                        "This date already has a timeline day."
+                    ) from exc
+            elif not section.is_label_custom:
+                update_fields = []
                 if section.label != expected_label:
                     section.label = expected_label
                     update_fields.append("label")
-            if update_fields:
-                update_fields.append("updated_at")
-                section.save(update_fields=update_fields)
-        current = current + timedelta(days=1)
-        index += 1
+                if section.position != 0:
+                    section.position = 0
+                    update_fields.append("position")
+                if update_fields:
+                    update_fields.append("updated_at")
+                    section.save(update_fields=update_fields)
+            current = current + timedelta(days=1)
+            index += 1
 
 
 def get_user_trips(user):
@@ -352,7 +373,7 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
 
         trip.save()
         if date_range_changed:
-            sync_system_day_sections(trip)
+            sync_timeline_days(trip)
         if timezone_changed:
             regenerate_unsent_trip_reminders(trip)
     return trip
@@ -750,9 +771,7 @@ def leave_trip(trip_id, actor) -> TripMember:
 
 def _generated_day_label_for(trip: Trip, section_date) -> str | None:
     """Return the generated 'Day N' label expected for this section_date inside the trip range."""
-    if not trip.start_date or not trip.end_date:
-        return None
-    if section_date < trip.start_date or section_date > trip.end_date:
+    if not _is_date_in_trip_range(trip, section_date):
         return None
     delta = (section_date - trip.start_date).days
     return f"Day {delta + 1}"
@@ -776,41 +795,59 @@ def _get_locked_trip(trip_id) -> Trip:
         raise TripNotFoundError("Trip not found.")
 
 
-def _ensure_section_date_available(trip: Trip, section_date, *, exclude_section_id=None) -> None:
-    sections = TimelineSection.objects.filter(trip=trip, section_date=section_date)
-    if exclude_section_id is not None:
-        sections = sections.exclude(pk=exclude_section_id)
-    if sections.exists():
-        raise TimelineSectionDateConflictError("This date already has a timeline day.")
-
-
 # -------- Section mutations --------
 
-def create_special_section(trip_id, *, actor, section_date, label) -> TimelineSection:
-    """Create a SPECIAL_DAY section. Captain only. Positions after existing siblings."""
+def create_timeline_day(trip_id, *, actor, section_date, label) -> tuple[Trip, TimelineSection]:
+    """Create a custom timeline day. Captain only."""
     with transaction.atomic():
         trip = _get_locked_trip(trip_id)
         _ensure_captain_can_mutate(trip, actor)
         _ensure_section_date_available(trip, section_date)
-
-        section = TimelineSection.objects.create(
-            trip=trip,
-            kind=TimelineSectionKind.SPECIAL_DAY,
-            section_date=section_date,
-            label=label,
-            is_label_custom=True,
-            position=0,
-            created_by=actor,
-            updated_by=actor,
-        )
-    return section
+        try:
+            section = TimelineSection.objects.create(
+                trip=trip,
+                section_date=section_date,
+                label=label,
+                is_label_custom=True,
+                position=0,
+                created_by=actor,
+                updated_by=actor,
+            )
+        except IntegrityError as exc:
+            raise TimelineSectionDateConflictError(
+                "This date already has a timeline day."
+            ) from exc
+    return trip, section
 
 
 _UNSET_TIMELINE = object()
 
 
-def patch_section(trip_id, section_id, *, actor, label=_UNSET_TIMELINE, section_date=_UNSET_TIMELINE) -> TimelineSection:
-    """Patch a section. SYSTEM_DAY can only patch label. SPECIAL_DAY can patch label and section_date."""
+def _resolve_section_label_state(
+    trip: Trip,
+    *,
+    section: TimelineSection,
+    final_date,
+    label,
+) -> tuple[str, bool]:
+    final_label = section.label if label is _UNSET_TIMELINE else label
+    generated = _generated_day_label_for(trip, final_date)
+    if generated is None:
+        return final_label, True
+    if label is _UNSET_TIMELINE and not section.is_label_custom:
+        return generated, False
+    return final_label, final_label != generated
+
+
+def patch_section(
+    trip_id,
+    section_id,
+    *,
+    actor,
+    label=_UNSET_TIMELINE,
+    section_date=_UNSET_TIMELINE,
+) -> tuple[Trip, TimelineSection]:
+    """Patch a timeline day date and/or label."""
     with transaction.atomic():
         trip = _get_locked_trip(trip_id)
         _ensure_captain_can_mutate(trip, actor)
@@ -819,41 +856,46 @@ def patch_section(trip_id, section_id, *, actor, label=_UNSET_TIMELINE, section_
         except TimelineSection.DoesNotExist:
             raise TimelineSectionNotFoundError("Section not found.")
 
-        if section.kind == TimelineSectionKind.SYSTEM_DAY:
-            if section_date is not _UNSET_TIMELINE:
-                raise TimelineSystemDayLockError("Cannot change section_date of a SYSTEM_DAY section.")
-            if label is not _UNSET_TIMELINE:
-                generated = _generated_day_label_for(trip, section.section_date)
-                if generated is not None and label == generated:
-                    section.label = label
-                    section.is_label_custom = False
-                else:
-                    section.label = label
-                    section.is_label_custom = True
-                section.updated_by = actor
-                section.save(update_fields=["label", "is_label_custom", "updated_by", "updated_at"])
-        else:
-            update_fields = ["updated_by", "updated_at"]
-            if label is not _UNSET_TIMELINE:
-                section.label = label
-                section.is_label_custom = True
-                update_fields.extend(["label", "is_label_custom"])
-            section_date_changed = section_date is not _UNSET_TIMELINE and section_date != section.section_date
-            if section_date is not _UNSET_TIMELINE:
-                if section_date_changed:
-                    _ensure_section_date_available(
-                        trip,
-                        section_date,
-                        exclude_section_id=section.id,
-                    )
-                section.section_date = section_date
-                section.position = 0
-                update_fields.extend(["section_date", "position"])
-            section.updated_by = actor
-            section.save(update_fields=update_fields)
-            if section_date_changed:
-                regenerate_unsent_section_reminders(section)
-    return section
+        old_date = section.section_date
+        final_date = section.section_date if section_date is _UNSET_TIMELINE else section_date
+        date_changed = final_date != old_date
+        if date_changed:
+            _ensure_section_date_available(
+                trip,
+                final_date,
+                exclude_section_id=section.id,
+            )
+
+        final_label, is_label_custom = _resolve_section_label_state(
+            trip,
+            section=section,
+            final_date=final_date,
+            label=label,
+        )
+        section.section_date = final_date
+        section.label = final_label
+        section.is_label_custom = is_label_custom
+        section.updated_by = actor
+        try:
+            section.save(
+                update_fields=[
+                    "section_date",
+                    "label",
+                    "is_label_custom",
+                    "updated_by",
+                    "updated_at",
+                ]
+            )
+        except IntegrityError as exc:
+            raise TimelineSectionDateConflictError(
+                "This date already has a timeline day."
+            ) from exc
+        if date_changed:
+            regenerate_unsent_section_reminders(section)
+        if _is_date_in_trip_range(trip, old_date) or _is_date_in_trip_range(trip, final_date):
+            sync_timeline_days(trip)
+            section = TimelineSection.objects.get(pk=section.pk, trip=trip)
+    return trip, section
 
 
 def delete_section(trip_id, section_id, *, actor) -> None:
@@ -867,10 +909,13 @@ def delete_section(trip_id, section_id, *, actor) -> None:
             raise TimelineSectionNotFoundError("Section not found.")
         if section.activities.count() > 0:
             raise TimelineSectionNotEmptyError("Cannot delete a section that still contains activities.")
+        should_sync = _is_date_in_trip_range(trip, section.section_date)
         section.delete()
+        if should_sync:
+            sync_timeline_days(trip)
 
 
-def reorder_sections(trip_id, *, actor, section_date, ordered_section_ids) -> list[TimelineSection]:
+def reorder_sections(trip_id, *, actor, section_date, ordered_section_ids) -> tuple[Trip, list[TimelineSection]]:
     """Rewrite sibling positions to 0..n-1. Strict scope: same trip + same section_date, full set."""
     with transaction.atomic():
         trip = _get_locked_trip(trip_id)
@@ -894,7 +939,7 @@ def reorder_sections(trip_id, *, actor, section_date, ordered_section_ids) -> li
             section.updated_by = actor
             section.save(update_fields=["position", "updated_by", "updated_at"])
             new_order.append(section)
-    return new_order
+    return trip, new_order
 
 
 # -------- Activity mutations --------

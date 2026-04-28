@@ -9,7 +9,6 @@ from test_helpers import create_completed_user
 from trips.models import (
     TimelineCustomType,
     TimelineSection,
-    TimelineSectionKind,
 )
 from trips.tests.timeline_helpers import (
     make_timeline_activity,
@@ -144,9 +143,7 @@ class TimelineCustomTypeTests(APITestCase):
         self.assertFalse(TimelineCustomType.objects.filter(pk=ct.id).exists())
 
     def test_delete_in_use_custom_type_409(self):
-        section = TimelineSection.objects.filter(
-            trip=self.trip, kind=TimelineSectionKind.SYSTEM_DAY
-        ).first()
+        section = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
         ct = TimelineCustomType.objects.create(
             trip=self.trip, name="Coffee", normalized_name="coffee"
         )

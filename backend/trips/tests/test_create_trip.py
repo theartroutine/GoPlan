@@ -152,8 +152,8 @@ class CreateTripTests(APITestCase):
         self.assertEqual(len(sections), 3)
         self.assertEqual([s.label for s in sections], ["Day 1", "Day 2", "Day 3"])
         for section in sections:
-            self.assertEqual(section.kind, "SYSTEM_DAY")
             self.assertFalse(section.is_label_custom)
+            self.assertEqual(section.position, 0)
 
     def test_create_trip_without_destination_provider_fields_still_201(self):
         """Backward compatibility: creating without structured destination fields must still work."""

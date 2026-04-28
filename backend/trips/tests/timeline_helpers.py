@@ -11,13 +11,12 @@ from trips.models import (
     TimelineActivityTimeMode,
     TimelineLocationMode,
     TimelineSection,
-    TimelineSectionKind,
     Trip,
     TripMember,
     TripRole,
     TripStatus,
 )
-from trips.services import sync_system_day_sections
+from trips.services import sync_timeline_days
 
 
 def make_trip_with_timeline(
@@ -31,7 +30,7 @@ def make_trip_with_timeline(
     status: str = TripStatus.PLANNING,
     members: Optional[list] = None,
 ) -> Trip:
-    """Create a trip + captain membership and seed SYSTEM_DAY sections via the service."""
+    """Create a trip + captain membership and seed timeline days via the service."""
     trip = Trip.objects.create(
         name=name,
         destination=destination,
@@ -44,14 +43,13 @@ def make_trip_with_timeline(
     TripMember.objects.create(trip=trip, user=captain, role=TripRole.CAPTAIN, status=MemberStatus.ACTIVE)
     for member in members or []:
         TripMember.objects.create(trip=trip, user=member, role=TripRole.MEMBER, status=MemberStatus.ACTIVE)
-    sync_system_day_sections(trip)
+    sync_timeline_days(trip)
     return trip
 
 
 def make_timeline_section(
     *,
     trip: Trip,
-    kind: str = TimelineSectionKind.SPECIAL_DAY,
     section_date: Optional[date] = None,
     label: str = "Day 0",
     is_label_custom: bool = True,
@@ -59,7 +57,6 @@ def make_timeline_section(
 ) -> TimelineSection:
     return TimelineSection.objects.create(
         trip=trip,
-        kind=kind,
         section_date=section_date or trip.start_date - timedelta(days=1),
         label=label,
         is_label_custom=is_label_custom,
