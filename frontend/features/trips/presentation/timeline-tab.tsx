@@ -36,6 +36,8 @@ import { TimelineActivityNode } from "@/features/trips/presentation/timeline-act
 import { TimelineCustomTypesModal } from "@/features/trips/presentation/timeline-custom-types-modal";
 import { TimelineSectionModal } from "@/features/trips/presentation/timeline-section-modal";
 import {
+  findNowDividerIndex,
+  getActiveActivityIds,
   getDefaultFocusedSectionId,
   getNowMarkerPlacement,
   groupActivitiesForDay,
@@ -395,6 +397,12 @@ export function TimelineTab() {
     setFocusedSectionId(resolvedFocusedSectionId);
     setOpenSectionIds(nextOpenSectionIds);
   }, [data, hasOpenSectionsQuery, queryOpenSectionIds, resolvedFocusedSectionId, searchParamString]);
+
+  const now = useNow(data?.trip_timezone ?? "UTC");
+  const nowDividerIndex = useMemo(
+    () => (data ? findNowDividerIndex(data.sections, now.date) : null),
+    [data, now.date],
+  );
 
   if (loading && !data) return <TimelineSkeleton />;
   if (error) return <p className="text-sm text-destructive">{error}</p>;
@@ -775,81 +783,84 @@ export function TimelineTab() {
       {!hasAnyActivity && <TimelineEmptyState canEdit={canEdit} />}
 
       <div className="space-y-4">
-        {timelineData.sections.map((section) => {
+        {timelineData.sections.map((section, index) => {
           const isFocused = effectiveFocusedSectionId === section.id;
           const isOpen = openSectionIds.has(section.id);
           const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
 
           return (
-            <section key={section.id} className="relative pl-7">
-              <div className="absolute bottom-[-1rem] left-[7px] top-5 w-px bg-border" />
-              <span
-                className={`absolute left-0 top-1 size-4 rounded-full border-2 bg-background ${
-                  isFocused ? "border-primary" : "border-border"
-                }`}
-              />
-              <div className="space-y-3">
-                <header className="flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    className="flex min-w-0 items-center gap-2 text-left"
-                    aria-expanded={isOpen}
-                    onClick={() => toggleSection(section.id, isOpen)}
-                  >
-                    {isOpen ? (
-                      <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                    )}
-                    <span className="truncate text-sm font-semibold">{section.label}</span>
-                    {isFocused && (
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase text-primary">
-                        Focused
+            <Fragment key={section.id}>
+              <section className="relative pl-7">
+                <div className="absolute bottom-[-1rem] left-[7px] top-5 w-px bg-border" />
+                <span
+                  className={`absolute left-0 top-1 size-4 rounded-full border-2 bg-background ${
+                    isFocused ? "border-primary" : "border-border"
+                  }`}
+                />
+                <div className="space-y-3">
+                  <header className="flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      className="flex min-w-0 items-center gap-2 text-left"
+                      aria-expanded={isOpen}
+                      onClick={() => toggleSection(section.id, isOpen)}
+                    >
+                      {isOpen ? (
+                        <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate text-sm font-semibold">{section.label}</span>
+                      {isFocused && (
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase text-primary">
+                          Focused
+                        </span>
+                      )}
+                    </button>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <CalendarDays className="size-3" />
+                        {section.section_date}
                       </span>
-                    )}
-                  </button>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      <CalendarDays className="size-3" />
-                      {section.section_date}
-                    </span>
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-                      {datePosition}
-                    </span>
-                    {canEdit && (
-                      <>
-                        <IconButton
-                          label={`Edit ${section.label}`}
-                          onClick={() => openSectionModal({ kind: "edit", section })}
-                        >
-                          <Pencil className="size-3" />
-                        </IconButton>
-                        {canDeleteDay(section) && (
+                      <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                        {datePosition}
+                      </span>
+                      {canEdit && (
+                        <>
                           <IconButton
-                            label={`Delete ${section.label}`}
-                            variant="destructive"
-                            onClick={() => setDeleteDialog({ kind: "section", section })}
+                            label={`Edit ${section.label}`}
+                            onClick={() => openSectionModal({ kind: "edit", section })}
                           >
-                            <Trash2 className="size-3" />
+                            <Pencil className="size-3" />
                           </IconButton>
-                        )}
-                        <Button
-                          type="button"
-                          size="xs"
-                          onClick={() => openActivityModal({ kind: "create", sectionId: section.id })}
-                        >
-                          <Plus className="size-3" />
-                          Add activity
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </header>
+                          {canDeleteDay(section) && (
+                            <IconButton
+                              label={`Delete ${section.label}`}
+                              variant="destructive"
+                              onClick={() => setDeleteDialog({ kind: "section", section })}
+                            >
+                              <Trash2 className="size-3" />
+                            </IconButton>
+                          )}
+                          <Button
+                            type="button"
+                            size="xs"
+                            onClick={() => openActivityModal({ kind: "create", sectionId: section.id })}
+                          >
+                            <Plus className="size-3" />
+                            Add activity
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </header>
 
-                {isOpen ? renderSectionContent(section) : renderCollapsedSummary(section)}
-              </div>
-            </section>
+                  {isOpen ? renderSectionContent(section) : renderCollapsedSummary(section)}
+                </div>
+              </section>
+              {index === nowDividerIndex && <NowDivider displayTime={now.displayTime} />}
+            </Fragment>
           );
         })}
       </div>
