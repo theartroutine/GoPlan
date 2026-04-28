@@ -64,7 +64,7 @@ describe("TimelineTab", () => {
     expect(screen.getByTestId("timeline-skeleton")).not.toBeNull();
   });
 
-  it("renders the captain empty state when there are no activities", async () => {
+  it("shows the captain empty state only when there are no sections", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -72,43 +72,456 @@ describe("TimelineTab", () => {
           can_manage_custom_types: true,
           can_create_sections: true,
         },
-        sections: [buildTimelineSection({ activities: [] })],
+        sections: [],
       }),
     );
+
     render(<TimelineTab />);
+
     expect(await screen.findByText("Start building your timeline")).not.toBeNull();
   });
 
-  it("renders the member empty state when read-only", async () => {
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({ sections: [buildTimelineSection({ activities: [] })] }),
-    );
+  it("shows the member empty state only when there are no sections", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(buildTimelineResponse({ sections: [] }));
+
     render(<TimelineTab />);
+
     expect(await screen.findByText("Timeline is not ready yet")).not.toBeNull();
   });
 
-  it("renders sections and activities when timeline has content", async () => {
+  it("renders overview day summaries without full activity cards and links to open the day", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         sections: [
           buildTimelineSection({
+            id: "day-1",
             label: "Day 1",
-            activities: [buildTimelineActivity({ title: "Bus to Da Lat" })],
+            activities: [
+              buildTimelineActivity({
+                id: "bus",
+                title: "Bus to Da Lat",
+                note: "Bring printed tickets",
+                capabilities: { can_edit: true, can_delete: true, can_update_status: true },
+              }),
+            ],
           }),
         ],
       }),
     );
+
     render(<TimelineTab />);
+
+    expect(await screen.findByText("Day 1")).not.toBeNull();
+    expect(screen.getByText("1 scheduled")).not.toBeNull();
+    expect(screen.queryByText("Bring printed tickets")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Change status" })).toBeNull();
+    expect(screen.queryByText("Add activity")).toBeNull();
+
+    const openDayLink = screen.getByRole("link", { name: "Open day" });
+    expect(openDayLink.getAttribute("href")).toBe("/trips/trip-1/timeline?day=day-1");
+  });
+
+  it("hides Add activity in overview even when the timeline is editable", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "day-1",
+            activities: [buildTimelineActivity({ title: "Breakfast" })],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByText("Day 1")).not.toBeNull();
+    expect(screen.queryByText("Add activity")).toBeNull();
+  });
+
+  it("renders overview day rows with No activities when sections exist but contain no activities", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "empty-day",
+            label: "Preparation",
+            activities: [],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByText("Preparation")).not.toBeNull();
+    expect(screen.getByText("No activities")).not.toBeNull();
+    expect(screen.queryByText("Start building your timeline")).toBeNull();
+  });
+
+  it("shows permitted day edit and delete actions in overview", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "empty-day",
+            label: "Preparation",
+            section_date: "2026-05-31",
+            is_in_trip_range: false,
+            activities: [],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByRole("button", { name: "Edit Preparation" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Delete Preparation" })).not.toBeNull();
+  });
+
+  it("hides overview day delete when a day still has activities", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "day-1",
+            label: "Day 1",
+            activities: [buildTimelineActivity({ title: "Breakfast" })],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByRole("button", { name: "Edit Day 1" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete Day 1" })).toBeNull();
+  });
+
+  it("renders the overview-level now divider with the day label", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-01T03:30:00.000Z") });
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        trip_timezone: "Asia/Ho_Chi_Minh",
+        sections: [
+          buildTimelineSection({
+            id: "today",
+            label: "Day 1",
+            section_date: "2026-06-01",
+            activities: [buildTimelineActivity({ title: "Breakfast" })],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Now · Day 1 · 10:30")).not.toBeNull();
+  });
+
+  it("renders day detail when the day query references a valid section", async () => {
+    mockUseSearchParams("day=day-1");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [
+          buildTimelineSection({
+            id: "day-1",
+            label: "Day 1",
+            activities: [buildTimelineActivity({ title: "Bus to Da Lat", note: "Bring printed tickets" })],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByText("Bus to Da Lat")).not.toBeNull();
+    expect(screen.getByText("Bring printed tickets")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Back to timeline" })).not.toBeNull();
+  });
+
+  it("renders previous and next day navigation links in day detail", async () => {
+    mockUseSearchParams("day=middle&filter=mine");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [
+          buildTimelineSection({ id: "previous", label: "Day 0", section_date: "2026-05-31" }),
+          buildTimelineSection({ id: "middle", label: "Day 1", section_date: "2026-06-01" }),
+          buildTimelineSection({ id: "next", label: "Day 2", section_date: "2026-06-02" }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    const previousLink = await screen.findByRole("link", { name: "Previous day" });
+    const nextLink = screen.getByRole("link", { name: "Next day" });
+
+    expect(previousLink.getAttribute("href")).toBe(
+      "/trips/trip-1/timeline?day=previous&filter=mine",
+    );
+    expect(nextLink.getAttribute("href")).toBe(
+      "/trips/trip-1/timeline?day=next&filter=mine",
+    );
+  });
+
+  it("normalizes a legacy section query to day via router.replace", async () => {
+    mockUseSearchParams("section=day-1&openSections=day-1&filter=mine");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [buildTimelineSection({ id: "day-1", label: "Day 1" })],
+      }),
+    );
+
+    render(<TimelineTab />);
+
     await waitFor(() => {
-      expect(screen.getByText("Day 1")).not.toBeNull();
-      expect(screen.getByText("Bus to Da Lat")).not.toBeNull();
+      expect(navigationMock.replace).toHaveBeenCalledWith(
+        "/trips/trip-1/timeline?filter=mine&day=day-1",
+        { scroll: false },
+      );
     });
   });
 
-  it("shows an error message when the fetch fails", async () => {
-    tripsApiMock.bffGetTimeline.mockRejectedValueOnce(new Error("boom"));
+  it("falls back to overview and replaces the URL when day query is invalid", async () => {
+    mockUseSearchParams("day=missing&filter=mine&openSections=day-1");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [
+          buildTimelineSection({
+            id: "day-1",
+            label: "Day 1",
+            activities: [buildTimelineActivity({ title: "Breakfast" })],
+          }),
+        ],
+      }),
+    );
+
     render(<TimelineTab />);
-    expect(await screen.findByText("Failed to load timeline.")).not.toBeNull();
+
+    expect(await screen.findByText("Day 1")).not.toBeNull();
+    expect(screen.queryByText("Breakfast")).toBeNull();
+    expect(navigationMock.replace).toHaveBeenCalledWith(
+      "/trips/trip-1/timeline?filter=mine",
+      { scroll: false },
+    );
+  });
+
+  it("renders all day detail activities without Show N more", async () => {
+    mockUseSearchParams("day=day-1");
+    const activities = Array.from({ length: 7 }, (_, index) =>
+      buildTimelineActivity({
+        id: `activity-${index + 1}`,
+        title: `Activity ${index + 1}`,
+        start_time: `${String(8 + index).padStart(2, "0")}:00:00`,
+        position: index,
+      }),
+    );
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [buildTimelineSection({ id: "day-1", activities })],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByText("Activity 7")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Show \d+ more/ })).toBeNull();
+  });
+
+  it("shows activity-level Now in today's day detail without the overview divider label", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-01T03:30:00.000Z") });
+    mockUseSearchParams("day=today");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        trip_timezone: "Asia/Ho_Chi_Minh",
+        sections: [
+          buildTimelineSection({
+            id: "today",
+            label: "Day 1",
+            section_date: "2026-06-01",
+            activities: [
+              buildTimelineActivity({
+                id: "breakfast",
+                title: "Breakfast",
+                time_mode: "AT_TIME",
+                start_time: "08:00:00",
+                position: 0,
+              }),
+              buildTimelineActivity({
+                id: "museum",
+                title: "Museum",
+                time_mode: "TIME_RANGE",
+                start_time: "10:00:00",
+                end_time: "12:00:00",
+                position: 1,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Now · 10:30")).not.toBeNull();
+    expect(screen.queryByText("Now · Day 1 · 10:30")).toBeNull();
+    expect(screen.getByText("Museum").closest("[data-current='true']")).toBeTruthy();
+  });
+
+  it("preserves unrelated query params when linking back to timeline", async () => {
+    mockUseSearchParams("day=day-1&filter=mine");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [buildTimelineSection({ id: "day-1", activities: [buildTimelineActivity()] })],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    const backLink = await screen.findByRole("link", { name: "Back to timeline" });
+    expect(backLink.getAttribute("href")).toBe("/trips/trip-1/timeline?filter=mine");
+  });
+
+  it("opens the existing Add Activity modal from day detail", async () => {
+    mockUseSearchParams("day=day-1");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [buildTimelineSection({ id: "day-1", label: "Day 1" })],
+      }),
+    );
+
+    render(<TimelineTab />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add activity" }));
+
+    expect(screen.getByRole("heading", { name: "Add Activity" })).not.toBeNull();
+  });
+
+  it("opens the existing Edit Activity modal from day detail with initial values", async () => {
+    mockUseSearchParams("day=day-1");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "day-1",
+            label: "Day 1",
+            activities: [
+              buildTimelineActivity({
+                id: "activity-1",
+                title: "Breakfast at market",
+                capabilities: { can_edit: true, can_delete: false, can_update_status: false },
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Breakfast at market" }));
+
+    expect(screen.getByRole("heading", { name: "Edit Activity" })).not.toBeNull();
+    expect(screen.getByLabelText("Title *")).toHaveProperty("value", "Breakfast at market");
+  });
+
+  it("opens the activity delete dialog from day detail", async () => {
+    mockUseSearchParams("day=day-1");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "day-1",
+            label: "Day 1",
+            activities: [
+              buildTimelineActivity({
+                id: "activity-1",
+                title: "Breakfast",
+                capabilities: { can_edit: true, can_delete: true, can_update_status: true },
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Breakfast" }));
+
+    expect(await screen.findByText("Delete activity?")).not.toBeNull();
+    expect(screen.getByText('This will permanently delete "Breakfast".')).not.toBeNull();
+  });
+
+  it("shows permitted day edit and delete actions in day detail", async () => {
+    mockUseSearchParams("day=empty-day");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "empty-day",
+            label: "Preparation",
+            section_date: "2026-05-31",
+            is_in_trip_range: false,
+            activities: [],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByRole("button", { name: "Edit Preparation" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Delete Preparation" })).not.toBeNull();
   });
 
   it("opens the day form with the shared date picker entry point", async () => {
@@ -160,63 +573,8 @@ describe("TimelineTab", () => {
     expect(usedDateButton?.disabled).toBe(true);
   });
 
-  it("allows deleting an empty extra day", async () => {
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        permissions: {
-          can_edit_timeline: true,
-          can_manage_custom_types: true,
-          can_create_sections: true,
-        },
-        sections: [
-          buildTimelineSection({
-            id: "empty-day",
-            label: "Preparation",
-            section_date: "2026-05-31",
-            is_in_trip_range: false,
-            activities: [],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Preparation" }));
-
-    expect(screen.getByText("Delete day?")).not.toBeNull();
-    expect(screen.getByText('This will permanently delete "Preparation".')).not.toBeNull();
-  });
-
-  it("allows deleting an empty in-range day", async () => {
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        permissions: {
-          can_edit_timeline: true,
-          can_manage_custom_types: true,
-          can_create_sections: true,
-        },
-        sections: [
-          buildTimelineSection({
-            id: "required-day",
-            label: "Day 2",
-            section_date: "2026-06-02",
-            is_in_trip_range: true,
-            activities: [],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Day 2" }));
-
-    expect(screen.getByText("Delete day?")).not.toBeNull();
-    expect(screen.getByText('This will permanently delete "Day 2".')).not.toBeNull();
-  });
-
   it("shows the date field when editing an in-range day", async () => {
+    mockUseSearchParams("day=in-range-day");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -300,7 +658,7 @@ describe("TimelineTab", () => {
   });
 
   it("uses section id query state when same-date sections exist", async () => {
-    mockUseSearchParams("section=extra-1");
+    mockUseSearchParams("day=extra-1");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         sections: [
@@ -330,206 +688,8 @@ describe("TimelineTab", () => {
     expect(screen.queryByText("Trip day activity")).toBeNull();
   });
 
-  it("persists additional open sections in the URL", async () => {
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        sections: [
-          buildTimelineSection({
-            id: "section-1",
-            label: "Day 1",
-            section_date: "2026-06-01",
-            activities: [buildTimelineActivity({ title: "Breakfast" })],
-          }),
-          buildTimelineSection({
-            id: "section-2",
-            label: "Day 2",
-            section_date: "2026-06-02",
-            position: 1,
-            activities: [buildTimelineActivity({ title: "Lunch" })],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    fireEvent.click(await screen.findByRole("button", { name: /Day 2/i }));
-
-    expect(navigationMock.replace).toHaveBeenCalledWith(
-      "/trips/trip-1/timeline?section=section-2&openSections=section-1%2Csection-2",
-      { scroll: false },
-    );
-  });
-
-  it("allows the focused section to collapse", async () => {
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        sections: [
-          buildTimelineSection({
-            id: "section-1",
-            label: "Day 1",
-            activities: [buildTimelineActivity({ title: "Breakfast" })],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    expect(await screen.findByText("Breakfast")).not.toBeNull();
-    const dayButton = screen.getByRole("button", { name: /Day 1/i });
-    expect(dayButton.getAttribute("aria-expanded")).toBe("true");
-
-    fireEvent.click(dayButton);
-
-    expect(dayButton.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByRole("heading", { name: "Timeline" })).toBeNull();
-    expect(screen.getByText("1 scheduled")).not.toBeNull();
-    expect(navigationMock.replace).toHaveBeenLastCalledWith(
-      "/trips/trip-1/timeline?section=section-1&openSections=",
-      { scroll: false },
-    );
-  });
-
-  it("does not reopen a collapsed focused section when another section is opened", async () => {
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        sections: [
-          buildTimelineSection({
-            id: "section-1",
-            label: "Day 1",
-            section_date: "2026-06-01",
-            activities: [buildTimelineActivity({ id: "breakfast", title: "Breakfast" })],
-          }),
-          buildTimelineSection({
-            id: "section-2",
-            label: "Day 2",
-            section_date: "2026-06-02",
-            activities: [buildTimelineActivity({ id: "lunch", title: "Lunch" })],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    expect(await screen.findByText("Breakfast")).not.toBeNull();
-    const day1Button = screen.getByRole("button", { name: /Day 1/i });
-    const day2Button = screen.getByRole("button", { name: /Day 2/i });
-
-    fireEvent.click(day1Button);
-    fireEvent.click(day2Button);
-
-    expect(day1Button.getAttribute("aria-expanded")).toBe("false");
-    expect(day2Button.getAttribute("aria-expanded")).toBe("true");
-  });
-
-  it("does not revive a closed day through URL sync when closing another day", async () => {
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        sections: [
-          buildTimelineSection({
-            id: "section-1",
-            label: "Day 1",
-            section_date: "2026-06-01",
-            activities: [buildTimelineActivity({ id: "breakfast", title: "Breakfast" })],
-          }),
-          buildTimelineSection({
-            id: "section-2",
-            label: "Day 2",
-            section_date: "2026-06-02",
-            activities: [buildTimelineActivity({ id: "lunch", title: "Lunch" })],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    expect(await screen.findByText("Breakfast")).not.toBeNull();
-    const day1Button = screen.getByRole("button", { name: /Day 1/i });
-    const day2Button = screen.getByRole("button", { name: /Day 2/i });
-
-    fireEvent.click(day2Button);
-    fireEvent.click(day1Button);
-    fireEvent.click(day2Button);
-
-    expect(day1Button.getAttribute("aria-expanded")).toBe("false");
-    expect(day2Button.getAttribute("aria-expanded")).toBe("false");
-    expect(navigationMock.replace).toHaveBeenLastCalledWith(
-      "/trips/trip-1/timeline?section=section-2&openSections=",
-      { scroll: false },
-    );
-  });
-
-  it("keeps a re-closed focused day closed after another open day is closed", async () => {
-    mockUseSearchParams("section=section-2");
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        sections: [
-          buildTimelineSection({
-            id: "section-1",
-            label: "Day 0",
-            section_date: "2026-05-31",
-            activities: [buildTimelineActivity({ id: "prep", title: "Pack bags" })],
-          }),
-          buildTimelineSection({
-            id: "section-2",
-            label: "Day 1",
-            section_date: "2026-06-01",
-            activities: [buildTimelineActivity({ id: "arrival", title: "Arrival" })],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    expect(await screen.findByText("Arrival")).not.toBeNull();
-    const day0Button = screen.getByRole("button", { name: /Day 0/i });
-    const day1Button = screen.getByRole("button", { name: /Day 1/i });
-
-    fireEvent.click(day0Button);
-    expect(day0Button.getAttribute("aria-expanded")).toBe("true");
-    expect(day1Button.getAttribute("aria-expanded")).toBe("true");
-
-    fireEvent.click(day0Button);
-    expect(day0Button.getAttribute("aria-expanded")).toBe("false");
-    expect(day1Button.getAttribute("aria-expanded")).toBe("true");
-
-    fireEvent.click(day1Button);
-    expect(day0Button.getAttribute("aria-expanded")).toBe("false");
-    expect(day1Button.getAttribute("aria-expanded")).toBe("false");
-    expect(navigationMock.replace).toHaveBeenLastCalledWith(
-      "/trips/trip-1/timeline?section=section-1&openSections=",
-      { scroll: false },
-    );
-  });
-
-  it("keeps a focused section closed when openSections is explicitly empty", async () => {
-    mockUseSearchParams("section=section-1&openSections=");
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        sections: [
-          buildTimelineSection({
-            id: "section-1",
-            label: "Day 1",
-            activities: [buildTimelineActivity({ title: "Breakfast" })],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    const dayButton = await screen.findByRole("button", { name: /Day 1/i });
-
-    expect(dayButton.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Breakfast")).toBeNull();
-    expect(screen.getByText("1 scheduled")).not.toBeNull();
-  });
-
-  it("groups expanded day activities by all-day timeline and flexible", async () => {
+  it("groups day detail activities by all-day timeline and flexible", async () => {
+    mockUseSearchParams("day=sec-1");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         sections: [
@@ -556,6 +716,7 @@ describe("TimelineTab", () => {
   });
 
   it("does not render a map action for manual locations even if stale open_url data exists", async () => {
+    mockUseSearchParams("day=sec-1");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         sections: [
@@ -585,212 +746,63 @@ describe("TimelineTab", () => {
     expect(screen.queryByRole("button", { name: "Open map" })).toBeNull();
   });
 
-  it("renders a now marker in the focused current day timeline", async () => {
-    vi.useFakeTimers({ now: new Date("2026-06-01T03:30:00.000Z") });
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        trip_timezone: "Asia/Ho_Chi_Minh",
-        sections: [
-          buildTimelineSection({
-            id: "today",
-            section_date: "2026-06-01",
-            activities: [
-              buildTimelineActivity({
-                id: "breakfast",
-                title: "Breakfast",
-                time_mode: "AT_TIME",
-                start_time: "08:00:00",
-                position: 0,
-              }),
-              buildTimelineActivity({
-                id: "museum",
-                title: "Museum",
-                time_mode: "TIME_RANGE",
-                start_time: "10:00:00",
-                end_time: "12:00:00",
-                position: 1,
-              }),
-            ],
-          }),
-        ],
-      }),
-    );
+  it("updates activity status from day detail", async () => {
+    mockUseSearchParams("day=sec-1");
+    tripsApiMock.bffUpdateTimelineActivityStatus.mockResolvedValueOnce(undefined);
+    tripsApiMock.bffGetTimeline
+      .mockResolvedValueOnce(
+        buildTimelineResponse({
+          sections: [
+            buildTimelineSection({
+              id: "sec-1",
+              activities: [
+                buildTimelineActivity({
+                  id: "activity-1",
+                  title: "Breakfast",
+                  capabilities: { can_edit: true, can_delete: true, can_update_status: true },
+                }),
+              ],
+            }),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildTimelineResponse({
+          sections: [
+            buildTimelineSection({
+              id: "sec-1",
+              activities: [
+                buildTimelineActivity({
+                  id: "activity-1",
+                  title: "Breakfast",
+                  status: "IN_PROGRESS",
+                  capabilities: { can_edit: true, can_delete: true, can_update_status: true },
+                }),
+              ],
+            }),
+          ],
+        }),
+      );
 
     render(<TimelineTab />);
 
-    await act(async () => {
-      await Promise.resolve();
+    fireEvent.keyDown(await screen.findByRole("button", { name: "Change status" }), {
+      key: "Enter",
+      code: "Enter",
     });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Start activity" }));
 
-    expect(screen.getAllByText(/^Now/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Museum").closest("[data-current='true']")).toBeTruthy();
-  });
-
-  it("keeps the now marker visible when the current activity is beyond the collapsed limit", async () => {
-    vi.useFakeTimers({ now: new Date("2026-06-01T06:30:00.000Z") });
-    const activities = Array.from({ length: 7 }, (_, index) => {
-      const startHour = String(8 + index).padStart(2, "0");
-      const endHour = String(9 + index).padStart(2, "0");
-      return buildTimelineActivity({
-        id: `activity-${index + 1}`,
-        title: `Activity ${index + 1}`,
-        time_mode: "TIME_RANGE",
-        start_time: `${startHour}:00:00`,
-        end_time: `${endHour}:00:00`,
-        position: index,
-      });
+    await waitFor(() => {
+      expect(tripsApiMock.bffUpdateTimelineActivityStatus).toHaveBeenCalledWith(
+        "trip-1",
+        "activity-1",
+        { status: "IN_PROGRESS" },
+      );
     });
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        trip_timezone: "Asia/Ho_Chi_Minh",
-        sections: [
-          buildTimelineSection({
-            id: "today",
-            section_date: "2026-06-01",
-            activities,
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(screen.getAllByText(/^Now/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Activity 6").closest("[data-current='true']")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show 1 more" })).not.toBeNull();
-  });
-
-  it("keeps every overlapping current activity visible in a collapsed timeline group", async () => {
-    vi.useFakeTimers({ now: new Date("2026-06-01T06:30:00.000Z") });
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        trip_timezone: "Asia/Ho_Chi_Minh",
-        sections: [
-          buildTimelineSection({
-            id: "today",
-            section_date: "2026-06-01",
-            activities: [
-              buildTimelineActivity({
-                id: "activity-1",
-                title: "Activity 1",
-                time_mode: "TIME_RANGE",
-                start_time: "08:00:00",
-                end_time: "09:00:00",
-                position: 0,
-              }),
-              buildTimelineActivity({
-                id: "activity-2",
-                title: "Activity 2",
-                time_mode: "TIME_RANGE",
-                start_time: "09:00:00",
-                end_time: "10:00:00",
-                position: 1,
-              }),
-              buildTimelineActivity({
-                id: "activity-3",
-                title: "Activity 3",
-                time_mode: "TIME_RANGE",
-                start_time: "10:00:00",
-                end_time: "11:00:00",
-                position: 2,
-              }),
-              buildTimelineActivity({
-                id: "long-workshop",
-                title: "Long workshop",
-                time_mode: "TIME_RANGE",
-                start_time: "11:00:00",
-                end_time: "14:00:00",
-                position: 3,
-              }),
-              buildTimelineActivity({
-                id: "activity-5",
-                title: "Activity 5",
-                time_mode: "TIME_RANGE",
-                start_time: "12:00:00",
-                end_time: "13:00:00",
-                position: 4,
-              }),
-              buildTimelineActivity({
-                id: "overlap-workshop",
-                title: "Overlap workshop",
-                time_mode: "TIME_RANGE",
-                start_time: "13:00:00",
-                end_time: "15:00:00",
-                position: 5,
-              }),
-              buildTimelineActivity({
-                id: "activity-7",
-                title: "Activity 7",
-                time_mode: "TIME_RANGE",
-                start_time: "16:00:00",
-                end_time: "17:00:00",
-                position: 6,
-              }),
-            ],
-          }),
-        ],
-      }),
-    );
-
-    render(<TimelineTab />);
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(screen.getByText("Long workshop").closest("[data-current='true']")).toBeTruthy();
-    expect(screen.getByText("Overlap workshop").closest("[data-current='true']")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show 1 more" })).not.toBeNull();
-  });
-
-  it("keeps marker placement aligned with the displayed clock during unrelated re-renders", async () => {
-    vi.useFakeTimers({ now: new Date("2026-06-01T04:59:30.000Z") });
-    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
-      buildTimelineResponse({
-        trip_timezone: "Asia/Ho_Chi_Minh",
-        sections: [
-          buildTimelineSection({
-            id: "today",
-            section_date: "2026-06-01",
-            activities: [
-              buildTimelineActivity({
-                id: "museum",
-                title: "Museum",
-                time_mode: "TIME_RANGE",
-                start_time: "11:00:00",
-                end_time: "12:00:00",
-                position: 0,
-              }),
-            ],
-          }),
-        ],
-      }),
-    );
-
-    const { container } = render(<TimelineTab />);
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    vi.setSystemTime(new Date("2026-06-01T05:00:01.000Z"));
-    fireEvent.click(screen.getByRole("button", { name: /Day 1/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Day 1/i }));
-
-    const timelineItems = Array.from(container.querySelectorAll("ol li")).map(
-      (item) => item.textContent ?? "",
-    );
-
-    expect(timelineItems[0]).toMatch(/^Now · 11:59/);
-    expect(timelineItems[1]).toContain("Museum");
-    expect(screen.getByText("Museum").closest("[data-current='true']")).toBeTruthy();
   });
 
   it("hides extra day delete while the section still has activities", async () => {
+    mockUseSearchParams("day=extra-1");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -817,6 +829,7 @@ describe("TimelineTab", () => {
   });
 
   it("confirms deleting an empty extra day without promising activity deletion", async () => {
+    mockUseSearchParams("day=extra-1");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {

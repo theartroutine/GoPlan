@@ -2,14 +2,15 @@
 
 import axios from "axios";
 import {
+  ArrowLeft,
   CalendarDays,
-  ChevronDown,
   ChevronRight,
   Pencil,
   Plus,
   Settings,
   Trash2,
 } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -38,11 +39,14 @@ import { TimelineSectionModal } from "@/features/trips/presentation/timeline-sec
 import {
   findNowDividerIndex,
   getActiveActivityIds,
-  getDefaultFocusedSectionId,
   getNowMarkerPlacement,
   groupActivitiesForDay,
-  limitActivityGroup,
 } from "@/features/trips/presentation/timeline-view-model";
+import {
+  buildDayHref,
+  buildOverviewHref,
+  resolveTimelineUrlState,
+} from "@/features/trips/presentation/timeline-url-state";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import {
   AlertDialog,
@@ -104,7 +108,7 @@ function TimelineEmptyState({ canEdit }: { canEdit: boolean }) {
       <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
         <h3 className="text-sm font-semibold">Start building your timeline</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Add Day 0 or your first activity to turn this trip into an actionable plan.
+          Add the first day to turn this trip into an actionable plan.
         </p>
       </div>
     );
@@ -113,7 +117,7 @@ function TimelineEmptyState({ canEdit }: { canEdit: boolean }) {
     <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
       <h3 className="text-sm font-semibold">Timeline is not ready yet</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        The captain has not added any activities yet.
+        The captain has not added any timeline days yet.
       </p>
     </div>
   );
@@ -171,17 +175,6 @@ function canDeleteDay(section: TimelineSection): boolean {
   return section.activities.length === 0;
 }
 
-function parseOpenSectionIds(value: string | null, sectionIds: Set<string>): Set<string> {
-  if (!value) return new Set();
-
-  return new Set(
-    value
-      .split(",")
-      .map((id) => id.trim())
-      .filter((id) => sectionIds.has(id)),
-  );
-}
-
 function isNowMarkerBefore(activity: TimelineActivity, placement: NowMarkerPlacement): boolean {
   return (
     (placement.kind === "before" && placement.activityId === activity.id) ||
@@ -194,55 +187,6 @@ function isNowMarkerAfter(activity: TimelineActivity, placement: NowMarkerPlacem
     (placement.kind === "between" && placement.previousActivityId === activity.id) ||
     (placement.kind === "after" && placement.activityId === activity.id)
   );
-}
-
-function getNowMarkerAnchorIndex(
-  activities: TimelineActivity[],
-  placement: NowMarkerPlacement,
-): number | null {
-  const anchorId =
-    placement.kind === "before" || placement.kind === "inside" || placement.kind === "after"
-      ? placement.activityId
-      : placement.kind === "between"
-        ? placement.previousActivityId
-        : null;
-
-  if (anchorId === null) return null;
-
-  const index = activities.findIndex((activity) => activity.id === anchorId);
-  return index >= 0 ? index : null;
-}
-
-function getLastActiveActivityIndex(
-  activities: TimelineActivity[],
-  activeIds: ReadonlySet<string>,
-): number | null {
-  let lastIndex: number | null = null;
-
-  for (let index = 0; index < activities.length; index += 1) {
-    if (activeIds.has(activities[index].id)) {
-      lastIndex = index;
-    }
-  }
-
-  return lastIndex;
-}
-
-function limitActivityGroupWithNowMarker(
-  activities: TimelineActivity[],
-  expanded: boolean,
-  placement: NowMarkerPlacement,
-  activeIds: ReadonlySet<string> = EMPTY_ACTIVE_IDS,
-  initialLimit = 5,
-): { visible: TimelineActivity[]; hiddenCount: number } {
-  const anchorIndex = getNowMarkerAnchorIndex(activities, placement);
-  const markerVisibleLimit =
-    anchorIndex === null ? initialLimit : Math.max(initialLimit, anchorIndex + 1);
-  const activeIndex = getLastActiveActivityIndex(activities, activeIds);
-  const visibleLimit =
-    activeIndex === null ? markerVisibleLimit : Math.max(markerVisibleLimit, activeIndex + 1);
-
-  return limitActivityGroup(activities, expanded, visibleLimit);
 }
 
 function NowMarkerItem({ displayTime }: { displayTime: string }) {
@@ -293,17 +237,17 @@ function useNow(timeZone: string): { instant: Date; displayTime: string; date: s
   }, [now, timeZone]);
 }
 
-function NowDivider({ displayTime }: { displayTime: string }) {
+function NowDivider({ label, displayTime }: { label: string; displayTime: string }) {
   return (
     <div
       className="relative my-1 flex items-center pl-7"
       role="separator"
-      aria-label={`Current time: ${displayTime}`}
+      aria-label={`Current time: ${label} ${displayTime}`}
     >
       <span className="absolute left-0 size-4 animate-pulse rounded-full bg-primary ring-2 ring-primary/20" />
       <span className="h-0.5 flex-1 bg-primary/70" />
       <span className="mx-2 shrink-0 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground">
-        Now · {displayTime}
+        Now · {label} · {displayTime}
       </span>
       <span className="h-0.5 flex-1 bg-primary/70" />
     </div>
@@ -359,9 +303,6 @@ export function TimelineTab() {
   const [activityModal, setActivityModal] = useState<ActivityModalState>({ kind: "closed" });
   const [sectionModal, setSectionModal] = useState<SectionModalState>({ kind: "closed" });
   const [customTypesOpen, setCustomTypesOpen] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(new Set());
-  const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ kind: "closed" });
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -390,31 +331,16 @@ export function TimelineTab() {
     () => new Set(data?.sections.map((section) => section.id) ?? []),
     [data?.sections],
   );
-  const querySectionId = searchParams.get("section");
-  const queryOpenSections = searchParams.get("openSections");
-  const hasOpenSectionsQuery = searchParams.has("openSections");
-  const resolvedFocusedSectionId = useMemo(() => {
-    if (!data) return null;
-    if (querySectionId && sectionIds.has(querySectionId)) return querySectionId;
-    return getDefaultFocusedSectionId(data.sections, data.trip_timezone);
-  }, [data, querySectionId, sectionIds]);
-  const queryOpenSectionIds = useMemo(
-    () => parseOpenSectionIds(queryOpenSections, sectionIds),
-    [queryOpenSections, sectionIds],
+  const timelineUrlState = useMemo(
+    () => resolveTimelineUrlState({ pathname, search: searchParamString, sectionIds }),
+    [pathname, searchParamString, sectionIds],
   );
-  const effectiveFocusedSectionId =
-    focusedSectionId && sectionIds.has(focusedSectionId)
-      ? focusedSectionId
-      : resolvedFocusedSectionId;
   useEffect(() => {
-    if (!data) return;
-    const nextOpenSectionIds = new Set(queryOpenSectionIds);
-    if (!hasOpenSectionsQuery && resolvedFocusedSectionId) {
-      nextOpenSectionIds.add(resolvedFocusedSectionId);
+    if (!data || timelineUrlState.replacementHref === null) {
+      return;
     }
-    setFocusedSectionId(resolvedFocusedSectionId);
-    setOpenSectionIds(nextOpenSectionIds);
-  }, [data, hasOpenSectionsQuery, queryOpenSectionIds, resolvedFocusedSectionId, searchParamString]);
+    router.replace(timelineUrlState.replacementHref, { scroll: false });
+  }, [data, router, timelineUrlState.replacementHref]);
 
   const now = useNow(data?.trip_timezone ?? "UTC");
   const nowDividerIndex = useMemo(
@@ -430,8 +356,10 @@ export function TimelineTab() {
   const canEdit = timelineData.permissions.can_edit_timeline;
   const canCreateSections = canEdit && timelineData.permissions.can_create_sections;
   const canManageCustomTypes = canEdit && timelineData.permissions.can_manage_custom_types;
-  const hasAnyActivity = timelineData.sections.some((section) => section.activities.length > 0);
   const unavailableSectionDates = timelineData.sections.map((section) => section.section_date);
+  const selectedSection = timelineUrlState.dayId
+    ? timelineData.sections.find((section) => section.id === timelineUrlState.dayId) ?? null
+    : null;
 
   function sectionDateExists(sectionDate: string, excludeSectionId?: string): boolean {
     return timelineData.sections.some(
@@ -457,55 +385,6 @@ export function TimelineTab() {
   function closeSectionModal() {
     setActionError(null);
     setSectionModal({ kind: "closed" });
-  }
-
-  function serializeOpenSectionIds(openIds: Set<string>): string {
-    return timelineData.sections
-      .map((section) => section.id)
-      .filter((sectionId) => openIds.has(sectionId))
-      .join(",");
-  }
-
-  function replaceFocusedSectionUrl(sectionId: string, openIds: Set<string>) {
-    const params = new URLSearchParams(searchParamString);
-    const nextOpenIds = new Set(
-      Array.from(openIds).filter((openSectionId) => sectionIds.has(openSectionId)),
-    );
-    params.set("section", sectionId);
-    params.set("openSections", serializeOpenSectionIds(nextOpenIds));
-
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
-  }
-
-  function focusSection(sectionId: string) {
-    const nextOpenSectionIds = new Set(openSectionIds);
-    nextOpenSectionIds.add(sectionId);
-    setFocusedSectionId(sectionId);
-    setOpenSectionIds(nextOpenSectionIds);
-    replaceFocusedSectionUrl(sectionId, nextOpenSectionIds);
-  }
-
-  function toggleSection(sectionId: string, isOpen: boolean) {
-    if (!isOpen) {
-      focusSection(sectionId);
-      return;
-    }
-
-    const nextOpenSectionIds = new Set(openSectionIds);
-    nextOpenSectionIds.delete(sectionId);
-    const nextFocusedSectionId = effectiveFocusedSectionId ?? sectionId;
-    setFocusedSectionId(nextFocusedSectionId);
-    setOpenSectionIds(nextOpenSectionIds);
-    replaceFocusedSectionUrl(nextFocusedSectionId, nextOpenSectionIds);
-  }
-
-  function expandGroup(groupKey: string) {
-    setExpandedGroups((current) => {
-      const next = new Set(current);
-      next.add(groupKey);
-      return next;
-    });
   }
 
   async function handleCreateSection(payload: { label: string; section_date?: string }) {
@@ -663,20 +542,11 @@ export function TimelineTab() {
   function renderActivityGroup(
     label: string,
     activities: TimelineActivity[],
-    groupKey: string,
     nowMarkerPlacement: NowMarkerPlacement = { kind: "none" },
     activeIds: ReadonlySet<string> = EMPTY_ACTIVE_IDS,
     displayTime = "",
   ) {
     if (activities.length === 0) return null;
-
-    const { visible, hiddenCount } = limitActivityGroupWithNowMarker(
-      activities,
-      expandedGroups.has(groupKey),
-      nowMarkerPlacement,
-      activeIds,
-      5,
-    );
 
     return (
       <div className="space-y-2">
@@ -685,7 +555,7 @@ export function TimelineTab() {
           <span className="text-[11px] text-muted-foreground">{activities.length}</span>
         </div>
         <ol className="space-y-2">
-          {visible.map((activity) => (
+          {activities.map((activity) => (
             <Fragment key={activity.id}>
               {isNowMarkerBefore(activity, nowMarkerPlacement) ? (
                 <NowMarkerItem displayTime={displayTime} />
@@ -704,23 +574,101 @@ export function TimelineTab() {
             </Fragment>
           ))}
         </ol>
-        {hiddenCount > 0 && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => expandGroup(groupKey)}
-          >
-            Show {hiddenCount} more
-          </Button>
+      </div>
+    );
+  }
+
+  function renderOverviewSummary(section: TimelineSection) {
+    const groups = groupActivitiesForDay(section.activities);
+    const nextActivity = getNextScheduledActivity(groups);
+
+    return (
+      <div className="flex w-full flex-col gap-1 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-left text-xs">
+        <span className="font-medium text-foreground">{summarizeGroups(groups)}</span>
+        {nextActivity && (
+          <span className="text-muted-foreground">
+            Next: {formatActivityTime(nextActivity)} - {nextActivity.title}
+          </span>
         )}
       </div>
     );
   }
 
-  function renderSectionContent(section: TimelineSection) {
+  function renderSectionManagementActions(section: TimelineSection) {
+    if (!canEdit) return null;
+
+    return (
+      <>
+        <IconButton
+          label={`Edit ${section.label}`}
+          onClick={() => openSectionModal({ kind: "edit", section })}
+        >
+          <Pencil className="size-3" />
+        </IconButton>
+        {canDeleteDay(section) && (
+          <IconButton
+            label={`Delete ${section.label}`}
+            variant="destructive"
+            onClick={() => setDeleteDialog({ kind: "section", section })}
+          >
+            <Trash2 className="size-3" />
+          </IconButton>
+        )}
+      </>
+    );
+  }
+
+  function renderOverview() {
+    return (
+      <div className="space-y-4">
+        {timelineData.sections.map((section, index) => {
+          const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
+
+          return (
+            <Fragment key={section.id}>
+              <section className="relative pl-7">
+                <div className="absolute bottom-[-1rem] left-[7px] top-5 w-px bg-border" />
+                <span className="absolute left-0 top-1 size-4 rounded-full border-2 border-border bg-background" />
+                <div className="space-y-3">
+                  <header className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-sm font-semibold">{section.label}</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <CalendarDays className="size-3" />
+                        {section.section_date}
+                      </span>
+                      <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                        {datePosition}
+                      </span>
+                      {renderSectionManagementActions(section)}
+                      <Button asChild size="xs" variant="outline">
+                        <Link href={buildDayHref(pathname, searchParamString, section.id)}>
+                          Open day
+                        </Link>
+                      </Button>
+                    </div>
+                  </header>
+
+                  {renderOverviewSummary(section)}
+                </div>
+              </section>
+              {index === nowDividerIndex && (
+                <NowDivider label={section.label} displayTime={now.displayTime} />
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderDayDetail(section: TimelineSection) {
     const groups = groupActivitiesForDay(section.activities);
-    const isToday = effectiveFocusedSectionId === section.id && section.section_date === now.date;
+    const isToday = section.section_date === now.date;
     const nowMarkerPlacement: NowMarkerPlacement = isToday
       ? getNowMarkerPlacement(groups.timeline, timelineData.trip_timezone, now.instant)
       : { kind: "none" };
@@ -728,40 +676,83 @@ export function TimelineTab() {
       ? getActiveActivityIds(groups.timeline, now.minutes)
       : new Set<string>();
 
-    if (section.activities.length === 0) {
-      return (
-        <p className="rounded-md border border-dashed border-border/60 px-3 py-4 text-center text-xs text-muted-foreground">
-          No activities yet.
-        </p>
-      );
-    }
+    const sectionIndex = timelineData.sections.findIndex((item) => item.id === section.id);
+    const previousSection = sectionIndex > 0 ? timelineData.sections[sectionIndex - 1] : null;
+    const nextSection =
+      sectionIndex >= 0 && sectionIndex < timelineData.sections.length - 1
+        ? timelineData.sections[sectionIndex + 1]
+        : null;
+    const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
 
     return (
       <div className="space-y-4">
-        {renderActivityGroup("All-day", groups.allDay, `${section.id}:all-day`)}
-        {renderActivityGroup("Timeline", groups.timeline, `${section.id}:timeline`, nowMarkerPlacement, activeIds, now.displayTime)}
-        {renderActivityGroup("Flexible", groups.flexible, `${section.id}:flexible`)}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link href={buildOverviewHref(pathname, searchParamString)}>
+              <ArrowLeft className="size-4" />
+              Back to timeline
+            </Link>
+          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {previousSection && (
+              <Button asChild size="sm" variant="outline">
+                <Link href={buildDayHref(pathname, searchParamString, previousSection.id)}>
+                  Previous day
+                </Link>
+              </Button>
+            )}
+            {nextSection && (
+              <Button asChild size="sm" variant="outline">
+                <Link href={buildDayHref(pathname, searchParamString, nextSection.id)}>
+                  Next day
+                </Link>
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <section className="space-y-4">
+          <header className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border/70 bg-muted/20 px-3 py-3">
+            <div className="min-w-0 space-y-2">
+              <h3 className="truncate text-base font-semibold">{section.label}</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <CalendarDays className="size-3" />
+                  {section.section_date}
+                </span>
+                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                  {datePosition}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {renderSectionManagementActions(section)}
+              {canEdit && (
+                <Button
+                  type="button"
+                  size="xs"
+                  onClick={() => openActivityModal({ kind: "create", sectionId: section.id })}
+                >
+                  <Plus className="size-3" />
+                  Add activity
+                </Button>
+              )}
+            </div>
+          </header>
+
+          {section.activities.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border/60 px-3 py-4 text-center text-xs text-muted-foreground">
+              No activities yet.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {renderActivityGroup("All-day", groups.allDay)}
+              {renderActivityGroup("Timeline", groups.timeline, nowMarkerPlacement, activeIds, now.displayTime)}
+              {renderActivityGroup("Flexible", groups.flexible)}
+            </div>
+          )}
+        </section>
       </div>
-    );
-  }
-
-  function renderCollapsedSummary(section: TimelineSection) {
-    const groups = groupActivitiesForDay(section.activities);
-    const nextActivity = getNextScheduledActivity(groups);
-
-    return (
-      <button
-        type="button"
-        className="flex w-full flex-col gap-1 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/50"
-        onClick={() => focusSection(section.id)}
-      >
-        <span className="font-medium text-foreground">{summarizeGroups(groups)}</span>
-        {nextActivity && (
-          <span className="text-muted-foreground">
-            Next: {formatActivityTime(nextActivity)} - {nextActivity.title}
-          </span>
-        )}
-      </button>
     );
   }
 
@@ -803,90 +794,13 @@ export function TimelineTab() {
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      {!hasAnyActivity && <TimelineEmptyState canEdit={canEdit} />}
-
-      <div className="space-y-4">
-        {timelineData.sections.map((section, index) => {
-          const isFocused = effectiveFocusedSectionId === section.id;
-          const isOpen = openSectionIds.has(section.id);
-          const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
-
-          return (
-            <Fragment key={section.id}>
-              <section className="relative pl-7">
-                <div className="absolute bottom-[-1rem] left-[7px] top-5 w-px bg-border" />
-                <span
-                  className={`absolute left-0 top-1 size-4 rounded-full border-2 bg-background ${
-                    isFocused ? "border-primary" : "border-border"
-                  }`}
-                />
-                <div className="space-y-3">
-                  <header className="flex flex-wrap items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      className="flex min-w-0 items-center gap-2 text-left"
-                      aria-expanded={isOpen}
-                      onClick={() => toggleSection(section.id, isOpen)}
-                    >
-                      {isOpen ? (
-                        <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <span className="truncate text-sm font-semibold">{section.label}</span>
-                      {isFocused && (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase text-primary">
-                          Focused
-                        </span>
-                      )}
-                    </button>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <CalendarDays className="size-3" />
-                        {section.section_date}
-                      </span>
-                      <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-                        {datePosition}
-                      </span>
-                      {canEdit && (
-                        <>
-                          <IconButton
-                            label={`Edit ${section.label}`}
-                            onClick={() => openSectionModal({ kind: "edit", section })}
-                          >
-                            <Pencil className="size-3" />
-                          </IconButton>
-                          {canDeleteDay(section) && (
-                            <IconButton
-                              label={`Delete ${section.label}`}
-                              variant="destructive"
-                              onClick={() => setDeleteDialog({ kind: "section", section })}
-                            >
-                              <Trash2 className="size-3" />
-                            </IconButton>
-                          )}
-                          <Button
-                            type="button"
-                            size="xs"
-                            onClick={() => openActivityModal({ kind: "create", sectionId: section.id })}
-                          >
-                            <Plus className="size-3" />
-                            Add activity
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </header>
-
-                  {isOpen ? renderSectionContent(section) : renderCollapsedSummary(section)}
-                </div>
-              </section>
-              {index === nowDividerIndex && <NowDivider displayTime={now.displayTime} />}
-            </Fragment>
-          );
-        })}
-      </div>
+      {timelineData.sections.length === 0 ? (
+        <TimelineEmptyState canEdit={canEdit} />
+      ) : selectedSection ? (
+        renderDayDetail(selectedSection)
+      ) : (
+        renderOverview()
+      )}
 
       <TimelineActivityModal
         open={activityModal.kind !== "closed"}
