@@ -426,6 +426,8 @@ def _handle_common(exc):
     """Map common service errors to a Response. Returns None if exc not handled."""
     if isinstance(exc, TripNotFoundError):
         return _err(str(exc), exc.error_code, status.HTTP_404_NOT_FOUND)
+    if isinstance(exc, NotTripMemberError):
+        return _err(str(exc), exc.error_code, status.HTTP_403_FORBIDDEN)
     if isinstance(exc, TripPermissionError):
         return _err(str(exc), exc.error_code, status.HTTP_403_FORBIDDEN)
     if isinstance(exc, TripTerminalError):

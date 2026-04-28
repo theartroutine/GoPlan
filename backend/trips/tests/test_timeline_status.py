@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from uuid import uuid4
 
 from rest_framework.test import APITestCase
 
@@ -24,6 +25,7 @@ class TimelineStatusTests(APITestCase):
         self.captain = create_completed_user("captain-status@example.com", "captain", "CAP001")
         self.assignee = create_completed_user("assignee-status@example.com", "assignee", "ASG001")
         self.member = create_completed_user("member-status@example.com", "member", "MEM001")
+        self.outsider = create_completed_user("outsider-status@example.com", "outsider", "OUT001")
         self.trip = make_trip_with_timeline(
             captain=self.captain,
             members=[self.assignee, self.member],
@@ -134,6 +136,55 @@ class TimelineStatusTests(APITestCase):
 
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "TRIP_TERMINAL")
+
+    def test_non_member_is_rejected_before_terminal_status_check(self):
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+        activity = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            assignee_user=self.assignee,
+            status=TimelineActivityStatus.UPCOMING,
+        )
+
+        res = self.client.post(
+            self._status_url(activity.id),
+            {"status": "IN_PROGRESS"},
+            format="json",
+            **_auth(self.outsider),
+        )
+
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.data["error_code"], "NOT_TRIP_MEMBER")
+
+    def test_non_member_is_rejected_before_activity_lookup(self):
+        res = self.client.post(
+            self._status_url(uuid4()),
+            {"status": "IN_PROGRESS"},
+            format="json",
+            **_auth(self.outsider),
+        )
+
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.data["error_code"], "NOT_TRIP_MEMBER")
+
+    def test_non_member_status_update_returns_permission_error(self):
+        activity = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            assignee_user=self.assignee,
+            status=TimelineActivityStatus.UPCOMING,
+        )
+
+        res = self.client.post(
+            self._status_url(activity.id),
+            {"status": "IN_PROGRESS"},
+            format="json",
+            **_auth(self.outsider),
+        )
+
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.data["error_code"], "NOT_TRIP_MEMBER")
 
     def test_timeline_includes_capabilities_and_location_open_urls(self):
         manual = make_timeline_activity(

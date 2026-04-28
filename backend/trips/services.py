@@ -1339,18 +1339,18 @@ def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str)
     """Update operational activity status. Captain follows full state machine; assignee has limited transitions."""
     with transaction.atomic():
         trip = _get_locked_trip(trip_id)
-        _assert_not_terminal(trip)
-        try:
-            activity = TimelineActivity.objects.select_for_update().get(pk=activity_id, trip=trip)
-        except TimelineActivity.DoesNotExist:
-            raise TimelineActivityNotFoundError("Activity not found.")
-
         try:
             membership = TripMember.objects.get(
                 trip=trip, user=actor, status=MemberStatus.ACTIVE
             )
         except TripMember.DoesNotExist:
             raise NotTripMemberError("You are not an active member of this trip.")
+
+        _assert_not_terminal(trip)
+        try:
+            activity = TimelineActivity.objects.select_for_update().get(pk=activity_id, trip=trip)
+        except TimelineActivity.DoesNotExist:
+            raise TimelineActivityNotFoundError("Activity not found.")
 
         if status == activity.status:
             return activity
