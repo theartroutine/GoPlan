@@ -3,8 +3,8 @@
 import axios from "axios";
 import {
   ArrowLeft,
+  ArrowRight,
   CalendarDays,
-  ChevronRight,
   Pencil,
   Plus,
   Settings,
@@ -48,6 +48,7 @@ import {
   resolveTimelineUrlState,
 } from "@/features/trips/presentation/timeline-url-state";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
+import { cn } from "@/shared/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -83,6 +84,7 @@ type DeleteDialogState =
 
 type ActivityGroups = ReturnType<typeof groupActivitiesForDay>;
 type NowMarkerPlacement = ReturnType<typeof getNowMarkerPlacement>;
+type SectionDatePosition = "Today" | "Past" | "Upcoming";
 const EMPTY_ACTIVE_IDS: ReadonlySet<string> = new Set();
 
 function TimelineSkeleton() {
@@ -165,10 +167,45 @@ function localDate(timeZone: string): string {
   return `${values.get("year") ?? "0000"}-${values.get("month") ?? "01"}-${values.get("day") ?? "01"}`;
 }
 
-function sectionPositionLabel(sectionDate: string, timeZone: string): string {
+function sectionPositionLabel(sectionDate: string, timeZone: string): SectionDatePosition {
   const today = localDate(timeZone);
   if (sectionDate === today) return "Today";
   return sectionDate < today ? "Past" : "Upcoming";
+}
+
+function datePositionTone(position: SectionDatePosition): string {
+  if (position === "Today") {
+    return "border-primary/30 bg-primary/10 text-primary";
+  }
+  if (position === "Upcoming") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300";
+  }
+  return "border-border bg-muted/40 text-muted-foreground";
+}
+
+function SectionDateBadge({
+  sectionDate,
+  datePosition,
+}: {
+  sectionDate: string;
+  datePosition: SectionDatePosition;
+}) {
+  return (
+    <span className="inline-flex min-w-fit items-center overflow-hidden rounded-md border border-border/70 bg-background text-xs shadow-xs">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground">
+        <CalendarDays className="size-3.5" />
+        <span className="tabular-nums font-medium text-foreground">{sectionDate}</span>
+      </span>
+      <span
+        className={cn(
+          "border-l px-2 py-1.5 text-[10px] font-semibold uppercase leading-none",
+          datePositionTone(datePosition),
+        )}
+      >
+        {datePosition}
+      </span>
+    </span>
+  );
 }
 
 function canDeleteDay(section: TimelineSection): boolean {
@@ -630,24 +667,21 @@ export function TimelineTab() {
                 <div className="absolute bottom-[-1rem] left-[7px] top-5 w-px bg-border" />
                 <span className="absolute left-0 top-1 size-4 rounded-full border-2 border-border bg-background" />
                 <div className="space-y-3">
-                  <header className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate text-sm font-semibold">{section.label}</span>
+                  <header className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold">{section.label}</h3>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <CalendarDays className="size-3" />
-                        {section.section_date}
-                      </span>
-                      <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-                        {datePosition}
-                      </span>
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      <SectionDateBadge
+                        sectionDate={section.section_date}
+                        datePosition={datePosition}
+                      />
                       {renderSectionManagementActions(section)}
-                      <Button asChild size="xs" variant="outline">
+                      <Button asChild size="sm" className="h-8 px-3 shadow-sm">
                         <Link href={buildDayHref(pathname, searchParamString, section.id)}>
                           Open day
+                          <ArrowRight className="size-3.5" />
                         </Link>
                       </Button>
                     </div>
@@ -716,13 +750,10 @@ export function TimelineTab() {
             <div className="min-w-0 space-y-2">
               <h3 className="truncate text-base font-semibold">{section.label}</h3>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <CalendarDays className="size-3" />
-                  {section.section_date}
-                </span>
-                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-                  {datePosition}
-                </span>
+                <SectionDateBadge
+                  sectionDate={section.section_date}
+                  datePosition={datePosition}
+                />
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
