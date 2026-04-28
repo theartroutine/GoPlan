@@ -79,6 +79,7 @@ type DeleteDialogState =
 
 type ActivityGroups = ReturnType<typeof groupActivitiesForDay>;
 type NowMarkerPlacement = ReturnType<typeof getNowMarkerPlacement>;
+const EMPTY_ACTIVE_IDS: ReadonlySet<string> = new Set();
 
 function TimelineSkeleton() {
   return (
@@ -195,7 +196,6 @@ function isNowMarkerAfter(activity: TimelineActivity, placement: NowMarkerPlacem
   );
 }
 
-
 function getNowMarkerAnchorIndex(
   activities: TimelineActivity[],
   placement: NowMarkerPlacement,
@@ -213,22 +213,41 @@ function getNowMarkerAnchorIndex(
   return index >= 0 ? index : null;
 }
 
+function getLastActiveActivityIndex(
+  activities: TimelineActivity[],
+  activeIds: ReadonlySet<string>,
+): number | null {
+  let lastIndex: number | null = null;
+
+  for (let index = 0; index < activities.length; index += 1) {
+    if (activeIds.has(activities[index].id)) {
+      lastIndex = index;
+    }
+  }
+
+  return lastIndex;
+}
+
 function limitActivityGroupWithNowMarker(
   activities: TimelineActivity[],
   expanded: boolean,
   placement: NowMarkerPlacement,
+  activeIds: ReadonlySet<string> = EMPTY_ACTIVE_IDS,
   initialLimit = 5,
 ): { visible: TimelineActivity[]; hiddenCount: number } {
   const anchorIndex = getNowMarkerAnchorIndex(activities, placement);
-  const visibleLimit =
+  const markerVisibleLimit =
     anchorIndex === null ? initialLimit : Math.max(initialLimit, anchorIndex + 1);
+  const activeIndex = getLastActiveActivityIndex(activities, activeIds);
+  const visibleLimit =
+    activeIndex === null ? markerVisibleLimit : Math.max(markerVisibleLimit, activeIndex + 1);
 
   return limitActivityGroup(activities, expanded, visibleLimit);
 }
 
-function NowMarkerItem({ markerKey, displayTime }: { markerKey: string; displayTime: string }) {
+function NowMarkerItem({ displayTime }: { displayTime: string }) {
   return (
-    <li key={markerKey} className="flex items-center gap-2 py-1 text-xs font-semibold text-primary">
+    <li className="flex items-center gap-2 py-1 text-xs font-semibold text-primary">
       <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
       <span className="h-0.5 min-w-6 flex-1 bg-primary/50" />
       <span className="whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5">
@@ -239,7 +258,7 @@ function NowMarkerItem({ markerKey, displayTime }: { markerKey: string; displayT
   );
 }
 
-function useNow(timeZone: string): { displayTime: string; date: string; minutes: number } {
+function useNow(timeZone: string): { instant: Date; displayTime: string; date: string; minutes: number } {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -266,6 +285,7 @@ function useNow(timeZone: string): { displayTime: string; date: string; minutes:
     const minute = Number(values.get("minute") ?? "0");
 
     return {
+      instant: now,
       displayTime: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
       date: `${year}-${month}-${day}`,
       minutes: hour * 60 + minute,
@@ -645,7 +665,7 @@ export function TimelineTab() {
     activities: TimelineActivity[],
     groupKey: string,
     nowMarkerPlacement: NowMarkerPlacement = { kind: "none" },
-    activeIds: Set<string> = new Set(),
+    activeIds: ReadonlySet<string> = EMPTY_ACTIVE_IDS,
     displayTime = "",
   ) {
     if (activities.length === 0) return null;
@@ -654,6 +674,7 @@ export function TimelineTab() {
       activities,
       expandedGroups.has(groupKey),
       nowMarkerPlacement,
+      activeIds,
       5,
     );
 
@@ -667,7 +688,7 @@ export function TimelineTab() {
           {visible.map((activity) => (
             <Fragment key={activity.id}>
               {isNowMarkerBefore(activity, nowMarkerPlacement) ? (
-                <NowMarkerItem markerKey={`${activity.id}:now-before`} displayTime={displayTime} />
+                <NowMarkerItem displayTime={displayTime} />
               ) : null}
               <li>
                 <TimelineActivityNode
@@ -678,7 +699,7 @@ export function TimelineTab() {
                 />
               </li>
               {isNowMarkerAfter(activity, nowMarkerPlacement) ? (
-                <NowMarkerItem markerKey={`${activity.id}:now-after`} displayTime={displayTime} />
+                <NowMarkerItem displayTime={displayTime} />
               ) : null}
             </Fragment>
           ))}
@@ -701,7 +722,7 @@ export function TimelineTab() {
     const groups = groupActivitiesForDay(section.activities);
     const isToday = effectiveFocusedSectionId === section.id && section.section_date === now.date;
     const nowMarkerPlacement: NowMarkerPlacement = isToday
-      ? getNowMarkerPlacement(groups.timeline, timelineData.trip_timezone)
+      ? getNowMarkerPlacement(groups.timeline, timelineData.trip_timezone, now.instant)
       : { kind: "none" };
     const activeIds = isToday
       ? getActiveActivityIds(groups.timeline, now.minutes)

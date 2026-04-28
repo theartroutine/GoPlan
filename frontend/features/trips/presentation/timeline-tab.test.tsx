@@ -664,6 +664,132 @@ describe("TimelineTab", () => {
     expect(screen.getByRole("button", { name: "Show 1 more" })).not.toBeNull();
   });
 
+  it("keeps every overlapping current activity visible in a collapsed timeline group", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-01T06:30:00.000Z") });
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        trip_timezone: "Asia/Ho_Chi_Minh",
+        sections: [
+          buildTimelineSection({
+            id: "today",
+            section_date: "2026-06-01",
+            activities: [
+              buildTimelineActivity({
+                id: "activity-1",
+                title: "Activity 1",
+                time_mode: "TIME_RANGE",
+                start_time: "08:00:00",
+                end_time: "09:00:00",
+                position: 0,
+              }),
+              buildTimelineActivity({
+                id: "activity-2",
+                title: "Activity 2",
+                time_mode: "TIME_RANGE",
+                start_time: "09:00:00",
+                end_time: "10:00:00",
+                position: 1,
+              }),
+              buildTimelineActivity({
+                id: "activity-3",
+                title: "Activity 3",
+                time_mode: "TIME_RANGE",
+                start_time: "10:00:00",
+                end_time: "11:00:00",
+                position: 2,
+              }),
+              buildTimelineActivity({
+                id: "long-workshop",
+                title: "Long workshop",
+                time_mode: "TIME_RANGE",
+                start_time: "11:00:00",
+                end_time: "14:00:00",
+                position: 3,
+              }),
+              buildTimelineActivity({
+                id: "activity-5",
+                title: "Activity 5",
+                time_mode: "TIME_RANGE",
+                start_time: "12:00:00",
+                end_time: "13:00:00",
+                position: 4,
+              }),
+              buildTimelineActivity({
+                id: "overlap-workshop",
+                title: "Overlap workshop",
+                time_mode: "TIME_RANGE",
+                start_time: "13:00:00",
+                end_time: "15:00:00",
+                position: 5,
+              }),
+              buildTimelineActivity({
+                id: "activity-7",
+                title: "Activity 7",
+                time_mode: "TIME_RANGE",
+                start_time: "16:00:00",
+                end_time: "17:00:00",
+                position: 6,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Long workshop").closest("[data-current='true']")).toBeTruthy();
+    expect(screen.getByText("Overlap workshop").closest("[data-current='true']")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show 1 more" })).not.toBeNull();
+  });
+
+  it("keeps marker placement aligned with the displayed clock during unrelated re-renders", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-01T04:59:30.000Z") });
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        trip_timezone: "Asia/Ho_Chi_Minh",
+        sections: [
+          buildTimelineSection({
+            id: "today",
+            section_date: "2026-06-01",
+            activities: [
+              buildTimelineActivity({
+                id: "museum",
+                title: "Museum",
+                time_mode: "TIME_RANGE",
+                start_time: "11:00:00",
+                end_time: "12:00:00",
+                position: 0,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    const { container } = render(<TimelineTab />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    vi.setSystemTime(new Date("2026-06-01T05:00:01.000Z"));
+    fireEvent.click(screen.getByRole("button", { name: /Day 1/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Day 1/i }));
+
+    const timelineItems = Array.from(container.querySelectorAll("ol li")).map(
+      (item) => item.textContent ?? "",
+    );
+
+    expect(timelineItems[0]).toMatch(/^Now · 11:59/);
+    expect(timelineItems[1]).toContain("Museum");
+    expect(screen.getByText("Museum").closest("[data-current='true']")).toBeTruthy();
+  });
+
   it("hides extra day delete while the section still has activities", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
