@@ -25,68 +25,110 @@ describe("timeline view model helpers", () => {
     expect(groups.flexible.map((activity) => activity.id)).toEqual(["flex"]);
   });
 
-  it("focuses section ids instead of dates when same-date siblings exist and SYSTEM_DAY wins", () => {
+  it("focuses the first in-range day before the trip range when an extra day exists", () => {
     const focusedSectionId = getDefaultFocusedSectionId(
       [
         buildTimelineSection({
-          id: "special-today",
-          kind: "SPECIAL_DAY",
-          section_date: "2026-06-01",
-          label: "Birthday",
-          position: 0,
+          id: "pre-trip",
+          section_date: "2026-05-31",
+          label: "Preparation",
+          is_in_trip_range: false,
         }),
         buildTimelineSection({
-          id: "system-today",
-          kind: "SYSTEM_DAY",
+          id: "day-1",
           section_date: "2026-06-01",
           label: "Day 1",
-          position: 1,
+          is_in_trip_range: true,
         }),
         buildTimelineSection({
-          id: "tomorrow",
-          kind: "SYSTEM_DAY",
+          id: "day-2",
           section_date: "2026-06-02",
           label: "Day 2",
-          position: 2,
+          is_in_trip_range: true,
         }),
       ],
       "Asia/Ho_Chi_Minh",
-      new Date("2026-05-31T17:30:00.000Z"),
+      new Date("2026-05-30T12:00:00.000Z"),
     );
 
-    expect(focusedSectionId).toBe("system-today");
+    expect(focusedSectionId).toBe("day-1");
   });
 
-  it("falls back to the first sorted system day when today is between section dates", () => {
+  it("focuses the last in-range day after the trip range when an extra day exists", () => {
     const focusedSectionId = getDefaultFocusedSectionId(
       [
         buildTimelineSection({
-          id: "future",
-          kind: "SYSTEM_DAY",
-          section_date: "2026-06-10",
-          label: "Day 2",
-          position: 1,
-        }),
-        buildTimelineSection({
-          id: "first-special",
-          kind: "SPECIAL_DAY",
-          section_date: "2026-06-01",
-          label: "Arrival",
-          position: 0,
-        }),
-        buildTimelineSection({
-          id: "first-system",
-          kind: "SYSTEM_DAY",
+          id: "day-1",
           section_date: "2026-06-01",
           label: "Day 1",
-          position: 1,
+          is_in_trip_range: true,
+        }),
+        buildTimelineSection({
+          id: "day-2",
+          section_date: "2026-06-02",
+          label: "Day 2",
+          is_in_trip_range: true,
+        }),
+        buildTimelineSection({
+          id: "recovery",
+          section_date: "2026-06-03",
+          label: "Recovery",
+          is_in_trip_range: false,
         }),
       ],
       "Asia/Ho_Chi_Minh",
-      new Date("2026-06-05T05:00:00.000Z"),
+      new Date("2026-06-04T12:00:00.000Z"),
     );
 
-    expect(focusedSectionId).toBe("first-system");
+    expect(focusedSectionId).toBe("day-2");
+  });
+
+  it("falls back to the first in-range day when today is between in-range dates", () => {
+    const sections = [
+      buildTimelineSection({
+        id: "day-1",
+        section_date: "2026-06-01",
+        label: "Day 1",
+        is_in_trip_range: true,
+      }),
+      buildTimelineSection({
+        id: "day-3",
+        section_date: "2026-06-03",
+        label: "Day 3",
+        is_in_trip_range: true,
+      }),
+    ];
+
+    expect(
+      getDefaultFocusedSectionId(
+        sections,
+        "Asia/Ho_Chi_Minh",
+        new Date("2026-06-02T02:00:00.000Z"),
+      ),
+    ).toBe("day-1");
+  });
+
+  it("focuses today's day when today matches an extra day", () => {
+    const focusedSectionId = getDefaultFocusedSectionId(
+      [
+        buildTimelineSection({
+          id: "day-1",
+          section_date: "2026-06-01",
+          label: "Day 1",
+          is_in_trip_range: true,
+        }),
+        buildTimelineSection({
+          id: "extra",
+          section_date: "2026-06-04",
+          label: "Recovery",
+          is_in_trip_range: false,
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-06-04T02:00:00.000Z"),
+    );
+
+    expect(focusedSectionId).toBe("extra");
   });
 
   it("limits visible group items and reports hidden count", () => {

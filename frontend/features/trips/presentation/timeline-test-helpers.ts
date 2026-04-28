@@ -28,11 +28,11 @@ export function buildTimelineSection(
 ): TimelineSection {
   return {
     id: "sec_1",
-    kind: "SYSTEM_DAY",
     section_date: "2026-06-01",
     label: "Day 1",
     is_label_custom: false,
     position: 0,
+    is_in_trip_range: true,
     activities: [],
     ...overrides,
   };

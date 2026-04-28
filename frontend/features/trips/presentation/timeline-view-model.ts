@@ -73,20 +73,26 @@ export function getDefaultFocusedSectionId(
   const sortedSections = sortSections(sections);
   const today = localDateParts(timeZone, now).date;
   const todaySection = chooseSectionForDate(sortedSections, today);
-
   if (todaySection !== null) return todaySection.id;
 
-  const firstSection = sortedSections[0];
-  if (today < firstSection.section_date) {
-    return chooseSectionForDate(sortedSections, firstSection.section_date)?.id ?? firstSection.id;
+  const inRangeSections = sortedSections.filter((section) => section.is_in_trip_range);
+  if (inRangeSections.length > 0) {
+    const firstInRange = inRangeSections[0];
+    const lastInRange = inRangeSections[inRangeSections.length - 1];
+
+    if (today < firstInRange.section_date) return firstInRange.id;
+    if (today > lastInRange.section_date) return lastInRange.id;
+
+    return firstInRange.id;
   }
+
+  const firstSection = sortedSections[0];
+  if (today < firstSection.section_date) return firstSection.id;
 
   const lastSection = sortedSections[sortedSections.length - 1];
-  if (today > lastSection.section_date) {
-    return chooseSectionForDate(sortedSections, lastSection.section_date)?.id ?? lastSection.id;
-  }
+  if (today > lastSection.section_date) return lastSection.id;
 
-  return sortedSections.find((section) => section.kind === "SYSTEM_DAY")?.id ?? firstSection.id;
+  return firstSection.id;
 }
 
 export function getNowMarkerPlacement(
@@ -217,8 +223,5 @@ function sortScheduledActivities(activities: TimelineActivity[]): TimelineActivi
 }
 
 function chooseSectionForDate(sections: TimelineSection[], sectionDate: string): TimelineSection | null {
-  const sameDateSections = sections.filter((section) => section.section_date === sectionDate);
-  if (sameDateSections.length === 0) return null;
-
-  return sameDateSections.find((section) => section.kind === "SYSTEM_DAY") ?? sameDateSections[0];
+  return sections.find((section) => section.section_date === sectionDate) ?? null;
 }
