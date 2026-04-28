@@ -72,6 +72,21 @@ export function getDefaultFocusedSectionId(
 
   const sortedSections = sortSections(sections);
   const today = localDateParts(timeZone, now).date;
+  const systemSections = sortedSections.filter((section) => section.kind === "SYSTEM_DAY");
+
+  if (systemSections.length > 0) {
+    const firstSystemSection = systemSections[0];
+    const lastSystemSection = systemSections[systemSections.length - 1];
+
+    if (today < firstSystemSection.section_date) return firstSystemSection.id;
+    if (today > lastSystemSection.section_date) return lastSystemSection.id;
+
+    const todaySection = chooseSectionForDate(sortedSections, today);
+    if (todaySection !== null) return todaySection.id;
+
+    return firstSystemSection.id;
+  }
+
   const todaySection = chooseSectionForDate(sortedSections, today);
 
   if (todaySection !== null) return todaySection.id;

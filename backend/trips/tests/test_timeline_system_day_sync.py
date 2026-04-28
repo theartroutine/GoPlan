@@ -118,3 +118,38 @@ class TimelineSystemDaySyncTests(TestCase):
             section_date=date(2026, 6, 1),
         )
         self.assertEqual(generated_day.label, "Day 2")
+
+    def test_update_trip_converts_existing_special_day_when_range_expands_to_date(self):
+        trip = make_trip_with_timeline(
+            captain=self.captain,
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 1),
+        )
+        special_day = TimelineSection.objects.create(
+            trip=trip,
+            kind=TimelineSectionKind.SPECIAL_DAY,
+            section_date=date(2026, 5, 31),
+            label="Arrival buffer",
+            is_label_custom=True,
+            position=0,
+        )
+        make_timeline_activity(
+            trip=trip,
+            section=special_day,
+            title="Pick up supplies",
+        )
+
+        update_trip(trip, start_date=date(2026, 5, 31))
+
+        special_day.refresh_from_db()
+        self.assertEqual(special_day.kind, TimelineSectionKind.SYSTEM_DAY)
+        self.assertEqual(special_day.label, "Arrival buffer")
+        self.assertTrue(special_day.is_label_custom)
+        self.assertEqual(
+            TimelineSection.objects.filter(
+                trip=trip,
+                section_date=date(2026, 5, 31),
+            ).count(),
+            1,
+        )
+        self.assertTrue(special_day.activities.filter(title="Pick up supplies").exists())

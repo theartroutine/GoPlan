@@ -221,8 +221,7 @@ class TimelineSection(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["trip", "section_date"],
-                condition=Q(kind=TimelineSectionKind.SYSTEM_DAY),
-                name="timeline_section_unique_system_day_per_date",
+                name="timeline_section_unique_date_per_trip",
             ),
         ]
 

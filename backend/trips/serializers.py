@@ -246,16 +246,16 @@ def _format_map_decimal(value) -> str:
 
 
 def _build_timeline_open_url(activity: TimelineActivity) -> str | None:
-    if activity.location_mode == TimelineLocationMode.STRUCTURED:
-        title = activity.place_title or activity.location_label
-        if activity.place_lat is not None and activity.place_lng is not None:
-            slug = slugify(title) or "place"
-            lat = _format_map_decimal(activity.place_lat)
-            lng = _format_map_decimal(activity.place_lng)
-            return f"https://share.here.com/l/{lat},{lng},{slug}"
-        query = title or activity.place_address
-    else:
-        query = activity.location_label
+    if activity.location_mode != TimelineLocationMode.STRUCTURED:
+        return None
+
+    title = activity.place_title or activity.location_label
+    if activity.place_lat is not None and activity.place_lng is not None:
+        slug = slugify(title) or "place"
+        lat = _format_map_decimal(activity.place_lat)
+        lng = _format_map_decimal(activity.place_lng)
+        return f"https://share.here.com/l/{lat},{lng},{slug}"
+    query = title or activity.place_address
 
     if not query:
         return None

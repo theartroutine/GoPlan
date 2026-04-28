@@ -58,16 +58,31 @@ class TimelineSectionCrudTests(APITestCase):
         self.assertTrue(section["is_label_custom"])
         self.assertEqual(section["position"], 0)
 
-    def test_section_position_starts_after_existing_siblings(self):
-        # Existing SYSTEM_DAY at section_date, position 0
+    def test_create_section_rejects_existing_system_day_date(self):
         res = self.client.post(
             self._sections_url(),
             {"section_date": "2026-06-01", "label": "Morning special"},
             format="json",
             **_auth(self.captain),
         )
-        self.assertEqual(res.status_code, 201)
-        self.assertEqual(res.data["section"]["position"], 1)
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "SECTION_DATE_CONFLICT")
+
+    def test_create_section_rejects_existing_special_day_date(self):
+        make_timeline_section(
+            trip=self.trip,
+            section_date=date(2026, 5, 31),
+            label="Day 0 - Preparation",
+            position=0,
+        )
+        res = self.client.post(
+            self._sections_url(),
+            {"section_date": "2026-05-31", "label": "Backup plan"},
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "SECTION_DATE_CONFLICT")
 
     def test_member_cannot_create_section_403(self):
         res = self.client.post(
@@ -153,6 +168,22 @@ class TimelineSectionCrudTests(APITestCase):
         self.assertEqual(res.data["section"]["section_date"], "2026-05-31")
         self.assertEqual(res.data["section"]["label"], "Pre-trip")
 
+    def test_patch_special_day_rejects_existing_section_date(self):
+        section = make_timeline_section(
+            trip=self.trip,
+            section_date=date(2026, 5, 30),
+            label="Pre-trip",
+            position=0,
+        )
+        res = self.client.patch(
+            self._detail_url(section.id),
+            {"section_date": "2026-06-01"},
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "SECTION_DATE_CONFLICT")
+
     # -------- Delete --------
 
     def test_delete_empty_section_200(self):
@@ -182,40 +213,30 @@ class TimelineSectionCrudTests(APITestCase):
     # -------- Reorder --------
 
     def test_reorder_sections_rewrites_positions(self):
-        s1 = make_timeline_section(
-            trip=self.trip, section_date=date(2026, 6, 1), label="a", position=1
-        )
-        s2 = make_timeline_section(
-            trip=self.trip, section_date=date(2026, 6, 1), label="b", position=2
-        )
-        # Existing SYSTEM_DAY for 2026-06-01 has position=0
         sys_day = TimelineSection.objects.get(
             trip=self.trip, section_date=date(2026, 6, 1), kind=TimelineSectionKind.SYSTEM_DAY
         )
+        sys_day.position = 4
+        sys_day.save(update_fields=["position"])
         res = self.client.post(
             self._reorder_url(),
             {
                 "section_date": "2026-06-01",
-                "ordered_section_ids": [str(s2.id), str(s1.id), str(sys_day.id)],
+                "ordered_section_ids": [str(sys_day.id)],
             },
             format="json",
             **_auth(self.captain),
         )
         self.assertEqual(res.status_code, 200)
-        s1.refresh_from_db(); s2.refresh_from_db(); sys_day.refresh_from_db()
-        self.assertEqual(s2.position, 0)
-        self.assertEqual(s1.position, 1)
-        self.assertEqual(sys_day.position, 2)
+        sys_day.refresh_from_db()
+        self.assertEqual(sys_day.position, 0)
 
-    def test_reorder_sections_missing_id_400(self):
-        s1 = make_timeline_section(
-            trip=self.trip, section_date=date(2026, 6, 1), label="a", position=1
-        )
+    def test_reorder_sections_requires_ids_400(self):
         res = self.client.post(
             self._reorder_url(),
-            {"section_date": "2026-06-01", "ordered_section_ids": [str(s1.id)]},
+            {"section_date": "2026-06-01", "ordered_section_ids": []},
             format="json",
             **_auth(self.captain),
         )
         self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.data["error_code"], "INVALID_REORDER_SCOPE")
+        self.assertIn("ordered_section_ids", res.data)

@@ -24,6 +24,7 @@ import {
 type Props = {
   tripId: string;
   customTypes: TimelineCustomTypeMeta[];
+  onDirtyChange?: (dirty: boolean) => void;
   onChanged: () => void;
 };
 
@@ -32,12 +33,17 @@ function extractErrorMessage(err: unknown, fallback: string): string {
   return data?.detail ?? fallback;
 }
 
-export function TimelineCustomTypeManager({ tripId, customTypes, onChanged }: Props) {
+export function TimelineCustomTypeManager({ tripId, customTypes, onDirtyChange, onChanged }: Props) {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TimelineCustomTypeMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function updateNewName(value: string) {
+    setNewName(value);
+    onDirtyChange?.(value.trim().length > 0);
+  }
 
   async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -46,7 +52,7 @@ export function TimelineCustomTypeManager({ tripId, customTypes, onChanged }: Pr
     setError(null);
     try {
       await bffCreateTimelineCustomType(tripId, { name: newName.trim() });
-      setNewName("");
+      updateNewName("");
       onChanged();
     } catch (err) {
       setError(extractErrorMessage(err, "Failed to create custom type."));
@@ -87,7 +93,7 @@ export function TimelineCustomTypeManager({ tripId, customTypes, onChanged }: Pr
         <form onSubmit={handleCreate} className="flex flex-col gap-2 sm:flex-row">
           <Input
             value={newName}
-            onChange={(e) => setNewName(e.target.value)}
+            onChange={(e) => updateNewName(e.target.value)}
             placeholder="New custom type name"
           />
           <Button type="submit" disabled={creating || !newName.trim()}>

@@ -172,7 +172,7 @@ class TimelineStatusTests(APITestCase):
         }
         self.assertTrue(activities[str(manual.id)]["capabilities"]["can_update_status"])
         self.assertFalse(activities[str(manual.id)]["capabilities"]["can_edit"])
-        self.assertIn("Gate%20B%20Bus%20Station", activities[str(manual.id)]["location"]["open_url"])
+        self.assertIsNone(activities[str(manual.id)]["location"]["open_url"])
         self.assertIn("share.here.com/l/11.941,108.44,city-museum", activities[str(structured.id)]["location"]["open_url"])
 
     def test_assigned_member_status_capability_matches_allowed_transition(self):

@@ -57,6 +57,70 @@ describe("timeline view model helpers", () => {
     expect(focusedSectionId).toBe("system-today");
   });
 
+  it("focuses the first system day before the trip range even when a pre-trip special day exists", () => {
+    const focusedSectionId = getDefaultFocusedSectionId(
+      [
+        buildTimelineSection({
+          id: "day-zero",
+          kind: "SPECIAL_DAY",
+          section_date: "2026-05-31",
+          label: "Day 0",
+          position: 0,
+        }),
+        buildTimelineSection({
+          id: "system-day-1",
+          kind: "SYSTEM_DAY",
+          section_date: "2026-06-01",
+          label: "Day 1",
+          position: 0,
+        }),
+        buildTimelineSection({
+          id: "system-day-2",
+          kind: "SYSTEM_DAY",
+          section_date: "2026-06-02",
+          label: "Day 2",
+          position: 1,
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-05-31T05:00:00.000Z"),
+    );
+
+    expect(focusedSectionId).toBe("system-day-1");
+  });
+
+  it("focuses the last system day after the trip range even when a recovery special day exists", () => {
+    const focusedSectionId = getDefaultFocusedSectionId(
+      [
+        buildTimelineSection({
+          id: "system-day-1",
+          kind: "SYSTEM_DAY",
+          section_date: "2026-06-01",
+          label: "Day 1",
+          position: 0,
+        }),
+        buildTimelineSection({
+          id: "system-day-2",
+          kind: "SYSTEM_DAY",
+          section_date: "2026-06-02",
+          label: "Day 2",
+          position: 1,
+        }),
+        buildTimelineSection({
+          id: "recovery",
+          kind: "SPECIAL_DAY",
+          section_date: "2026-06-03",
+          label: "Recovery",
+          position: 0,
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-06-03T05:00:00.000Z"),
+    );
+
+    expect(focusedSectionId).toBe("system-day-2");
+  });
+
   it("falls back to the first sorted system day when today is between section dates", () => {
     const focusedSectionId = getDefaultFocusedSectionId(
       [

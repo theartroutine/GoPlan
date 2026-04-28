@@ -110,6 +110,10 @@ class TimelineSectionNotEmptyError(TripServiceError):
     error_code = "SECTION_NOT_EMPTY"
 
 
+class TimelineSectionDateConflictError(TripServiceError):
+    error_code = "SECTION_DATE_CONFLICT"
+
+
 class TimelineCustomTypeInUseError(TripServiceError):
     error_code = "CUSTOM_TYPE_IN_USE"
 
@@ -243,27 +247,35 @@ def sync_system_day_sections(trip: Trip) -> None:
 
     existing = {
         s.section_date: s
-        for s in trip.timeline_sections.filter(kind=TimelineSectionKind.SYSTEM_DAY)
+        for s in trip.timeline_sections.all().order_by("section_date", "position", "created_at")
     }
     current = trip.start_date
     index = 0
     while current <= trip.end_date:
+        expected_label = f"Day {index + 1}"
         if current not in existing:
             TimelineSection.objects.create(
                 trip=trip,
                 kind=TimelineSectionKind.SYSTEM_DAY,
                 section_date=current,
-                label=f"Day {index + 1}",
+                label=expected_label,
                 is_label_custom=False,
                 position=0,
             )
         else:
             section = existing[current]
+            update_fields = []
+            if section.kind != TimelineSectionKind.SYSTEM_DAY:
+                section.kind = TimelineSectionKind.SYSTEM_DAY
+                section.position = 0
+                update_fields.extend(["kind", "position"])
             if not section.is_label_custom:
-                expected_label = f"Day {index + 1}"
                 if section.label != expected_label:
                     section.label = expected_label
-                    section.save(update_fields=["label", "updated_at"])
+                    update_fields.append("label")
+            if update_fields:
+                update_fields.append("updated_at")
+                section.save(update_fields=update_fields)
         current = current + timedelta(days=1)
         index += 1
 
@@ -764,6 +776,14 @@ def _get_locked_trip(trip_id) -> Trip:
         raise TripNotFoundError("Trip not found.")
 
 
+def _ensure_section_date_available(trip: Trip, section_date, *, exclude_section_id=None) -> None:
+    sections = TimelineSection.objects.filter(trip=trip, section_date=section_date)
+    if exclude_section_id is not None:
+        sections = sections.exclude(pk=exclude_section_id)
+    if sections.exists():
+        raise TimelineSectionDateConflictError("This date already has a timeline day.")
+
+
 # -------- Section mutations --------
 
 def create_special_section(trip_id, *, actor, section_date, label) -> TimelineSection:
@@ -771,17 +791,15 @@ def create_special_section(trip_id, *, actor, section_date, label) -> TimelineSe
     with transaction.atomic():
         trip = _get_locked_trip(trip_id)
         _ensure_captain_can_mutate(trip, actor)
+        _ensure_section_date_available(trip, section_date)
 
-        siblings_count = TimelineSection.objects.filter(
-            trip=trip, section_date=section_date
-        ).count()
         section = TimelineSection.objects.create(
             trip=trip,
             kind=TimelineSectionKind.SPECIAL_DAY,
             section_date=section_date,
             label=label,
             is_label_custom=True,
-            position=siblings_count,
+            position=0,
             created_by=actor,
             updated_by=actor,
         )
@@ -822,8 +840,15 @@ def patch_section(trip_id, section_id, *, actor, label=_UNSET_TIMELINE, section_
                 update_fields.extend(["label", "is_label_custom"])
             section_date_changed = section_date is not _UNSET_TIMELINE and section_date != section.section_date
             if section_date is not _UNSET_TIMELINE:
+                if section_date_changed:
+                    _ensure_section_date_available(
+                        trip,
+                        section_date,
+                        exclude_section_id=section.id,
+                    )
                 section.section_date = section_date
-                update_fields.append("section_date")
+                section.position = 0
+                update_fields.extend(["section_date", "position"])
             section.updated_by = actor
             section.save(update_fields=update_fields)
             if section_date_changed:

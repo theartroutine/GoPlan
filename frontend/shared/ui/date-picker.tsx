@@ -16,6 +16,7 @@ interface DatePickerProps {
   placeholder?: string;
   disabled?: boolean;
   minDate?: Date;
+  disabledDates?: string[];
 }
 
 export function DatePicker({
@@ -25,14 +26,23 @@ export function DatePicker({
   placeholder = "Pick a date",
   disabled,
   minDate,
+  disabledDates = [],
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
+  const disabledDateSet = React.useMemo(() => new Set(disabledDates), [disabledDates]);
 
   const parsed = value ? parse(value, "yyyy-MM-dd", new Date()) : undefined;
   const selected = parsed && isValid(parsed) ? parsed : undefined;
   const triggerAriaLabel = selected
     ? `${placeholder}. Selected ${format(selected, "PPP")}`
     : placeholder;
+  const isDateDisabled = React.useCallback(
+    (date: Date) => {
+      if (minDate && date < minDate) return true;
+      return disabledDateSet.has(format(date, "yyyy-MM-dd"));
+    },
+    [disabledDateSet, minDate],
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -60,7 +70,7 @@ export function DatePicker({
             onChange(date ? format(date, "yyyy-MM-dd") : undefined);
             setOpen(false);
           }}
-          disabled={minDate ? (date) => date < minDate : undefined}
+          disabled={isDateDisabled}
           autoFocus
         />
       </PopoverContent>

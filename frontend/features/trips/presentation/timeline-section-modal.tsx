@@ -19,6 +19,7 @@ export type TimelineSectionModalProps = {
   initial?: TimelineSection;
   submitting?: boolean;
   errorMessage?: string | null;
+  unavailableSectionDates?: string[];
   onOpenChange: (open: boolean) => void;
   onSubmit: (payload: { label: string; section_date?: string }) => void;
 };
@@ -29,6 +30,7 @@ export function TimelineSectionModal({
   initial,
   submitting,
   errorMessage,
+  unavailableSectionDates,
   onOpenChange,
   onSubmit,
 }: TimelineSectionModalProps) {
@@ -100,6 +102,7 @@ export function TimelineSectionModal({
             initial={initial}
             submitting={submitting}
             errorMessage={errorMessage}
+            unavailableSectionDates={unavailableSectionDates}
             onCancel={requestClose}
             onDirtyChange={handleDirtyChange}
             onSubmit={onSubmit}

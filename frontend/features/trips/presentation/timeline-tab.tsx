@@ -193,6 +193,40 @@ function isCurrentActivity(activity: TimelineActivity, placement: NowMarkerPlace
   return placement.kind === "inside" && placement.activityId === activity.id;
 }
 
+function getNowMarkerAnchorIndex(
+  activities: TimelineActivity[],
+  placement: NowMarkerPlacement,
+): number | null {
+  const anchorId =
+    placement.kind === "before" || placement.kind === "inside" || placement.kind === "after"
+      ? placement.activityId
+      : placement.kind === "between"
+        ? placement.previousActivityId
+        : null;
+
+  if (anchorId === null) return null;
+
+  const index = activities.findIndex((activity) => activity.id === anchorId);
+  return index >= 0 ? index : null;
+}
+
+function limitActivityGroupWithNowMarker(
+  activities: TimelineActivity[],
+  expanded: boolean,
+  placement: NowMarkerPlacement,
+  initialLimit = 5,
+): { visible: TimelineActivity[]; hiddenCount: number } {
+  const anchorIndex = getNowMarkerAnchorIndex(activities, placement);
+  const visibleLimit =
+    anchorIndex === null ? initialLimit : Math.max(initialLimit, anchorIndex + 1);
+
+  return limitActivityGroup(activities, expanded, visibleLimit);
+}
+
+function canDeleteSpecialDay(section: TimelineSection): boolean {
+  return section.kind === "SPECIAL_DAY" && section.activities.length === 0;
+}
+
 function NowMarkerItem({ markerKey }: { markerKey: string }) {
   return (
     <li key={markerKey} className="flex items-center gap-2 py-1 text-xs font-medium text-primary">
@@ -210,11 +244,13 @@ function IconButton({
   children,
   onClick,
   variant = "outline",
+  className,
 }: {
   label: string;
   children: React.ReactNode;
   onClick: () => void;
-  variant?: "outline" | "destructive";
+  variant?: "outline" | "destructive" | "ghost";
+  className?: string;
 }) {
   return (
     <Tooltip>
@@ -225,6 +261,7 @@ function IconButton({
           variant={variant}
           aria-label={label}
           onClick={onClick}
+          className={className}
         >
           {children}
         </Button>
@@ -284,6 +321,7 @@ export function TimelineTab() {
   );
   const querySectionId = searchParams.get("section");
   const queryOpenSections = searchParams.get("openSections");
+  const hasOpenSectionsQuery = searchParams.has("openSections");
   const resolvedFocusedSectionId = useMemo(() => {
     if (!data) return null;
     if (querySectionId && sectionIds.has(querySectionId)) return querySectionId;
@@ -297,27 +335,15 @@ export function TimelineTab() {
     focusedSectionId && sectionIds.has(focusedSectionId)
       ? focusedSectionId
       : resolvedFocusedSectionId;
-  const visibleOpenSectionIds = useMemo(() => {
-    const next = new Set(openSectionIds);
-    if (effectiveFocusedSectionId) next.add(effectiveFocusedSectionId);
-    return next;
-  }, [effectiveFocusedSectionId, openSectionIds]);
-
   useEffect(() => {
     if (!data) return;
+    const nextOpenSectionIds = new Set(queryOpenSectionIds);
+    if (!hasOpenSectionsQuery && resolvedFocusedSectionId) {
+      nextOpenSectionIds.add(resolvedFocusedSectionId);
+    }
     setFocusedSectionId(resolvedFocusedSectionId);
-    setOpenSectionIds(queryOpenSectionIds);
-  }, [data, queryOpenSectionIds, resolvedFocusedSectionId, searchParamString]);
-
-  useEffect(() => {
-    if (!effectiveFocusedSectionId) return;
-    setOpenSectionIds((current) => {
-      if (current.has(effectiveFocusedSectionId)) return current;
-      const next = new Set(current);
-      next.add(effectiveFocusedSectionId);
-      return next;
-    });
-  }, [effectiveFocusedSectionId]);
+    setOpenSectionIds(nextOpenSectionIds);
+  }, [data, hasOpenSectionsQuery, queryOpenSectionIds, resolvedFocusedSectionId, searchParamString]);
 
   if (loading && !data) return <TimelineSkeleton />;
   if (error) return <p className="text-sm text-destructive">{error}</p>;
@@ -328,6 +354,13 @@ export function TimelineTab() {
   const canCreateSections = canEdit && timelineData.permissions.can_create_sections;
   const canManageCustomTypes = canEdit && timelineData.permissions.can_manage_custom_types;
   const hasAnyActivity = timelineData.sections.some((section) => section.activities.length > 0);
+  const unavailableSectionDates = timelineData.sections.map((section) => section.section_date);
+
+  function sectionDateExists(sectionDate: string, excludeSectionId?: string): boolean {
+    return timelineData.sections.some(
+      (section) => section.section_date === sectionDate && section.id !== excludeSectionId,
+    );
+  }
 
   function openActivityModal(next: ActivityModalState) {
     setActionError(null);
@@ -361,14 +394,8 @@ export function TimelineTab() {
     const nextOpenIds = new Set(
       Array.from(openIds).filter((openSectionId) => sectionIds.has(openSectionId)),
     );
-    nextOpenIds.add(sectionId);
     params.set("section", sectionId);
-
-    if (nextOpenIds.size > 1) {
-      params.set("openSections", serializeOpenSectionIds(nextOpenIds));
-    } else {
-      params.delete("openSections");
-    }
+    params.set("openSections", serializeOpenSectionIds(nextOpenIds));
 
     const nextQuery = params.toString();
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
@@ -376,28 +403,24 @@ export function TimelineTab() {
 
   function focusSection(sectionId: string) {
     const nextOpenSectionIds = new Set(openSectionIds);
-    if (effectiveFocusedSectionId) {
-      nextOpenSectionIds.add(effectiveFocusedSectionId);
-    }
     nextOpenSectionIds.add(sectionId);
     setFocusedSectionId(sectionId);
     setOpenSectionIds(nextOpenSectionIds);
     replaceFocusedSectionUrl(sectionId, nextOpenSectionIds);
   }
 
-  function toggleSection(sectionId: string, isOpen: boolean, isFocused: boolean) {
+  function toggleSection(sectionId: string, isOpen: boolean) {
     if (!isOpen) {
       focusSection(sectionId);
       return;
     }
-    if (isFocused) return;
 
     const nextOpenSectionIds = new Set(openSectionIds);
     nextOpenSectionIds.delete(sectionId);
+    const nextFocusedSectionId = effectiveFocusedSectionId ?? sectionId;
+    setFocusedSectionId(nextFocusedSectionId);
     setOpenSectionIds(nextOpenSectionIds);
-    if (effectiveFocusedSectionId) {
-      replaceFocusedSectionUrl(effectiveFocusedSectionId, nextOpenSectionIds);
-    }
+    replaceFocusedSectionUrl(nextFocusedSectionId, nextOpenSectionIds);
   }
 
   function expandGroup(groupKey: string) {
@@ -410,6 +433,10 @@ export function TimelineTab() {
 
   async function handleCreateSection(payload: { label: string; section_date?: string }) {
     if (!payload.section_date) return;
+    if (sectionDateExists(payload.section_date)) {
+      setActionError("This date already has a timeline day.");
+      return;
+    }
     setSubmitting(true);
     setActionError(null);
     try {
@@ -428,6 +455,10 @@ export function TimelineTab() {
   }
 
   async function handlePatchSection(section: TimelineSection, payload: { label: string; section_date?: string }) {
+    if (payload.section_date && sectionDateExists(payload.section_date, section.id)) {
+      setActionError("This date already has a timeline day.");
+      return;
+    }
     setSubmitting(true);
     setActionError(null);
     try {
@@ -523,22 +554,29 @@ export function TimelineTab() {
     }
 
     return (
-      <div className="flex shrink-0 flex-row gap-1 sm:flex-col">
+      <div
+        className="inline-flex items-center gap-0.5 rounded-md border border-border/70 bg-background/80 p-0.5 shadow-xs"
+        role="group"
+        aria-label={`Actions for ${activity.title}`}
+      >
         {activity.capabilities.can_edit && (
           <IconButton
             label={`Edit ${activity.title}`}
+            variant="ghost"
+            className="size-7 text-muted-foreground hover:text-foreground"
             onClick={() => openActivityModal({ kind: "edit", activity })}
           >
-            <Pencil className="size-3" />
+            <Pencil className="size-3.5" />
           </IconButton>
         )}
         {activity.capabilities.can_delete && (
           <IconButton
             label={`Delete ${activity.title}`}
-            variant="destructive"
+            variant="ghost"
+            className="size-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive/20"
             onClick={() => setDeleteDialog({ kind: "activity", activity })}
           >
-            <Trash2 className="size-3" />
+            <Trash2 className="size-3.5" />
           </IconButton>
         )}
       </div>
@@ -553,9 +591,10 @@ export function TimelineTab() {
   ) {
     if (activities.length === 0) return null;
 
-    const { visible, hiddenCount } = limitActivityGroup(
+    const { visible, hiddenCount } = limitActivityGroupWithNowMarker(
       activities,
       expandedGroups.has(groupKey),
+      nowMarkerPlacement,
       5,
     );
 
@@ -571,15 +610,13 @@ export function TimelineTab() {
               {isNowMarkerBefore(activity, nowMarkerPlacement) ? (
                 <NowMarkerItem markerKey={`${activity.id}:now-before`} />
               ) : null}
-              <li className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <TimelineActivityNode
-                    activity={activity}
-                    isCurrent={isCurrentActivity(activity, nowMarkerPlacement)}
-                    onStatusChange={(nextStatus) => void handleUpdateActivityStatus(activity, nextStatus)}
-                  />
-                </div>
-                {renderActivityActions(activity)}
+              <li>
+                <TimelineActivityNode
+                  activity={activity}
+                  actions={renderActivityActions(activity)}
+                  isCurrent={isCurrentActivity(activity, nowMarkerPlacement)}
+                  onStatusChange={(nextStatus) => void handleUpdateActivityStatus(activity, nextStatus)}
+                />
               </li>
               {isNowMarkerAfter(activity, nowMarkerPlacement) ? (
                 <NowMarkerItem markerKey={`${activity.id}:now-after`} />
@@ -654,7 +691,7 @@ export function TimelineTab() {
     deleteDialog.kind === "activity"
       ? `This will permanently delete "${deleteDialog.activity.title}".`
       : deleteDialog.kind === "section"
-        ? `This will permanently delete "${deleteDialog.section.label}" and its activities.`
+        ? `This will permanently delete "${deleteDialog.section.label}".`
         : "";
 
   return (
@@ -689,7 +726,7 @@ export function TimelineTab() {
       <div className="space-y-4">
         {timelineData.sections.map((section) => {
           const isFocused = effectiveFocusedSectionId === section.id;
-          const isOpen = visibleOpenSectionIds.has(section.id);
+          const isOpen = openSectionIds.has(section.id);
           const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
 
           return (
@@ -706,7 +743,7 @@ export function TimelineTab() {
                     type="button"
                     className="flex min-w-0 items-center gap-2 text-left"
                     aria-expanded={isOpen}
-                    onClick={() => toggleSection(section.id, isOpen, isFocused)}
+                    onClick={() => toggleSection(section.id, isOpen)}
                   >
                     {isOpen ? (
                       <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
@@ -737,7 +774,7 @@ export function TimelineTab() {
                         >
                           <Pencil className="size-3" />
                         </IconButton>
-                        {section.kind === "SPECIAL_DAY" && (
+                        {canDeleteSpecialDay(section) && (
                           <IconButton
                             label={`Delete ${section.label}`}
                             variant="destructive"
@@ -793,6 +830,7 @@ export function TimelineTab() {
         initial={sectionModal.kind === "edit" ? sectionModal.section : undefined}
         submitting={submitting}
         errorMessage={actionError}
+        unavailableSectionDates={unavailableSectionDates}
         onOpenChange={(open) => {
           if (!open) closeSectionModal();
         }}

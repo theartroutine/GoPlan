@@ -58,9 +58,21 @@ describe("TimelineActivityNode operational controls", () => {
     expect(screen.getByText("Flexible")).not.toBeNull();
   });
 
-  it("renders operational details and opens map URLs", () => {
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+  it("keeps supplied actions inside the activity card", () => {
+    render(
+      <TimelineActivityNode
+        activity={buildTimelineActivity()}
+        actions={<button type="button">Edit Sample activity</button>}
+      />,
+    );
 
+    const card = screen.getByText("Sample activity").closest("[data-status='UPCOMING']");
+    const action = screen.getByRole("button", { name: "Edit Sample activity" });
+
+    expect(card?.contains(action)).toBe(true);
+  });
+
+  it("renders operational details and map direction links", () => {
     render(
       <TimelineActivityNode
         activity={buildTimelineActivity({
@@ -71,11 +83,18 @@ describe("TimelineActivityNode operational controls", () => {
           booking_reference: "HS-204",
           external_link: "https://example.com/booking/HS-204",
           location: {
-            location_mode: "MANUAL",
+            location_mode: "STRUCTURED",
             location_label: "Gate B Bus Station",
             location_note: "Across from Gate B",
-            open_url: "https://share.here.com/r/Gate%20B%20Bus%20Station",
-            place: null,
+            open_url: "https://share.here.com/l/11.941,108.44,gate-b-bus-station",
+            place: {
+              provider: "here",
+              provider_id: "here:place:gate-b",
+              title: "Gate B Bus Station",
+              address: "Da Lat",
+              lat: 11.941,
+              lng: 108.44,
+            },
           },
         })}
       />,
@@ -89,13 +108,8 @@ describe("TimelineActivityNode operational controls", () => {
     expect(screen.getByRole("link", { name: "Open link" }).getAttribute("href")).toBe(
       "https://example.com/booking/HS-204",
     );
-
-    fireEvent.click(screen.getByRole("button", { name: "Open map" }));
-    expect(openSpy).toHaveBeenCalledWith(
-      "https://share.here.com/r/Gate%20B%20Bus%20Station",
-      "_blank",
-      "noopener,noreferrer",
+    expect(screen.getByRole("link", { name: "Open directions to Gate B Bus Station" }).getAttribute("href")).toBe(
+      "https://share.here.com/l/11.941,108.44,gate-b-bus-station",
     );
-    openSpy.mockRestore();
   });
 });

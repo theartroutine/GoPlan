@@ -10,14 +10,11 @@ from trips.models import (
     MemberStatus,
     TimelineActivityTimeMode,
     TimelineLocationMode,
+    TimelineSection,
     TimelineSectionKind,
     TripStatus,
 )
-from trips.tests.timeline_helpers import (
-    make_timeline_activity,
-    make_timeline_section,
-    make_trip_with_timeline,
-)
+from trips.tests.timeline_helpers import make_timeline_activity, make_trip_with_timeline
 
 
 def _auth(user):
@@ -81,12 +78,10 @@ class TimelineDetailTests(APITestCase):
         self.assertFalse(res.data["permissions"]["can_edit_timeline"])
 
     def test_activities_render_with_assignee_and_type(self):
-        section = make_timeline_section(
+        section = TimelineSection.objects.get(
             trip=self.trip,
             section_date=self.trip.start_date,
-            label="Special Morning",
-            kind=TimelineSectionKind.SPECIAL_DAY,
-            position=10,
+            kind=TimelineSectionKind.SYSTEM_DAY,
         )
         make_timeline_activity(
             trip=self.trip,
@@ -100,10 +95,9 @@ class TimelineDetailTests(APITestCase):
         )
         res = self.client.get(self._url(), **_auth(self.captain))
         self.assertEqual(res.status_code, 200)
-        # The new SPECIAL_DAY shares section_date with Day 1 system section but has higher position.
-        special = next(s for s in res.data["sections"] if s["kind"] == "SPECIAL_DAY")
-        self.assertEqual(len(special["activities"]), 1)
-        activity = special["activities"][0]
+        day_one = next(s for s in res.data["sections"] if s["section_date"] == "2026-06-01")
+        self.assertEqual(len(day_one["activities"]), 1)
+        activity = day_one["activities"][0]
         self.assertEqual(activity["title"], "Bus to Da Lat")
         self.assertEqual(activity["activity_type"]["code"], "TRANSPORTATION")
         self.assertEqual(activity["assignee"]["display_name"], self.member.display_name)

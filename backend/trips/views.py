@@ -44,6 +44,7 @@ from trips.services import (
     TimelineInvalidAssigneeError,
     TimelineInvalidCustomTypeError,
     TimelineInvalidReorderScopeError,
+    TimelineSectionDateConflictError,
     TimelineSectionNotEmptyError,
     TimelineSectionNotFoundError,
     TimelineSystemDayLockError,
@@ -431,6 +432,8 @@ def _handle_common(exc):
     if isinstance(exc, TimelineCustomTypeNotFoundError):
         return _err(str(exc), exc.error_code, status.HTTP_404_NOT_FOUND)
     if isinstance(exc, TimelineSectionNotEmptyError):
+        return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
+    if isinstance(exc, TimelineSectionDateConflictError):
         return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
     if isinstance(exc, TimelineCustomTypeInUseError):
         return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)

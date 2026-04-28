@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { TimelineSection } from "@/features/trips/domain/types";
 import { Button } from "@/shared/ui/button";
@@ -13,6 +13,7 @@ type Props = {
   initial?: TimelineSection;
   submitting?: boolean;
   errorMessage?: string | null;
+  unavailableSectionDates?: string[];
   onCancel: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onSubmit: (payload: { label: string; section_date?: string }) => void;
@@ -28,6 +29,7 @@ function TimelineSectionFormFields({
   initial,
   submitting,
   errorMessage,
+  unavailableSectionDates = [],
   onCancel,
   onDirtyChange,
   onSubmit,
@@ -37,6 +39,13 @@ function TimelineSectionFormFields({
   const dirtyRef = useRef(false);
   const onDirtyChangeRef = useRef(onDirtyChange);
   const isSystem = initial?.kind === "SYSTEM_DAY";
+  const unavailableDates = useMemo(
+    () => unavailableSectionDates.filter((date) => date !== initial?.section_date),
+    [initial?.section_date, unavailableSectionDates],
+  );
+  const unavailableDateSet = useMemo(() => new Set(unavailableDates), [unavailableDates]);
+  const isSelectedDateUnavailable = Boolean(sectionDate && unavailableDateSet.has(sectionDate));
+  const dateError = isSelectedDateUnavailable ? "This date already has a timeline day." : null;
 
   useEffect(() => {
     onDirtyChangeRef.current = onDirtyChange;
@@ -66,6 +75,7 @@ function TimelineSectionFormFields({
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!label.trim()) return;
+    if (isSelectedDateUnavailable) return;
     if (initial) {
       const payload: { label: string; section_date?: string } = { label };
       if (!isSystem && sectionDate && sectionDate !== initial.section_date) {
@@ -99,12 +109,15 @@ function TimelineSectionFormFields({
             onChange={(date) => handleDateChange(date ?? "")}
             placeholder="Pick a date"
             disabled={submitting}
+            disabledDates={unavailableDates}
           />
         </div>
       )}
-      {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
+      {(dateError || errorMessage) && (
+        <p className="text-sm text-destructive">{dateError ?? errorMessage}</p>
+      )}
       <div className="flex gap-2">
-        <Button type="submit" disabled={!!submitting}>
+        <Button type="submit" disabled={!!submitting || isSelectedDateUnavailable}>
           {submitting ? "Saving…" : initial ? "Save section" : "Add section"}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel} disabled={!!submitting}>
