@@ -165,7 +165,7 @@ function sectionPositionLabel(sectionDate: string, timeZone: string): string {
 }
 
 function canDeleteDay(section: TimelineSection): boolean {
-  return !section.is_in_trip_range && section.activities.length === 0;
+  return section.activities.length === 0;
 }
 
 function parseOpenSectionIds(value: string | null, sectionIds: Set<string>): Set<string> {
@@ -236,6 +236,57 @@ function NowMarkerItem({ markerKey }: { markerKey: string }) {
       </span>
       <span className="h-px min-w-6 flex-1 bg-primary/40" />
     </li>
+  );
+}
+
+function useNow(timeZone: string): { displayTime: string; date: string; minutes: number } {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return useMemo(() => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(now);
+
+    const values = new Map(parts.map((part) => [part.type, part.value]));
+    const year = values.get("year") ?? "0000";
+    const month = values.get("month") ?? "01";
+    const day = values.get("day") ?? "01";
+    const hour = Number(values.get("hour") ?? "0");
+    const minute = Number(values.get("minute") ?? "0");
+
+    return {
+      displayTime: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      date: `${year}-${month}-${day}`,
+      minutes: hour * 60 + minute,
+    };
+  }, [now, timeZone]);
+}
+
+function NowDivider({ displayTime }: { displayTime: string }) {
+  return (
+    <div
+      className="relative my-1 flex items-center pl-7"
+      role="separator"
+      aria-label={`Current time: ${displayTime}`}
+    >
+      <span className="absolute left-0 size-4 animate-pulse rounded-full bg-primary ring-2 ring-primary/20" />
+      <span className="h-0.5 flex-1 bg-primary/70" />
+      <span className="mx-2 shrink-0 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground">
+        Now · {displayTime}
+      </span>
+      <span className="h-0.5 flex-1 bg-primary/70" />
+    </div>
   );
 }
 
