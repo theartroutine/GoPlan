@@ -22,6 +22,9 @@ next-env.d.ts
 # OS
 .DS_Store
 
+# Personal notes
+notes/
+
 # Reports
 report/
 
@@ -31,12 +34,5 @@ report/
 # Git worktrees
 .worktrees/
 
-# Superpowers plan output — keep docs/superpowers/specs/ trackable
-docs/*
-!docs/superpowers/
-docs/superpowers/*
-!docs/superpowers/specs/
-!docs/superpowers/specs/**
-
-# Personal notes
-notes/
+# Local-only docs (not tracked on remote)
+docs/
