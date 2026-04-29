@@ -1,7 +1,11 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
 import type { Notification } from "@/features/notifications/domain/types";
 import { parseTripTimelineReminderPayload } from "@/features/notifications/domain/payload-parsers";
+import { dispatchTimelineActivityFocus } from "@/features/trips/presentation/timeline-focus-events";
+import { buildActivityHref } from "@/features/trips/presentation/timeline-url-state";
 import { formatRelativeTime } from "@/shared/utils/relative-time";
 
 type Props = {
@@ -10,6 +14,7 @@ type Props = {
 };
 
 export function TimelineReminderNotification({ notification, onMarkRead }: Props) {
+  const router = useRouter();
   const payload = parseTripTimelineReminderPayload(notification.payload);
 
   if (!payload) {
@@ -30,6 +35,13 @@ export function TimelineReminderNotification({ notification, onMarkRead }: Props
         if (!notification.is_read) {
           void onMarkRead(notification.id);
         }
+        router.push(buildActivityHref(`/trips/${payload.trip_id}/timeline`, "", payload.activity_id), {
+          scroll: false,
+        });
+        dispatchTimelineActivityFocus({
+          tripId: payload.trip_id,
+          activityId: payload.activity_id,
+        });
       }}
     >
       {!notification.is_read && (

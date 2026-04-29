@@ -1,23 +1,31 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildActivityHref,
   buildDayHref,
   buildOverviewHref,
   resolveTimelineUrlState,
 } from "@/features/trips/presentation/timeline-url-state";
 
 const sectionIds = new Set(["day-1", "day-2"]);
+const activitySectionIds = new Map([["activity-1", "day-2"]]);
 
 describe("timeline URL state", () => {
   it("builds a Day Detail href and removes legacy section params", () => {
-    expect(buildDayHref("/trips/trip-1/timeline", "foo=bar&section=old&openSections=old", "day-2")).toBe(
+    expect(buildDayHref("/trips/trip-1/timeline", "foo=bar&activity=old&section=old&openSections=old", "day-2")).toBe(
       "/trips/trip-1/timeline?foo=bar&day=day-2",
     );
   });
 
   it("builds an Overview href and removes timeline view params", () => {
-    expect(buildOverviewHref("/trips/trip-1/timeline", "foo=bar&day=day-2&section=old&openSections=old")).toBe(
+    expect(buildOverviewHref("/trips/trip-1/timeline", "foo=bar&day=day-2&activity=old&section=old&openSections=old")).toBe(
       "/trips/trip-1/timeline?foo=bar",
+    );
+  });
+
+  it("builds an activity href and removes day-level state", () => {
+    expect(buildActivityHref("/trips/trip-1/timeline", "foo=bar&day=day-1&section=old", "activity-1")).toBe(
+      "/trips/trip-1/timeline?foo=bar&activity=activity-1",
     );
   });
 
@@ -93,6 +101,35 @@ describe("timeline URL state", () => {
     ).toEqual({
       dayId: null,
       replacementHref: "/trips/trip-1/timeline",
+    });
+  });
+
+  it("resolves an activity param to the containing day and canonical href", () => {
+    expect(
+      resolveTimelineUrlState({
+        pathname: "/trips/trip-1/timeline",
+        search: "foo=bar&activity=activity-1",
+        sectionIds,
+        activitySectionIds,
+      }),
+    ).toEqual({
+      dayId: "day-2",
+      targetActivityId: "activity-1",
+      replacementHref: "/trips/trip-1/timeline?foo=bar&day=day-2&activity=activity-1",
+    });
+  });
+
+  it("strips missing activity params and keeps a valid day", () => {
+    expect(
+      resolveTimelineUrlState({
+        pathname: "/trips/trip-1/timeline",
+        search: "day=day-1&activity=missing",
+        sectionIds,
+        activitySectionIds,
+      }),
+    ).toEqual({
+      dayId: "day-1",
+      replacementHref: "/trips/trip-1/timeline?day=day-1",
     });
   });
 });

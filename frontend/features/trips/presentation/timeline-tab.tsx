@@ -36,6 +36,10 @@ import {
 import { TimelineActivityModal } from "@/features/trips/presentation/timeline-activity-modal";
 import { TimelineActivityNode } from "@/features/trips/presentation/timeline-activity-node";
 import { TimelineCustomTypesModal } from "@/features/trips/presentation/timeline-custom-types-modal";
+import {
+  isTimelineActivityFocusEvent,
+  TIMELINE_ACTIVITY_FOCUS_EVENT,
+} from "@/features/trips/presentation/timeline-focus-events";
 import { TimelineSectionModal } from "@/features/trips/presentation/timeline-section-modal";
 import {
   findNowDividerIndex,
@@ -194,6 +198,28 @@ function SectionDateBadge({
 
 function canDeleteDay(section: TimelineSection): boolean {
   return section.activities.length === 0;
+}
+
+function timelineActivityElementId(activityId: string): string {
+  return `timeline-activity-${activityId}`;
+}
+
+function getTimelineFocusScrollBehavior(): ScrollBehavior {
+  if (typeof window.matchMedia !== "function") return "smooth";
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
+
+function scrollTimelineActivityIntoView(activityId: string): boolean {
+  const element = document.getElementById(timelineActivityElementId(activityId));
+  if (typeof element?.scrollIntoView !== "function") return false;
+
+  window.requestAnimationFrame(() => {
+    element.scrollIntoView({
+      behavior: getTimelineFocusScrollBehavior(),
+      block: "center",
+    });
+  });
+  return true;
 }
 
 function isNowMarkerBefore(activity: TimelineActivity, placement: NowMarkerPlacement): boolean {
@@ -363,16 +389,54 @@ export function TimelineTab() {
     () => new Set(data?.sections.map((section) => section.id) ?? []),
     [data?.sections],
   );
+  const activitySectionIds = useMemo(() => {
+    const ids = new Map<string, string>();
+    for (const section of data?.sections ?? []) {
+      for (const activity of section.activities) {
+        ids.set(activity.id, section.id);
+      }
+    }
+    return ids;
+  }, [data?.sections]);
   const timelineUrlState = useMemo(
-    () => resolveTimelineUrlState({ pathname, search: searchParamString, sectionIds }),
-    [pathname, searchParamString, sectionIds],
+    () => resolveTimelineUrlState({
+      pathname,
+      search: searchParamString,
+      sectionIds,
+      activitySectionIds,
+    }),
+    [pathname, searchParamString, sectionIds, activitySectionIds],
   );
+  const targetActivityId = timelineUrlState.targetActivityId ?? null;
+
   useEffect(() => {
     if (!data || timelineUrlState.replacementHref === null) {
       return;
     }
     router.replace(timelineUrlState.replacementHref, { scroll: false });
   }, [data, router, timelineUrlState.replacementHref]);
+
+  useEffect(() => {
+    if (!data || !targetActivityId) {
+      return;
+    }
+
+    scrollTimelineActivityIntoView(targetActivityId);
+  }, [data, targetActivityId, timelineUrlState.dayId]);
+
+  useEffect(() => {
+    function handleTimelineActivityFocus(event: Event) {
+      if (!isTimelineActivityFocusEvent(event) || event.detail.tripId !== tripId) {
+        return;
+      }
+      scrollTimelineActivityIntoView(event.detail.activityId);
+    }
+
+    window.addEventListener(TIMELINE_ACTIVITY_FOCUS_EVENT, handleTimelineActivityFocus);
+    return () => {
+      window.removeEventListener(TIMELINE_ACTIVITY_FOCUS_EVENT, handleTimelineActivityFocus);
+    };
+  }, [tripId]);
 
   const now = useNow(data?.trip_timezone ?? "UTC");
   const nowDividerIndex = useMemo(
@@ -592,11 +656,12 @@ export function TimelineTab() {
               {isNowMarkerBefore(activity, nowMarkerPlacement) ? (
                 <NowMarkerItem displayTime={displayTime} />
               ) : null}
-              <li>
+              <li id={timelineActivityElementId(activity.id)} className="scroll-mt-24">
                 <TimelineActivityNode
                   activity={activity}
                   actions={renderActivityActions(activity)}
                   isCurrent={activeIds.has(activity.id)}
+                  isHighlighted={targetActivityId === activity.id}
                   onStatusChange={(nextStatus) => void handleUpdateActivityStatus(activity, nextStatus)}
                 />
               </li>

@@ -6,6 +6,7 @@ import {
   buildTimelineResponse,
   buildTimelineSection,
 } from "@/features/trips/presentation/timeline-test-helpers";
+import { TIMELINE_ACTIVITY_FOCUS_EVENT } from "@/features/trips/presentation/timeline-focus-events";
 
 const tripsApiMock = vi.hoisted(() => ({
   bffCreateTimelineActivity: vi.fn(),
@@ -273,6 +274,114 @@ describe("TimelineTab", () => {
     expect(await screen.findByText("Bus to Da Lat")).not.toBeNull();
     expect(screen.getByText("Bring printed tickets")).not.toBeNull();
     expect(screen.getByRole("link", { name: "Back to timeline" })).not.toBeNull();
+  });
+
+  it("opens and highlights the containing day when activity query references an activity", async () => {
+    mockUseSearchParams("activity=target-activity");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        sections: [
+          buildTimelineSection({
+            id: "day-1",
+            label: "Day 1",
+            activities: [buildTimelineActivity({ id: "other-activity", title: "Breakfast" })],
+          }),
+          buildTimelineSection({
+            id: "day-2",
+            label: "Day 2",
+            activities: [
+              buildTimelineActivity({
+                id: "target-activity",
+                title: "Board train",
+                note: "Platform 3",
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    expect(await screen.findByText("Board train")).not.toBeNull();
+    expect(screen.getByText("Platform 3")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Back to timeline" })).not.toBeNull();
+    expect(screen.getByText("Board train").closest("[data-highlighted='true']")).not.toBeNull();
+    expect(screen.queryByText("Breakfast")).toBeNull();
+    await waitFor(() => {
+      expect(navigationMock.replace).toHaveBeenCalledWith(
+        "/trips/trip-1/timeline?day=day-2&activity=target-activity",
+        { scroll: false },
+      );
+    });
+  });
+
+  it("smooth-scrolls again when the same activity receives a repeated focus event", async () => {
+    mockUseSearchParams("day=day-2&activity=target-activity");
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    };
+
+    try {
+      tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+        buildTimelineResponse({
+          sections: [
+            buildTimelineSection({
+              id: "day-2",
+              label: "Day 2",
+              activities: [
+                buildTimelineActivity({
+                  id: "target-activity",
+                  title: "Board train",
+                }),
+              ],
+            }),
+          ],
+        }),
+      );
+
+      render(<TimelineTab />);
+
+      expect(await screen.findByText("Board train")).not.toBeNull();
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+
+      scrollIntoView.mockClear();
+      window.dispatchEvent(
+        new CustomEvent(TIMELINE_ACTIVITY_FOCUS_EVENT, {
+          detail: { tripId: "trip-1", activityId: "target-activity" },
+        }),
+      );
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+    } finally {
+      if (originalScrollIntoView) {
+        Object.defineProperty(Element.prototype, "scrollIntoView", {
+          configurable: true,
+          value: originalScrollIntoView,
+        });
+      } else {
+        delete (Element.prototype as { scrollIntoView?: Element["scrollIntoView"] }).scrollIntoView;
+      }
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+    }
   });
 
   it("renders previous and next day navigation links in day detail", async () => {

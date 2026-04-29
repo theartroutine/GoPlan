@@ -50,6 +50,7 @@ const STATUS_PILL_TONE: Record<TimelineActivity["status"], string> = {
 type Props = {
   activity: TimelineActivity;
   isCurrent?: boolean;
+  isHighlighted?: boolean;
   actions?: ReactNode;
   onStatusChange?: (status: TimelineActivityStatus) => void;
 };
@@ -103,6 +104,7 @@ function formatStatusLabel(status: TimelineActivityStatus): string {
 export function TimelineActivityNode({
   activity,
   isCurrent = false,
+  isHighlighted = false,
   actions,
   onStatusChange,
 }: Props) {
@@ -162,11 +164,16 @@ export function TimelineActivityNode({
   return (
     <div
       data-current={isCurrent ? "true" : undefined}
+      data-highlighted={isHighlighted ? "true" : undefined}
       data-status={activity.status}
       className={[
-        "rounded-lg border p-4 shadow-sm",
+        "rounded-lg border p-4 shadow-sm transition-[background-color,border-color,box-shadow] duration-300 ease-out",
         CARD_STATUS_TONE[activity.status],
-        isCurrent ? "ring-2 ring-primary/40" : "",
+        isHighlighted
+          ? "ring-2 ring-primary/70 ring-offset-2 ring-offset-background"
+          : isCurrent
+            ? "ring-2 ring-primary/40"
+            : "",
       ].join(" ")}
     >
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
