@@ -229,6 +229,7 @@ describe("TimelineTab", () => {
 
   it("renders the overview-level now divider with the day label", async () => {
     vi.useFakeTimers({ now: new Date("2026-06-01T03:30:00.000Z") });
+    mockUseSearchParams("filter=mine");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         trip_timezone: "Asia/Ho_Chi_Minh",
@@ -249,7 +250,8 @@ describe("TimelineTab", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText("Now · Day 1 · 10:30")).not.toBeNull();
+    const nowLink = screen.getByRole("link", { name: "Now · Day 1 · 10:30" });
+    expect(nowLink.getAttribute("href")).toBe("/trips/trip-1/timeline?filter=mine&day=today");
   });
 
   it("renders day detail when the day query references a valid section", async () => {
@@ -296,6 +298,33 @@ describe("TimelineTab", () => {
     expect(nextLink.getAttribute("href")).toBe(
       "/trips/trip-1/timeline?day=next&filter=mine",
     );
+  });
+
+  it("uses day navigation as the action row in day detail", async () => {
+    mockUseSearchParams("day=day-1");
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({ id: "day-1", label: "Day 1", section_date: "2026-06-01" }),
+          buildTimelineSection({ id: "day-2", label: "Day 2", section_date: "2026-06-02" }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    const backLink = await screen.findByRole("link", { name: "Back to timeline" });
+    const nextLink = screen.getByRole("link", { name: "Next day" });
+
+    expect(backLink.getAttribute("href")).toBe("/trips/trip-1/timeline");
+    expect(nextLink.getAttribute("href")).toBe("/trips/trip-1/timeline?day=day-2");
+    expect(screen.queryByRole("button", { name: "Add day" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Manage types" })).toBeNull();
   });
 
   it("normalizes a legacy section query to day via router.replace", async () => {
@@ -418,6 +447,7 @@ describe("TimelineTab", () => {
 
     const backLink = await screen.findByRole("link", { name: "Back to timeline" });
     expect(backLink.getAttribute("href")).toBe("/trips/trip-1/timeline?filter=mine");
+    expect(backLink.getAttribute("data-variant")).toBe("default");
   });
 
   it("opens the existing Add Activity modal from day detail", async () => {

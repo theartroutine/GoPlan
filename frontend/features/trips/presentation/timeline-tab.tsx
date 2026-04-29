@@ -258,7 +258,15 @@ function useNow(timeZone: string): { instant: Date; displayTime: string; date: s
   }, [now, timeZone]);
 }
 
-function NowDivider({ label, displayTime }: { label: string; displayTime: string }) {
+function NowDivider({
+  label,
+  displayTime,
+  href,
+}: {
+  label: string;
+  displayTime: string;
+  href: string;
+}) {
   return (
     <div
       className="relative my-1 flex items-center pl-7"
@@ -267,9 +275,12 @@ function NowDivider({ label, displayTime }: { label: string; displayTime: string
     >
       <span className="absolute left-0 size-4 animate-pulse rounded-full bg-primary ring-2 ring-primary/20" />
       <span className="h-0.5 flex-1 bg-primary/70" />
-      <span className="mx-2 shrink-0 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground">
+      <Link
+        href={href}
+        className="mx-2 shrink-0 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
         Now · {label} · {displayTime}
-      </span>
+      </Link>
       <span className="h-0.5 flex-1 bg-primary/70" />
     </div>
   );
@@ -788,7 +799,11 @@ export function TimelineTab() {
               </section>
 
               {index === nowDividerIndex && (
-                <NowDivider label={section.label} displayTime={now.displayTime} />
+                <NowDivider
+                  label={section.label}
+                  displayTime={now.displayTime}
+                  href={buildDayHref(pathname, searchParamString, section.id)}
+                />
               )}
             </Fragment>
           );
@@ -818,7 +833,7 @@ export function TimelineTab() {
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Button asChild size="sm" variant="outline">
+          <Button asChild size="sm">
             <Link href={buildOverviewHref(pathname, searchParamString)}>
               <ArrowLeft className="size-4" />
               Back to timeline
@@ -898,114 +913,114 @@ export function TimelineTab() {
   return (
     <TooltipProvider delayDuration={0}>
       <div className="space-y-4">
-      {(canCreateSections || canManageCustomTypes) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {canCreateSections && (
-            <Button type="button" size="sm" onClick={() => openSectionModal({ kind: "create" })}>
-              <Plus className="size-4" />
-              Add day
-            </Button>
-          )}
-          {canManageCustomTypes && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setCustomTypesOpen(true)}
-            >
-              <Settings className="size-4" />
-              Manage types
-            </Button>
-          )}
-        </div>
-      )}
+        {!selectedSection && (canCreateSections || canManageCustomTypes) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {canCreateSections && (
+              <Button type="button" size="sm" onClick={() => openSectionModal({ kind: "create" })}>
+                <Plus className="size-4" />
+                Add day
+              </Button>
+            )}
+            {canManageCustomTypes && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setCustomTypesOpen(true)}
+              >
+                <Settings className="size-4" />
+                Manage types
+              </Button>
+            )}
+          </div>
+        )}
 
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+        {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      {timelineData.sections.length === 0 ? (
-        <TimelineEmptyState canEdit={canEdit} />
-      ) : selectedSection ? (
-        renderDayDetail(selectedSection)
-      ) : (
-        renderOverview()
-      )}
+        {timelineData.sections.length === 0 ? (
+          <TimelineEmptyState canEdit={canEdit} />
+        ) : selectedSection ? (
+          renderDayDetail(selectedSection)
+        ) : (
+          renderOverview()
+        )}
 
-      <TimelineActivityModal
-        open={activityModal.kind !== "closed"}
-        mode={activityModal.kind === "edit" ? "edit" : "create"}
-        initial={activityModal.kind === "edit" ? activityModal.activity : undefined}
-        members={members}
-        systemTypes={timelineData.system_types}
-        customTypes={timelineData.custom_types}
-        submitting={submitting}
-        errorMessage={actionError}
-        onOpenChange={(open) => {
-          if (!open) closeActivityModal();
-        }}
-        onSubmit={(payload) => {
-          if (activityModal.kind === "create") {
-            void handleCreateActivity(activityModal.sectionId, payload as CreateActivityPayload);
-          } else if (activityModal.kind === "edit") {
-            void handlePatchActivity(activityModal.activity, payload as PatchActivityPayload);
-          }
-        }}
-      />
+        <TimelineActivityModal
+          open={activityModal.kind !== "closed"}
+          mode={activityModal.kind === "edit" ? "edit" : "create"}
+          initial={activityModal.kind === "edit" ? activityModal.activity : undefined}
+          members={members}
+          systemTypes={timelineData.system_types}
+          customTypes={timelineData.custom_types}
+          submitting={submitting}
+          errorMessage={actionError}
+          onOpenChange={(open) => {
+            if (!open) closeActivityModal();
+          }}
+          onSubmit={(payload) => {
+            if (activityModal.kind === "create") {
+              void handleCreateActivity(activityModal.sectionId, payload as CreateActivityPayload);
+            } else if (activityModal.kind === "edit") {
+              void handlePatchActivity(activityModal.activity, payload as PatchActivityPayload);
+            }
+          }}
+        />
 
-      <TimelineSectionModal
-        open={sectionModal.kind !== "closed"}
-        mode={sectionModal.kind === "edit" ? "edit" : "create"}
-        initial={sectionModal.kind === "edit" ? sectionModal.section : undefined}
-        submitting={submitting}
-        errorMessage={actionError}
-        unavailableSectionDates={unavailableSectionDates}
-        onOpenChange={(open) => {
-          if (!open) closeSectionModal();
-        }}
-        onSubmit={(payload) => {
-          if (sectionModal.kind === "create") {
-            void handleCreateSection(payload);
-          } else if (sectionModal.kind === "edit") {
-            void handlePatchSection(sectionModal.section, payload);
-          }
-        }}
-      />
+        <TimelineSectionModal
+          open={sectionModal.kind !== "closed"}
+          mode={sectionModal.kind === "edit" ? "edit" : "create"}
+          initial={sectionModal.kind === "edit" ? sectionModal.section : undefined}
+          submitting={submitting}
+          errorMessage={actionError}
+          unavailableSectionDates={unavailableSectionDates}
+          onOpenChange={(open) => {
+            if (!open) closeSectionModal();
+          }}
+          onSubmit={(payload) => {
+            if (sectionModal.kind === "create") {
+              void handleCreateSection(payload);
+            } else if (sectionModal.kind === "edit") {
+              void handlePatchSection(sectionModal.section, payload);
+            }
+          }}
+        />
 
-      <TimelineCustomTypesModal
-        open={customTypesOpen}
-        tripId={tripId}
-        customTypes={timelineData.custom_types}
-        onOpenChange={setCustomTypesOpen}
-        onChanged={handleCustomTypesChanged}
-      />
+        <TimelineCustomTypesModal
+          open={customTypesOpen}
+          tripId={tripId}
+          customTypes={timelineData.custom_types}
+          onOpenChange={setCustomTypesOpen}
+          onChanged={handleCustomTypesChanged}
+        />
 
-      <AlertDialog
-        open={deleteDialog.kind !== "closed"}
-        onOpenChange={(open) => {
-          if (!open && !deleting) {
-            setDeleteDialog({ kind: "closed" });
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{deleteTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{deleteDescription}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={deleting}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleConfirmDelete();
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialog
+          open={deleteDialog.kind !== "closed"}
+          onOpenChange={(open) => {
+            if (!open && !deleting) {
+              setDeleteDialog({ kind: "closed" });
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{deleteTitle}</AlertDialogTitle>
+              <AlertDialogDescription>{deleteDescription}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={deleting}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void handleConfirmDelete();
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </TooltipProvider>
   );
