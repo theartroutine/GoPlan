@@ -165,7 +165,7 @@ describe("TimelineTab", () => {
     render(<TimelineTab />);
 
     expect(await screen.findByText("Preparation")).not.toBeNull();
-    expect(screen.getByText("No activities")).not.toBeNull();
+    expect(screen.getByText("No activities yet")).not.toBeNull();
     expect(screen.queryByText("Start building your timeline")).toBeNull();
   });
 
@@ -191,8 +191,9 @@ describe("TimelineTab", () => {
 
     render(<TimelineTab />);
 
-    expect(await screen.findByRole("button", { name: "Edit Preparation" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Delete Preparation" })).not.toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Day options" }));
+    expect(await screen.findByRole("menuitem", { name: /Edit day/i })).not.toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Delete day/i })).not.toBeNull();
   });
 
   it("hides overview day delete when a day still has activities", async () => {
@@ -215,8 +216,9 @@ describe("TimelineTab", () => {
 
     render(<TimelineTab />);
 
-    expect(await screen.findByRole("button", { name: "Edit Day 1" })).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete Day 1" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Day options" }));
+    expect(await screen.findByRole("menuitem", { name: /Edit day/i })).not.toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /Delete day/i })).toBeNull();
   });
 
   it("renders the overview-level now divider with the day label", async () => {
