@@ -10,6 +10,8 @@ type LocalDateParts = {
   minutes: number;
 };
 
+export type SectionDatePosition = "Today" | "Past" | "Upcoming";
+
 export type OverviewHint = {
   prefix: "Next" | "Last";
   time: string;
@@ -262,7 +264,7 @@ export function formatSectionDate(sectionDate: string): string {
 
 export function getOverviewHint(
   groups: ReturnType<typeof groupActivitiesForDay>,
-  datePosition: "Today" | "Past" | "Upcoming",
+  datePosition: SectionDatePosition,
 ): OverviewHint | null {
   if (datePosition === "Past") {
     const lastScheduled = groups.timeline[groups.timeline.length - 1];

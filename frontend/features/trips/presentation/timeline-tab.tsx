@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
+  MoreHorizontal,
   Pencil,
   Plus,
   Settings,
@@ -38,9 +39,12 @@ import { TimelineCustomTypesModal } from "@/features/trips/presentation/timeline
 import { TimelineSectionModal } from "@/features/trips/presentation/timeline-section-modal";
 import {
   findNowDividerIndex,
+  formatSectionDate,
   getActiveActivityIds,
   getNowMarkerPlacement,
+  getOverviewHint,
   groupActivitiesForDay,
+  type SectionDatePosition,
 } from "@/features/trips/presentation/timeline-view-model";
 import {
   buildDayHref,
@@ -60,6 +64,13 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -82,9 +93,7 @@ type DeleteDialogState =
   | { kind: "activity"; activity: TimelineActivity }
   | { kind: "section"; section: TimelineSection };
 
-type ActivityGroups = ReturnType<typeof groupActivitiesForDay>;
 type NowMarkerPlacement = ReturnType<typeof getNowMarkerPlacement>;
-type SectionDatePosition = "Today" | "Past" | "Upcoming";
 const EMPTY_ACTIVE_IDS: ReadonlySet<string> = new Set();
 
 function TimelineSkeleton() {
@@ -128,31 +137,6 @@ function TimelineEmptyState({ canEdit }: { canEdit: boolean }) {
 function extractError(err: unknown, fallback: string): string {
   const data = (err as { response?: { data?: { detail?: string } } })?.response?.data;
   return data?.detail ?? fallback;
-}
-
-function formatActivityTime(activity: TimelineActivity): string {
-  if (activity.time_mode === "ALL_DAY") return "All day";
-  if (activity.time_mode === "FLEXIBLE") return "Flexible";
-
-  const start = activity.start_time?.slice(0, 5) ?? "";
-  if (activity.time_mode === "AT_TIME") return start;
-
-  const end = activity.end_time?.slice(0, 5) ?? "";
-  return start && end ? `${start} - ${end}` : start || end;
-}
-
-function summarizeGroups(groups: ActivityGroups): string {
-  const parts = [
-    groups.allDay.length > 0 ? `${groups.allDay.length} all-day` : null,
-    groups.timeline.length > 0 ? `${groups.timeline.length} scheduled` : null,
-    groups.flexible.length > 0 ? `${groups.flexible.length} flexible` : null,
-  ].filter((part): part is string => part !== null);
-
-  return parts.length > 0 ? parts.join(" / ") : "No activities";
-}
-
-function getNextScheduledActivity(groups: ActivityGroups): TimelineActivity | null {
-  return groups.timeline.find((activity) => Boolean(activity.start_time)) ?? null;
 }
 
 function localDate(timeZone: string): string {
@@ -615,22 +599,6 @@ export function TimelineTab() {
     );
   }
 
-  function renderOverviewSummary(section: TimelineSection) {
-    const groups = groupActivitiesForDay(section.activities);
-    const nextActivity = getNextScheduledActivity(groups);
-
-    return (
-      <div className="flex w-full flex-col gap-1 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-left text-xs">
-        <span className="font-medium text-foreground">{summarizeGroups(groups)}</span>
-        {nextActivity && (
-          <span className="text-muted-foreground">
-            Next: {formatActivityTime(nextActivity)} - {nextActivity.title}
-          </span>
-        )}
-      </div>
-    );
-  }
-
   function renderSectionManagementActions(section: TimelineSection) {
     if (!canEdit) return null;
 
@@ -655,41 +623,170 @@ export function TimelineTab() {
     );
   }
 
+  function timelineDotClass(datePosition: SectionDatePosition): string {
+    if (datePosition === "Today") return "border-primary bg-primary ring-2 ring-primary/20";
+    if (datePosition === "Upcoming") return "border-emerald-500 bg-background dark:border-emerald-400";
+    return "border-border bg-muted/40";
+  }
+
+  function renderOverviewSectionActions(section: TimelineSection) {
+    if (!canEdit) return null;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Day options"
+            className="size-7 shrink-0 text-muted-foreground"
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => openSectionModal({ kind: "edit", section })}>
+            <Pencil className="size-3.5" />
+            Edit day
+          </DropdownMenuItem>
+          {canDeleteDay(section) && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setDeleteDialog({ kind: "section", section })}
+              >
+                <Trash2 className="size-3.5" />
+                Delete day
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
   function renderOverview() {
     return (
       <div className="space-y-4">
         {timelineData.sections.map((section, index) => {
           const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
+          const formattedDate = formatSectionDate(section.section_date);
+          const groups = groupActivitiesForDay(section.activities);
+          const hint = getOverviewHint(groups, datePosition);
+          const inProgressCount = section.activities.filter((a) => a.status === "IN_PROGRESS").length;
+          const isEmpty = section.activities.length === 0;
 
           return (
             <Fragment key={section.id}>
-              <section className="relative pl-7">
+              <section
+                className={cn("relative pl-7", isEmpty && "opacity-60")}
+              >
                 <div className="absolute bottom-[-1rem] left-[7px] top-5 w-px bg-border" />
-                <span className="absolute left-0 top-1 size-4 rounded-full border-2 border-border bg-background" />
-                <div className="space-y-3">
-                  <header className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-sm font-semibold">{section.label}</h3>
+                <span
+                  className={cn(
+                    "absolute left-0 top-1 size-4 rounded-full border-2",
+                    timelineDotClass(datePosition),
+                  )}
+                />
+
+                <div
+                  className={cn(
+                    "overflow-hidden rounded-lg border shadow-sm",
+                    datePosition === "Today" ? "border-primary/30" : "border-border/70",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "border-l-[3px]",
+                      datePosition === "Today"
+                        ? "border-l-primary"
+                        : datePosition === "Upcoming"
+                          ? "border-l-emerald-500 dark:border-l-emerald-400"
+                          : "border-l-border",
+                    )}
+                  >
+                    {/* Card body */}
+                    <div
+                      className={cn(
+                        "px-3 pb-2.5 pt-3",
+                        datePosition === "Today" && "bg-primary/[0.02]",
+                      )}
+                    >
+                      {/* Row 1: title + actions */}
+                      <div className="mb-1.5 flex items-start justify-between gap-2">
+                        <h3 className="text-sm font-semibold leading-snug text-foreground">
+                          {section.label}
+                        </h3>
+                        {renderOverviewSectionActions(section)}
+                      </div>
+
+                      {/* Row 2: date + status pill */}
+                      <div className="mb-2.5 flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{formattedDate}</span>
+                        <span
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase",
+                            datePositionTone(datePosition),
+                          )}
+                        >
+                          {datePosition}
+                        </span>
+                      </div>
+
+                      {/* Row 3: activity chips */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {inProgressCount > 0 && (
+                          <span className="inline-flex min-h-5 items-center rounded-full border border-primary/20 bg-primary/10 px-2.5 text-[11px] font-medium text-primary">
+                            {inProgressCount} in progress
+                          </span>
+                        )}
+                        {groups.timeline.length > 0 && (
+                          <span className="inline-flex min-h-5 items-center rounded-full border border-border bg-muted px-2.5 text-[11px] font-medium text-foreground/80">
+                            {groups.timeline.length} scheduled
+                          </span>
+                        )}
+                        {groups.allDay.length > 0 && (
+                          <span className="inline-flex min-h-5 items-center rounded-full border border-border bg-muted px-2.5 text-[11px] font-medium text-foreground/80">
+                            {groups.allDay.length} all-day
+                          </span>
+                        )}
+                        {groups.flexible.length > 0 && (
+                          <span className="inline-flex min-h-5 items-center rounded-full border border-border bg-muted px-2.5 text-[11px] font-medium text-foreground/80">
+                            {groups.flexible.length} flexible
+                          </span>
+                        )}
+                        {isEmpty && (
+                          <span className="inline-flex min-h-5 items-center rounded-full border border-dashed border-border px-2.5 text-[11px] text-muted-foreground">
+                            No activities yet
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                      <SectionDateBadge
-                        sectionDate={section.section_date}
-                        datePosition={datePosition}
-                      />
-                      {renderSectionManagementActions(section)}
-                      <Button asChild size="sm" className="h-8 px-3 shadow-sm">
+                    {/* Footer: hint + open day */}
+                    <div
+                      className={cn(
+                        "flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2",
+                        datePosition === "Today" ? "bg-primary/[0.03]" : "bg-muted/30",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                        {hint
+                          ? `${hint.prefix}: ${hint.time ? `${hint.time} – ` : ""}${hint.title}`
+                          : ""}
+                      </span>
+                      <Button asChild size="xs" variant="outline" className="shrink-0">
                         <Link href={buildDayHref(pathname, searchParamString, section.id)}>
                           Open day
-                          <ArrowRight className="size-3.5" />
+                          <ArrowRight className="size-3" />
                         </Link>
                       </Button>
                     </div>
-                  </header>
-
-                  {renderOverviewSummary(section)}
+                  </div>
                 </div>
               </section>
+
               {index === nowDividerIndex && (
                 <NowDivider label={section.label} displayTime={now.displayTime} />
               )}
