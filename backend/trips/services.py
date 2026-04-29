@@ -991,7 +991,11 @@ def _activity_start_utc(activity: TimelineActivity):
 
 def _configured_reminder_offsets(activity: TimelineActivity) -> list[int]:
     return sorted(
-        set(activity.reminders.values_list("offset_minutes_before", flat=True)),
+        set(
+            activity.reminders
+            .filter(sent_at__isnull=True)
+            .values_list("offset_minutes_before", flat=True)
+        ),
         reverse=True,
     )
 
@@ -1068,7 +1072,6 @@ def dispatch_due_timeline_reminders(*, now=None) -> int:
                 activity__status__in=[
                     TimelineActivityStatus.UPCOMING,
                     TimelineActivityStatus.IN_PROGRESS,
-                    TimelineActivityStatus.DONE,
                 ],
                 activity__trip__status__in=_TIMELINE_REMINDER_DISPATCH_TRIP_STATUSES,
             )

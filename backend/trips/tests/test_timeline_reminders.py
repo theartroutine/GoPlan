@@ -114,10 +114,10 @@ class TimelineReminderGenerationTests(APITestCase):
                 "start_time": time(9, 0),
                 "system_type": "FOOD",
                 "location_mode": "MANUAL",
-                "reminder_offsets_minutes": [30],
+                "reminder_offsets_minutes": [120, 30],
             },
         )
-        sent = activity.reminders.get()
+        sent = activity.reminders.get(offset_minutes_before=30)
         sent.sent_at = timezone.now()
         sent.save(update_fields=["sent_at"])
 
@@ -128,14 +128,16 @@ class TimelineReminderGenerationTests(APITestCase):
             data={"start_time": time(10, 0)},
         )
 
-        reminders = list(activity.reminders.order_by("sent_at", "due_at_utc"))
-        self.assertEqual(len(reminders), 2)
-        self.assertIsNotNone(reminders[0].sent_at)
+        sent_reminders = list(activity.reminders.filter(sent_at__isnull=False))
+        unsent_reminders = list(activity.reminders.filter(sent_at__isnull=True))
+        self.assertEqual(len(sent_reminders), 1)
+        self.assertEqual(sent_reminders[0].offset_minutes_before, 30)
+        self.assertEqual(len(unsent_reminders), 1)
+        self.assertEqual(unsent_reminders[0].offset_minutes_before, 120)
         self.assertEqual(
-            reminders[1].due_at_utc,
-            datetime(2026, 6, 1, 2, 30, tzinfo=dt_timezone.utc),
+            unsent_reminders[0].due_at_utc,
+            datetime(2026, 6, 1, 1, 0, tzinfo=dt_timezone.utc),
         )
-        self.assertIsNone(reminders[1].sent_at)
 
     def test_trip_timezone_change_regenerates_unsent_reminders(self):
         activity = create_timeline_activity(
@@ -178,6 +180,51 @@ class TimelineReminderGenerationTests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["activity"]["reminder_offsets_minutes"], [120, 30])
+
+    def test_sent_offsets_are_not_serialized_or_recreated_after_removal(self):
+        url = f"/api/trips/{self.trip.id}/timeline/sections/{self.section.id}/activities"
+        create_response = self.client.post(
+            url,
+            {
+                "title": "Coffee",
+                "time_mode": "AT_TIME",
+                "start_time": "09:00:00",
+                "system_type": "FOOD",
+                "location_mode": "MANUAL",
+                "reminder_offsets_minutes": [30],
+            },
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(create_response.status_code, 201)
+        activity_id = create_response.data["activity"]["id"]
+        TimelineActivityReminder.objects.filter(activity_id=activity_id).update(
+            sent_at=timezone.now()
+        )
+
+        remove_response = self.client.patch(
+            f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}",
+            {"reminder_offsets_minutes": []},
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(remove_response.status_code, 200)
+        self.assertEqual(remove_response.data["activity"]["reminder_offsets_minutes"], [])
+
+        edit_response = self.client.patch(
+            f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}",
+            {"start_time": "10:00:00"},
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(edit_response.status_code, 200)
+        self.assertEqual(edit_response.data["activity"]["reminder_offsets_minutes"], [])
+        self.assertFalse(
+            TimelineActivityReminder.objects.filter(
+                activity_id=activity_id,
+                sent_at__isnull=True,
+            ).exists()
+        )
 
     def test_flexible_activity_rejects_reminders_through_api(self):
         url = f"/api/trips/{self.trip.id}/timeline/sections/{self.section.id}/activities"
@@ -344,6 +391,15 @@ class TimelineReminderDispatchTests(APITestCase):
 
     def test_cancelled_activity_does_not_emit_reminder(self):
         reminder = self._activity_with_due_reminder(activity_status=TimelineActivityStatus.CANCELLED)
+
+        call_command("dispatch_timeline_reminders")
+        reminder.refresh_from_db()
+
+        self.assertIsNone(reminder.sent_at)
+        self.assertEqual(Notification.objects.count(), 0)
+
+    def test_done_activity_does_not_emit_reminder(self):
+        reminder = self._activity_with_due_reminder(activity_status=TimelineActivityStatus.DONE)
 
         call_command("dispatch_timeline_reminders")
         reminder.refresh_from_db()

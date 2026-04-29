@@ -299,6 +299,25 @@ def _activity_supports_serialized_reminders(activity: TimelineActivity) -> bool:
     ) and activity.start_time is not None
 
 
+def _active_reminder_offsets(activity: TimelineActivity) -> list[int]:
+    prefetched_reminders = getattr(
+        activity,
+        "_prefetched_objects_cache",
+        {},
+    ).get("reminders")
+    if prefetched_reminders is None:
+        offsets = activity.reminders.filter(
+            sent_at__isnull=True,
+        ).values_list("offset_minutes_before", flat=True)
+    else:
+        offsets = (
+            reminder.offset_minutes_before
+            for reminder in prefetched_reminders
+            if reminder.sent_at is None
+        )
+    return sorted(set(offsets), reverse=True)
+
+
 def _can_update_any_status(
     activity: TimelineActivity,
     *,
@@ -377,10 +396,7 @@ def _activity_payload(
         "booking_reference": activity.booking_reference,
         "external_link": activity.external_link,
         "reminder_offsets_minutes": (
-            sorted(
-                {r.offset_minutes_before for r in activity.reminders.all()},
-                reverse=True,
-            )
+            _active_reminder_offsets(activity)
             if _activity_supports_serialized_reminders(activity)
             else []
         ),
