@@ -6,9 +6,11 @@ import {
 } from "@/features/trips/presentation/timeline-test-helpers";
 import {
   findNowDividerIndex,
+  formatSectionDate,
   getActiveActivityIds,
   getDefaultFocusedSectionId,
   getNowMarkerPlacement,
+  getOverviewHint,
   groupActivitiesForDay,
   limitActivityGroup,
 } from "@/features/trips/presentation/timeline-view-model";
@@ -308,5 +310,110 @@ describe("getActiveActivityIds", () => {
 
   it("returns an empty set for an empty activities array", () => {
     expect(getActiveActivityIds([], 660)).toEqual(new Set());
+  });
+});
+
+describe("formatSectionDate", () => {
+  it("formats a date as weekday, short month, day, year", () => {
+    expect(formatSectionDate("2026-06-01")).toBe("Mon, Jun 1, 2026");
+  });
+
+  it("formats end-of-month date correctly", () => {
+    expect(formatSectionDate("2026-05-31")).toBe("Sun, May 31, 2026");
+  });
+
+  it("formats a date in January", () => {
+    expect(formatSectionDate("2026-01-15")).toBe("Thu, Jan 15, 2026");
+  });
+});
+
+describe("getOverviewHint", () => {
+  it("returns Next hint for upcoming day with a scheduled activity", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({
+        id: "museum",
+        title: "Museum visit",
+        time_mode: "AT_TIME",
+        start_time: "10:00:00",
+        end_time: null,
+      }),
+    ]);
+    expect(getOverviewHint(groups, "Upcoming")).toEqual({
+      prefix: "Next",
+      time: "10:00",
+      title: "Museum visit",
+    });
+  });
+
+  it("returns Next hint for today with a scheduled activity", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({
+        id: "tour",
+        title: "City tour",
+        time_mode: "TIME_RANGE",
+        start_time: "14:00:00",
+        end_time: "16:00:00",
+      }),
+    ]);
+    expect(getOverviewHint(groups, "Today")).toEqual({
+      prefix: "Next",
+      time: "14:00",
+      title: "City tour",
+    });
+  });
+
+  it("returns Last hint using the last scheduled activity for a past day", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({
+        id: "lunch",
+        title: "Lunch",
+        time_mode: "AT_TIME",
+        start_time: "12:00:00",
+        end_time: null,
+      }),
+      buildTimelineActivity({
+        id: "dinner",
+        title: "Welcome dinner",
+        time_mode: "AT_TIME",
+        start_time: "19:00:00",
+        end_time: null,
+      }),
+    ]);
+    expect(getOverviewHint(groups, "Past")).toEqual({
+      prefix: "Last",
+      time: "19:00",
+      title: "Welcome dinner",
+    });
+  });
+
+  it("falls back to all-day activity when a past day has no scheduled activities", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({
+        id: "rest",
+        title: "Rest day",
+        time_mode: "ALL_DAY",
+        start_time: null,
+        end_time: null,
+      }),
+    ]);
+    expect(getOverviewHint(groups, "Past")).toEqual({
+      prefix: "Last",
+      time: "",
+      title: "Rest day",
+    });
+  });
+
+  it("returns null when there are no activities", () => {
+    const groups = groupActivitiesForDay([]);
+    expect(getOverviewHint(groups, "Upcoming")).toBeNull();
+    expect(getOverviewHint(groups, "Today")).toBeNull();
+    expect(getOverviewHint(groups, "Past")).toBeNull();
+  });
+
+  it("returns null for upcoming day with only flexible and all-day activities", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({ id: "flex", title: "Shopping", time_mode: "FLEXIBLE", start_time: null, end_time: null }),
+    ]);
+    expect(getOverviewHint(groups, "Upcoming")).toBeNull();
   });
 });

@@ -10,6 +10,12 @@ type LocalDateParts = {
   minutes: number;
 };
 
+export type OverviewHint = {
+  prefix: "Next" | "Last";
+  time: string;
+  title: string;
+};
+
 export type NowMarkerPlacement =
   | { kind: "none" }
   | { kind: "before"; activityId: string }
@@ -242,4 +248,37 @@ export function getActiveActivityIds(activities: TimelineActivity[], minutes: nu
     }
   }
   return active;
+}
+
+export function formatSectionDate(sectionDate: string): string {
+  const [year, month, day] = sectionDate.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
+}
+
+export function getOverviewHint(
+  groups: ReturnType<typeof groupActivitiesForDay>,
+  datePosition: "Today" | "Past" | "Upcoming",
+): OverviewHint | null {
+  if (datePosition === "Past") {
+    const lastScheduled = groups.timeline[groups.timeline.length - 1];
+    if (lastScheduled) {
+      return { prefix: "Last", time: lastScheduled.start_time?.slice(0, 5) ?? "", title: lastScheduled.title };
+    }
+    const lastAllDay = groups.allDay[groups.allDay.length - 1];
+    if (lastAllDay) {
+      return { prefix: "Last", time: "", title: lastAllDay.title };
+    }
+    return null;
+  }
+
+  const nextScheduled = groups.timeline.find((a) => Boolean(a.start_time));
+  if (nextScheduled) {
+    return { prefix: "Next", time: nextScheduled.start_time?.slice(0, 5) ?? "", title: nextScheduled.title };
+  }
+  return null;
 }
