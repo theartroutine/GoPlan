@@ -159,12 +159,12 @@ function sectionPositionLabel(sectionDate: string, timeZone: string): SectionDat
 
 function datePositionTone(position: SectionDatePosition): string {
   if (position === "Today") {
-    return "border-primary/30 bg-primary/10 text-primary";
+    return "bg-primary text-primary-foreground";
   }
   if (position === "Upcoming") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300";
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300";
   }
-  return "border-border bg-muted/40 text-muted-foreground";
+  return "bg-muted text-muted-foreground";
 }
 
 function SectionDateBadge({
@@ -175,14 +175,14 @@ function SectionDateBadge({
   datePosition: SectionDatePosition;
 }) {
   return (
-    <span className="inline-flex min-w-fit items-center overflow-hidden rounded-md border border-border/70 bg-background text-xs shadow-xs">
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground">
-        <CalendarDays className="size-3.5" />
+    <span className="inline-flex min-w-fit flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5">
+        <CalendarDays aria-hidden="true" className="size-3.5" />
         <span className="tabular-nums font-medium text-foreground">{sectionDate}</span>
       </span>
       <span
         className={cn(
-          "border-l px-2 py-1.5 text-[10px] font-semibold uppercase leading-none",
+          "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase leading-none",
           datePositionTone(datePosition),
         )}
       >
@@ -829,6 +829,7 @@ export function TimelineTab() {
         ? timelineData.sections[sectionIndex + 1]
         : null;
     const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
+    const headingId = `timeline-day-detail-${section.id}`;
 
     return (
       <div className="space-y-4">
@@ -857,43 +858,73 @@ export function TimelineTab() {
           </div>
         </div>
 
-        <section className="space-y-4">
-          <header className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border/70 bg-muted/20 px-3 py-3">
-            <div className="min-w-0 space-y-2">
-              <h3 className="truncate text-base font-semibold">{section.label}</h3>
-              <div className="flex flex-wrap items-center gap-2">
-                <SectionDateBadge
-                  sectionDate={section.section_date}
-                  datePosition={datePosition}
-                />
+        <section
+          aria-labelledby={headingId}
+          className={cn(
+            "overflow-hidden rounded-lg border bg-background shadow-xs",
+            datePosition === "Today" ? "border-primary/35" : "border-border/70",
+          )}
+        >
+          <header
+            className={cn(
+              "border-b px-4 py-4",
+              datePosition === "Today"
+                ? "border-primary/15 bg-primary/[0.035]"
+                : "border-border/70 bg-muted/20",
+            )}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Day Detail
+                  </p>
+                  <span aria-hidden="true" className="size-1 rounded-full bg-muted-foreground/40" />
+                  <SectionDateBadge
+                    sectionDate={section.section_date}
+                    datePosition={datePosition}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <h3 id={headingId} className="truncate text-xl font-semibold leading-tight text-foreground">
+                    {section.label}
+                  </h3>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {renderSectionManagementActions(section)}
-              {canEdit && (
-                <Button
-                  type="button"
-                  size="xs"
-                  onClick={() => openActivityModal({ kind: "create", sectionId: section.id })}
-                >
-                  <Plus className="size-3" />
-                  Add activity
-                </Button>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {renderSectionManagementActions(section)}
+                {canEdit && (
+                  <Button
+                    type="button"
+                    size="xs"
+                    onClick={() => openActivityModal({ kind: "create", sectionId: section.id })}
+                  >
+                    <Plus aria-hidden="true" className="size-3" />
+                    Add activity
+                  </Button>
+                )}
+              </div>
             </div>
           </header>
 
-          {section.activities.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border/60 px-3 py-4 text-center text-xs text-muted-foreground">
-              No activities yet.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {renderActivityGroup("All-day", groups.allDay)}
-              {renderActivityGroup("Timeline", groups.timeline, nowMarkerPlacement, activeIds, now.displayTime)}
-              {renderActivityGroup("Flexible", groups.flexible)}
-            </div>
-          )}
+          <div
+            className={cn(
+              "px-3 py-4 sm:px-4",
+              datePosition === "Today" ? "bg-primary/[0.015]" : "bg-muted/10",
+            )}
+          >
+            {section.activities.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border/70 bg-background/70 px-3 py-5 text-center text-xs text-muted-foreground">
+                No activities yet.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {renderActivityGroup("All-day", groups.allDay)}
+                {renderActivityGroup("Timeline", groups.timeline, nowMarkerPlacement, activeIds, now.displayTime)}
+                {renderActivityGroup("Flexible", groups.flexible)}
+              </div>
+            )}
+          </div>
         </section>
       </div>
     );
