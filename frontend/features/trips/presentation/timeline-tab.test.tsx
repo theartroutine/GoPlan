@@ -191,7 +191,10 @@ describe("TimelineTab", () => {
 
     render(<TimelineTab />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Day options" }));
+    fireEvent.keyDown(await screen.findByRole("button", { name: "Day options" }), {
+      key: "Enter",
+      code: "Enter",
+    });
     expect(await screen.findByRole("menuitem", { name: /Edit day/i })).not.toBeNull();
     expect(screen.getByRole("menuitem", { name: /Delete day/i })).not.toBeNull();
   });
@@ -216,7 +219,10 @@ describe("TimelineTab", () => {
 
     render(<TimelineTab />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Day options" }));
+    fireEvent.keyDown(await screen.findByRole("button", { name: "Day options" }), {
+      key: "Enter",
+      code: "Enter",
+    });
     expect(await screen.findByRole("menuitem", { name: /Edit day/i })).not.toBeNull();
     expect(screen.queryByRole("menuitem", { name: /Delete day/i })).toBeNull();
   });
