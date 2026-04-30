@@ -121,10 +121,6 @@ class TimelineCustomTypeDuplicateError(TripServiceError):
     error_code = "CUSTOM_TYPE_DUPLICATE"
 
 
-class TimelineInvalidReorderScopeError(TripServiceError):
-    error_code = "INVALID_REORDER_SCOPE"
-
-
 class TimelineSectionDateConflictError(TripServiceError):
     error_code = "SECTION_DATE_CONFLICT"
 
@@ -918,33 +914,6 @@ def delete_section(trip_id, section_id, *, actor) -> None:
         section.delete()
 
 
-def reorder_sections(trip_id, *, actor, section_date, ordered_section_ids) -> tuple[Trip, list[TimelineSection]]:
-    """Rewrite sibling positions to 0..n-1. Strict scope: same trip + same section_date, full set."""
-    with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
-        _ensure_captain_can_mutate(trip, actor)
-
-        siblings = list(
-            TimelineSection.objects
-            .select_for_update()
-            .filter(trip=trip, section_date=section_date)
-            .order_by("position", "created_at")
-        )
-        sibling_ids = {str(s.id) for s in siblings}
-        submitted_ids = [str(sid) for sid in ordered_section_ids]
-        if set(submitted_ids) != sibling_ids or len(submitted_ids) != len(siblings):
-            raise TimelineInvalidReorderScopeError("ordered_section_ids must contain exactly the sibling sections.")
-
-        new_order = []
-        for pos, sid in enumerate(submitted_ids):
-            section = next(s for s in siblings if str(s.id) == sid)
-            section.position = pos
-            section.updated_by = actor
-            section.save(update_fields=["position", "updated_by", "updated_at"])
-            new_order.append(section)
-    return trip, new_order
-
-
 # -------- Activity mutations --------
 
 def _assert_active_member(trip, user_id):
@@ -1313,38 +1282,6 @@ def delete_timeline_activity(trip_id, activity_id, *, actor) -> None:
         except TimelineActivity.DoesNotExist:
             raise TimelineActivityNotFoundError("Activity not found.")
         activity.delete()
-
-
-def reorder_timeline_activities(trip_id, section_id, *, actor, ordered_activity_ids) -> list[TimelineActivity]:
-    with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
-        _ensure_captain_can_mutate(trip, actor)
-        try:
-            section = TimelineSection.objects.get(pk=section_id, trip=trip)
-        except TimelineSection.DoesNotExist:
-            raise TimelineSectionNotFoundError("Section not found.")
-
-        siblings = list(
-            TimelineActivity.objects
-            .select_for_update()
-            .filter(trip=trip, section=section)
-            .order_by("position", "created_at")
-        )
-        sibling_ids = {str(a.id) for a in siblings}
-        submitted_ids = [str(aid) for aid in ordered_activity_ids]
-        if set(submitted_ids) != sibling_ids or len(submitted_ids) != len(siblings):
-            raise TimelineInvalidReorderScopeError(
-                "ordered_activity_ids must contain exactly the sibling activities."
-            )
-
-        new_order = []
-        for pos, aid in enumerate(submitted_ids):
-            activity = next(a for a in siblings if str(a.id) == aid)
-            activity.position = pos
-            activity.updated_by = actor
-            activity.save(update_fields=["position", "updated_by", "updated_at"])
-            new_order.append(activity)
-    return new_order
 
 
 def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str) -> TimelineActivity:

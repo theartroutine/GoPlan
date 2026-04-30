@@ -8,8 +8,6 @@ import type {
   PatchActivityPayload,
   PatchCustomTypePayload,
   PatchSectionPayload,
-  ReorderActivitiesPayload,
-  ReorderSectionsPayload,
   TimelineActivity,
   TimelineCustomTypeMeta,
   TimelineResponse,
@@ -125,17 +123,6 @@ export async function bffDeleteTimelineSection(
   await bff.delete(`/api/trips/${tripId}/timeline/sections/${sectionId}`);
 }
 
-export async function bffReorderTimelineSections(
-  tripId: string,
-  payload: ReorderSectionsPayload,
-): Promise<{ sections: TimelineSection[] }> {
-  const res = await bff.post<{ sections: TimelineSection[] }>(
-    `/api/trips/${tripId}/timeline/sections/reorder`,
-    payload,
-  );
-  return res.data;
-}
-
 export async function bffCreateTimelineActivity(
   tripId: string,
   sectionId: string,
@@ -165,18 +152,6 @@ export async function bffDeleteTimelineActivity(
   activityId: string,
 ): Promise<void> {
   await bff.delete(`/api/trips/${tripId}/timeline/activities/${activityId}`);
-}
-
-export async function bffReorderTimelineActivities(
-  tripId: string,
-  sectionId: string,
-  payload: ReorderActivitiesPayload,
-): Promise<{ activities: TimelineActivity[] }> {
-  const res = await bff.post<{ activities: TimelineActivity[] }>(
-    `/api/trips/${tripId}/timeline/sections/${sectionId}/activities/reorder`,
-    payload,
-  );
-  return res.data;
 }
 
 export async function bffUpdateTimelineActivityStatus(

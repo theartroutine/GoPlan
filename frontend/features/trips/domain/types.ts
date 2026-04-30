@@ -228,11 +228,6 @@ export type PatchSectionPayload = Partial<{
   section_date: string;
 }>;
 
-export type ReorderSectionsPayload = {
-  section_date: string;
-  ordered_section_ids: string[];
-};
-
 export type ActivityPlacePayload = {
   provider: string;
   provider_id: string;
@@ -264,10 +259,6 @@ export type CreateActivityPayload = {
 };
 
 export type PatchActivityPayload = Partial<CreateActivityPayload>;
-
-export type ReorderActivitiesPayload = {
-  ordered_activity_ids: string[];
-};
 
 export type UpdateActivityStatusPayload = {
   status: TimelineActivityStatus;

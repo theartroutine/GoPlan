@@ -39,9 +39,6 @@ class TimelineSectionCrudTests(APITestCase):
     def _detail_url(self, section_id):
         return f"/api/trips/{self.trip.id}/timeline/sections/{section_id}"
 
-    def _reorder_url(self):
-        return f"/api/trips/{self.trip.id}/timeline/sections/reorder"
-
     # -------- Create --------
 
     def test_captain_creates_extra_day_201(self):
@@ -223,41 +220,3 @@ class TimelineSectionCrudTests(APITestCase):
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "SECTION_REQUIRED")
         self.assertTrue(TimelineSection.objects.filter(pk=section.id).exists())
-
-    # -------- Reorder --------
-
-    def test_reorder_sections_rewrites_positions(self):
-        day = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
-        day.position = 4
-        day.save(update_fields=["position"])
-
-        res = self.client.post(
-            self._reorder_url(),
-            {
-                "section_date": "2026-06-01",
-                "ordered_section_ids": [str(day.id)],
-            },
-            format="json",
-            **_auth(self.captain),
-        )
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(len(res.data["sections"]), 1)
-        self.assertNotIn("kind", res.data["sections"][0])
-        self.assertEqual(res.data["sections"][0]["section_date"], "2026-06-01")
-        self.assertEqual(res.data["sections"][0]["position"], 0)
-        self.assertTrue(res.data["sections"][0]["is_in_trip_range"])
-        day.refresh_from_db()
-        self.assertEqual(day.position, 0)
-
-    def test_reorder_sections_missing_id_400(self):
-        s1 = make_timeline_section(
-            trip=self.trip, section_date=date(2026, 5, 31), label="a", position=0
-        )
-        res = self.client.post(
-            self._reorder_url(),
-            {"section_date": "2026-06-01", "ordered_section_ids": [str(s1.id)]},
-            format="json",
-            **_auth(self.captain),
-        )
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.data["error_code"], "INVALID_REORDER_SCOPE")

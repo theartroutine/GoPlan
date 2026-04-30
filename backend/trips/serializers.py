@@ -487,16 +487,6 @@ class PatchSectionSerializer(serializers.Serializer):
     section_date = serializers.DateField(required=False)
 
 
-class ReorderSectionsSerializer(serializers.Serializer):
-    section_date        = serializers.DateField()
-    ordered_section_ids = serializers.ListField(child=serializers.UUIDField(), min_length=1)
-
-    def validate_ordered_section_ids(self, value):
-        if len(value) != len({str(v) for v in value}):
-            raise serializers.ValidationError("ordered_section_ids must not contain duplicates.")
-        return value
-
-
 # -------- Activity serializers --------
 
 class _PlaceSerializer(serializers.Serializer):
@@ -662,15 +652,6 @@ class PatchTimelineActivitySerializer(serializers.Serializer):
             data.get("reminder_offsets_minutes"),
         )
         return data
-
-
-class ReorderActivitiesSerializer(serializers.Serializer):
-    ordered_activity_ids = serializers.ListField(child=serializers.UUIDField(), min_length=1)
-
-    def validate_ordered_activity_ids(self, value):
-        if len(value) != len({str(v) for v in value}):
-            raise serializers.ValidationError("ordered_activity_ids must not contain duplicates.")
-        return value
 
 
 class UpdateTimelineActivityStatusSerializer(serializers.Serializer):

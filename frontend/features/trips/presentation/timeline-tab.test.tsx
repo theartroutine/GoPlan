@@ -19,8 +19,6 @@ const tripsApiMock = vi.hoisted(() => ({
   bffPatchTimelineActivity: vi.fn(),
   bffPatchTimelineCustomType: vi.fn(),
   bffPatchTimelineSection: vi.fn(),
-  bffReorderTimelineActivities: vi.fn(),
-  bffReorderTimelineSections: vi.fn(),
   bffUpdateTimelineActivityStatus: vi.fn(),
 }));
 

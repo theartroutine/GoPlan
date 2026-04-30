@@ -7,14 +7,12 @@ from rest_framework.test import APITestCase
 from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
 from trips.models import (
-    MemberStatus,
     TimelineActivity,
     TimelineCustomType,
     TimelineSection,
 )
 from trips.tests.timeline_helpers import (
     make_timeline_activity,
-    make_timeline_section,
     make_trip_with_timeline,
 )
 
@@ -42,9 +40,6 @@ class TimelineActivityCrudTests(APITestCase):
 
     def _detail_url(self, activity_id):
         return f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}"
-
-    def _reorder_url(self, section_id=None):
-        return f"/api/trips/{self.trip.id}/timeline/sections/{section_id or self.section.id}/activities/reorder"
 
     def _valid_payload(self, **overrides):
         payload = {
@@ -327,32 +322,3 @@ class TimelineActivityCrudTests(APITestCase):
         res = self.client.delete(self._detail_url(activity.id), **_auth(self.captain))
         self.assertEqual(res.status_code, 200)
         self.assertFalse(TimelineActivity.objects.filter(pk=activity.id).exists())
-
-    # -------- Reorder --------
-
-    def test_reorder_activities_rewrites_positions(self):
-        a1 = make_timeline_activity(trip=self.trip, section=self.section, title="a", position=0)
-        a2 = make_timeline_activity(trip=self.trip, section=self.section, title="b", position=1)
-        a3 = make_timeline_activity(trip=self.trip, section=self.section, title="c", position=2)
-        res = self.client.post(
-            self._reorder_url(),
-            {"ordered_activity_ids": [str(a3.id), str(a1.id), str(a2.id)]},
-            format="json",
-            **_auth(self.captain),
-        )
-        self.assertEqual(res.status_code, 200)
-        a1.refresh_from_db(); a2.refresh_from_db(); a3.refresh_from_db()
-        self.assertEqual(a3.position, 0)
-        self.assertEqual(a1.position, 1)
-        self.assertEqual(a2.position, 2)
-
-    def test_reorder_activities_invalid_scope_400(self):
-        a1 = make_timeline_activity(trip=self.trip, section=self.section, title="a", position=0)
-        res = self.client.post(
-            self._reorder_url(),
-            {"ordered_activity_ids": [str(a1.id), "00000000-0000-0000-0000-000000000000"]},
-            format="json",
-            **_auth(self.captain),
-        )
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.data["error_code"], "INVALID_REORDER_SCOPE")

@@ -15,8 +15,6 @@ from trips.serializers import (
     PatchCustomTypeSerializer,
     PatchSectionSerializer,
     PatchTimelineActivitySerializer,
-    ReorderActivitiesSerializer,
-    ReorderSectionsSerializer,
     SendInvitationsSerializer,
     TripDetailSerializer,
     TripInvitationSerializer,
@@ -43,7 +41,6 @@ from trips.services import (
     TimelineCustomTypeNotFoundError,
     TimelineInvalidAssigneeError,
     TimelineInvalidCustomTypeError,
-    TimelineInvalidReorderScopeError,
     TimelineSectionDateConflictError,
     TimelineSectionNotEmptyError,
     TimelineSectionNotFoundError,
@@ -72,8 +69,6 @@ from trips.services import (
     patch_section,
     patch_timeline_activity,
     remove_member,
-    reorder_sections,
-    reorder_timeline_activities,
     send_trip_invitations,
     start_trip,
     update_timeline_activity_status,
@@ -449,8 +444,6 @@ def _handle_common(exc):
         return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
     if isinstance(exc, TimelineCustomTypeDuplicateError):
         return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
-    if isinstance(exc, TimelineInvalidReorderScopeError):
-        return _err(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
     if isinstance(exc, TimelineSectionDateConflictError):
         return _err(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
     if isinstance(exc, TimelineInvalidAssigneeError):
@@ -518,30 +511,6 @@ class TimelineSectionDetailAPIView(APIView):
         return Response({}, status=status.HTTP_200_OK)
 
 
-class TimelineSectionReorderAPIView(APIView):
-    permission_classes = TRIP_PERMISSIONS
-    throttle_scope = "trips_timeline_sections_reorder"
-
-    def post(self, request, trip_id):
-        serializer = ReorderSectionsSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            trip, sections = reorder_sections(
-                trip_id=trip_id,
-                actor=request.user,
-                section_date=serializer.validated_data["section_date"],
-                ordered_section_ids=serializer.validated_data["ordered_section_ids"],
-            )
-        except Exception as exc:
-            mapped = _handle_common(exc)
-            if mapped is not None:
-                return mapped
-            raise
-        return Response(
-            {"sections": [serialize_section(s, trip=trip) for s in sections]}, status=status.HTTP_200_OK
-        )
-
-
 class TimelineActivityListCreateAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
     throttle_scope = "trips_timeline_activities"
@@ -571,41 +540,6 @@ class TimelineActivityListCreateAPIView(APIView):
                 )
             },
             status=status.HTTP_201_CREATED,
-        )
-
-
-class TimelineActivityReorderAPIView(APIView):
-    permission_classes = TRIP_PERMISSIONS
-    throttle_scope = "trips_timeline_activities_reorder"
-
-    def post(self, request, trip_id, section_id):
-        serializer = ReorderActivitiesSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            activities = reorder_timeline_activities(
-                trip_id=trip_id,
-                section_id=section_id,
-                actor=request.user,
-                ordered_activity_ids=serializer.validated_data["ordered_activity_ids"],
-            )
-        except Exception as exc:
-            mapped = _handle_common(exc)
-            if mapped is not None:
-                return mapped
-            raise
-        return Response(
-            {
-                "activities": [
-                    serialize_activity(
-                        a,
-                        viewer_user_id=request.user.id,
-                        is_captain=True,
-                        is_terminal=False,
-                    )
-                    for a in activities
-                ]
-            },
-            status=status.HTTP_200_OK,
         )
 
 
