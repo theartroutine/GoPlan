@@ -53,6 +53,18 @@ class CreateTripTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["trip"]["currency_code"], "USD")
 
+    def test_create_trip_rejects_negative_budget(self):
+        payload = {
+            "name": "Bad Budget",
+            "destination": "Nha Trang",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-03",
+            "budget_estimate": "-1.00",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("budget_estimate", response.data)
+
     def test_create_trip_end_before_start_400(self):
         payload = {
             "name": "Bad Dates",
@@ -97,6 +109,77 @@ class CreateTripTests(APITestCase):
         self.assertEqual(trip.destination_provider_id, "here:cm:namedplace:123")
         self.assertEqual(trip.destination_country_code, "VN")
         self.assertEqual(trip.cover_image_url, "/media/trip-covers/abc.jpg")
+
+    def test_create_trip_persists_timezone(self):
+        payload = {
+            "name": "Tokyo Trip",
+            "destination": "Tokyo",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-03",
+            "timezone": "Asia/Tokyo",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip = Trip.objects.get(pk=response.data["trip"]["id"])
+        self.assertEqual(trip.timezone, "Asia/Tokyo")
+
+    def test_create_trip_default_timezone_when_omitted(self):
+        payload = {
+            "name": "Default TZ",
+            "destination": "Hue",
+            "start_date": "2026-08-01",
+            "end_date": "2026-08-02",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip = Trip.objects.get(pk=response.data["trip"]["id"])
+        self.assertEqual(trip.timezone, "Asia/Ho_Chi_Minh")
+
+    def test_create_trip_invalid_timezone_400(self):
+        payload = {
+            "name": "Bad TZ",
+            "destination": "Hue",
+            "start_date": "2026-08-01",
+            "end_date": "2026-08-02",
+            "timezone": "Mars/Olympus",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data,
+            {"detail": "Invalid trip timezone.", "error_code": "INVALID_TIMEZONE"},
+        )
+
+    def test_create_trip_seeds_starter_day_sections(self):
+        payload = {
+            "name": "Seed Days",
+            "destination": "Hoi An",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-03",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip = Trip.objects.get(pk=response.data["trip"]["id"])
+        sections = list(trip.timeline_sections.order_by("section_date"))
+        self.assertEqual(len(sections), 2)
+        self.assertEqual([s.label for s in sections], ["Day 1", "Day 2"])
+        for section in sections:
+            self.assertFalse(section.is_label_custom)
+            self.assertEqual(section.position, 0)
+
+    def test_create_single_day_trip_seeds_one_day_section(self):
+        payload = {
+            "name": "Single Day",
+            "destination": "Hue",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-01",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip = Trip.objects.get(pk=response.data["trip"]["id"])
+        sections = list(trip.timeline_sections.order_by("section_date"))
+        self.assertEqual(len(sections), 1)
+        self.assertEqual(sections[0].label, "Day 1")
 
     def test_create_trip_without_destination_provider_fields_still_201(self):
         """Backward compatibility: creating without structured destination fields must still work."""

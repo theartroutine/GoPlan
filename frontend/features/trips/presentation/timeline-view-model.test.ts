@@ -1,0 +1,419 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  buildTimelineActivity,
+  buildTimelineSection,
+} from "@/features/trips/presentation/timeline-test-helpers";
+import {
+  findNowDividerIndex,
+  formatSectionDate,
+  getActiveActivityIds,
+  getDefaultFocusedSectionId,
+  getNowMarkerPlacement,
+  getOverviewHint,
+  groupActivitiesForDay,
+  limitActivityGroup,
+} from "@/features/trips/presentation/timeline-view-model";
+
+describe("timeline view model helpers", () => {
+  it("groups activities by schedule mode", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({ id: "flex", title: "Coffee", time_mode: "FLEXIBLE", start_time: null, end_time: null, position: 2 }),
+      buildTimelineActivity({ id: "all-day", title: "Museum", time_mode: "ALL_DAY", position: 1 }),
+      buildTimelineActivity({ id: "range", title: "Dinner", time_mode: "TIME_RANGE", start_time: "18:00:00", end_time: "20:00:00", position: 0 }),
+      buildTimelineActivity({ id: "at-time", title: "Flight", time_mode: "AT_TIME", start_time: "09:00:00", position: 1 }),
+    ]);
+
+    expect(groups.allDay.map((activity) => activity.id)).toEqual(["all-day"]);
+    expect(groups.timeline.map((activity) => activity.id)).toEqual(["at-time", "range"]);
+    expect(groups.flexible.map((activity) => activity.id)).toEqual(["flex"]);
+  });
+
+  it("focuses the first in-range day before the trip range when an extra day exists", () => {
+    const focusedSectionId = getDefaultFocusedSectionId(
+      [
+        buildTimelineSection({
+          id: "pre-trip",
+          section_date: "2026-05-31",
+          label: "Preparation",
+          is_in_trip_range: false,
+        }),
+        buildTimelineSection({
+          id: "day-1",
+          section_date: "2026-06-01",
+          label: "Day 1",
+          is_in_trip_range: true,
+        }),
+        buildTimelineSection({
+          id: "day-2",
+          section_date: "2026-06-02",
+          label: "Day 2",
+          is_in_trip_range: true,
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-05-30T12:00:00.000Z"),
+    );
+
+    expect(focusedSectionId).toBe("day-1");
+  });
+
+  it("focuses the last in-range day after the trip range when an extra day exists", () => {
+    const focusedSectionId = getDefaultFocusedSectionId(
+      [
+        buildTimelineSection({
+          id: "day-1",
+          section_date: "2026-06-01",
+          label: "Day 1",
+          is_in_trip_range: true,
+        }),
+        buildTimelineSection({
+          id: "day-2",
+          section_date: "2026-06-02",
+          label: "Day 2",
+          is_in_trip_range: true,
+        }),
+        buildTimelineSection({
+          id: "recovery",
+          section_date: "2026-06-03",
+          label: "Recovery",
+          is_in_trip_range: false,
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-06-04T12:00:00.000Z"),
+    );
+
+    expect(focusedSectionId).toBe("day-2");
+  });
+
+  it("falls back to the first in-range day when today is between in-range dates", () => {
+    const sections = [
+      buildTimelineSection({
+        id: "day-1",
+        section_date: "2026-06-01",
+        label: "Day 1",
+        is_in_trip_range: true,
+      }),
+      buildTimelineSection({
+        id: "day-3",
+        section_date: "2026-06-03",
+        label: "Day 3",
+        is_in_trip_range: true,
+      }),
+    ];
+
+    expect(
+      getDefaultFocusedSectionId(
+        sections,
+        "Asia/Ho_Chi_Minh",
+        new Date("2026-06-02T02:00:00.000Z"),
+      ),
+    ).toBe("day-1");
+  });
+
+  it("focuses today's day when today matches an extra day", () => {
+    const focusedSectionId = getDefaultFocusedSectionId(
+      [
+        buildTimelineSection({
+          id: "day-1",
+          section_date: "2026-06-01",
+          label: "Day 1",
+          is_in_trip_range: true,
+        }),
+        buildTimelineSection({
+          id: "extra",
+          section_date: "2026-06-04",
+          label: "Recovery",
+          is_in_trip_range: false,
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-06-04T02:00:00.000Z"),
+    );
+
+    expect(focusedSectionId).toBe("extra");
+  });
+
+  it("limits visible group items and reports hidden count", () => {
+    const collapsed = limitActivityGroup(["a", "b", "c", "d", "e", "f"], false);
+    const expanded = limitActivityGroup(["a", "b", "c", "d", "e", "f"], true);
+    const customLimit = limitActivityGroup(["a", "b", "c"], false, 2);
+
+    expect(collapsed).toEqual({ visible: ["a", "b", "c", "d", "e"], hiddenCount: 1 });
+    expect(expanded).toEqual({ visible: ["a", "b", "c", "d", "e", "f"], hiddenCount: 0 });
+    expect(customLimit).toEqual({ visible: ["a", "b"], hiddenCount: 1 });
+  });
+
+  it("places now inside a time range", () => {
+    const placement = getNowMarkerPlacement(
+      [
+        buildTimelineActivity({
+          id: "range",
+          time_mode: "TIME_RANGE",
+          start_time: "09:00:00",
+          end_time: "11:00:00",
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-06-01T03:00:00.000Z"),
+    );
+
+    expect(placement).toEqual({ kind: "inside", activityId: "range" });
+  });
+
+  it("does not place now inside a time range at the end boundary", () => {
+    const placement = getNowMarkerPlacement(
+      [
+        buildTimelineActivity({
+          id: "range",
+          time_mode: "TIME_RANGE",
+          start_time: "09:00:00",
+          end_time: "11:00:00",
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-06-01T04:00:00.000Z"),
+    );
+
+    expect(placement).toEqual({ kind: "after", activityId: "range" });
+  });
+
+  it("places now before, between, and after scheduled activities", () => {
+    const activities = [
+      buildTimelineActivity({ id: "breakfast", time_mode: "AT_TIME", start_time: "08:00:00", position: 0 }),
+      buildTimelineActivity({ id: "lunch", time_mode: "AT_TIME", start_time: "12:00:00", position: 1 }),
+    ];
+
+    expect(
+      getNowMarkerPlacement(activities, "Asia/Ho_Chi_Minh", new Date("2026-06-01T00:30:00.000Z")),
+    ).toEqual({ kind: "before", activityId: "breakfast" });
+    expect(
+      getNowMarkerPlacement(activities, "Asia/Ho_Chi_Minh", new Date("2026-06-01T03:00:00.000Z")),
+    ).toEqual({
+      kind: "between",
+      previousActivityId: "breakfast",
+      nextActivityId: "lunch",
+    });
+    expect(
+      getNowMarkerPlacement(activities, "Asia/Ho_Chi_Minh", new Date("2026-06-01T06:00:00.000Z")),
+    ).toEqual({ kind: "after", activityId: "lunch" });
+  });
+
+  it("places now before an at-time activity when local minutes equal the start time", () => {
+    const placement = getNowMarkerPlacement(
+      [
+        buildTimelineActivity({
+          id: "breakfast",
+          time_mode: "AT_TIME",
+          start_time: "08:00:00",
+        }),
+      ],
+      "Asia/Ho_Chi_Minh",
+      new Date("2026-06-01T01:00:00.000Z"),
+    );
+
+    expect(placement).toEqual({ kind: "before", activityId: "breakfast" });
+  });
+});
+
+describe("findNowDividerIndex", () => {
+  it("returns the index of the section matching today", () => {
+    const sections = [
+      buildTimelineSection({ id: "a", section_date: "2026-04-26" }),
+      buildTimelineSection({ id: "b", section_date: "2026-04-27" }),
+      buildTimelineSection({ id: "c", section_date: "2026-04-28" }),
+    ];
+    expect(findNowDividerIndex(sections, "2026-04-27")).toBe(1);
+  });
+
+  it("returns null when today is before all sections", () => {
+    const sections = [
+      buildTimelineSection({ section_date: "2026-04-27" }),
+      buildTimelineSection({ section_date: "2026-04-28" }),
+    ];
+    expect(findNowDividerIndex(sections, "2026-04-25")).toBeNull();
+  });
+
+  it("returns null when today is after all sections", () => {
+    const sections = [
+      buildTimelineSection({ section_date: "2026-04-26" }),
+      buildTimelineSection({ section_date: "2026-04-27" }),
+    ];
+    expect(findNowDividerIndex(sections, "2026-04-29")).toBeNull();
+  });
+
+  it("returns the last index when today is the last section", () => {
+    const sections = [
+      buildTimelineSection({ id: "a", section_date: "2026-04-27" }),
+      buildTimelineSection({ id: "b", section_date: "2026-04-28" }),
+    ];
+    expect(findNowDividerIndex(sections, "2026-04-28")).toBe(1);
+  });
+
+  it("returns null for an empty sections array", () => {
+    expect(findNowDividerIndex([], "2026-04-28")).toBeNull();
+  });
+});
+
+describe("getActiveActivityIds", () => {
+  it("returns IDs of all TIME_RANGE activities that cover the current minute", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: "09:00:00", end_time: "12:00:00" }),
+      buildTimelineActivity({ id: "b", time_mode: "TIME_RANGE", start_time: "10:00:00", end_time: "14:00:00" }),
+      buildTimelineActivity({ id: "c", time_mode: "TIME_RANGE", start_time: "14:00:00", end_time: "16:00:00" }),
+    ];
+    // 11:00 = 660 min — a and b overlap here, c has not started
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set(["a", "b"]));
+  });
+
+  it("treats the end boundary as exclusive", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: "09:00:00", end_time: "11:00:00" }),
+    ];
+    // exactly 11:00 = 660 min — activity just ended, should not be active
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set());
+  });
+
+  it("includes an activity that starts exactly at the current minute", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: "11:00:00", end_time: "13:00:00" }),
+    ];
+    // exactly 11:00 = 660 min — start boundary is inclusive
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set(["a"]));
+  });
+
+  it("ignores AT_TIME, ALL_DAY, and FLEXIBLE activities", () => {
+    const activities = [
+      buildTimelineActivity({ id: "at", time_mode: "AT_TIME", start_time: "11:00:00", end_time: null }),
+      buildTimelineActivity({ id: "all", time_mode: "ALL_DAY", start_time: null, end_time: null }),
+      buildTimelineActivity({ id: "flex", time_mode: "FLEXIBLE", start_time: null, end_time: null }),
+    ];
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set());
+  });
+
+  it("returns an empty set when no activity is active", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: "09:00:00", end_time: "10:00:00" }),
+    ];
+    // 14:00 = 840 min — activity ended hours ago
+    expect(getActiveActivityIds(activities, 840)).toEqual(new Set());
+  });
+
+  it("handles null start_time or end_time without throwing", () => {
+    const activities = [
+      buildTimelineActivity({ id: "a", time_mode: "TIME_RANGE", start_time: null, end_time: "12:00:00" }),
+      buildTimelineActivity({ id: "b", time_mode: "TIME_RANGE", start_time: "09:00:00", end_time: null }),
+    ];
+    expect(getActiveActivityIds(activities, 660)).toEqual(new Set());
+  });
+
+  it("returns an empty set for an empty activities array", () => {
+    expect(getActiveActivityIds([], 660)).toEqual(new Set());
+  });
+});
+
+describe("formatSectionDate", () => {
+  it("formats a date as weekday, short month, day, year", () => {
+    expect(formatSectionDate("2026-06-01")).toBe("Mon, Jun 1, 2026");
+  });
+
+  it("formats end-of-month date correctly", () => {
+    expect(formatSectionDate("2026-05-31")).toBe("Sun, May 31, 2026");
+  });
+
+  it("formats a date in January", () => {
+    expect(formatSectionDate("2026-01-15")).toBe("Thu, Jan 15, 2026");
+  });
+});
+
+describe("getOverviewHint", () => {
+  it("returns Next hint for upcoming day with a scheduled activity", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({
+        id: "museum",
+        title: "Museum visit",
+        time_mode: "AT_TIME",
+        start_time: "10:00:00",
+        end_time: null,
+      }),
+    ]);
+    expect(getOverviewHint(groups, "Upcoming")).toEqual({
+      prefix: "Next",
+      time: "10:00",
+      title: "Museum visit",
+    });
+  });
+
+  it("returns Next hint for today with a scheduled activity", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({
+        id: "tour",
+        title: "City tour",
+        time_mode: "TIME_RANGE",
+        start_time: "14:00:00",
+        end_time: "16:00:00",
+      }),
+    ]);
+    expect(getOverviewHint(groups, "Today")).toEqual({
+      prefix: "Next",
+      time: "14:00",
+      title: "City tour",
+    });
+  });
+
+  it("returns Last hint using the last scheduled activity for a past day", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({
+        id: "lunch",
+        title: "Lunch",
+        time_mode: "AT_TIME",
+        start_time: "12:00:00",
+        end_time: null,
+      }),
+      buildTimelineActivity({
+        id: "dinner",
+        title: "Welcome dinner",
+        time_mode: "AT_TIME",
+        start_time: "19:00:00",
+        end_time: null,
+      }),
+    ]);
+    expect(getOverviewHint(groups, "Past")).toEqual({
+      prefix: "Last",
+      time: "19:00",
+      title: "Welcome dinner",
+    });
+  });
+
+  it("falls back to all-day activity when a past day has no scheduled activities", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({
+        id: "rest",
+        title: "Rest day",
+        time_mode: "ALL_DAY",
+        start_time: null,
+        end_time: null,
+      }),
+    ]);
+    expect(getOverviewHint(groups, "Past")).toEqual({
+      prefix: "Last",
+      time: "",
+      title: "Rest day",
+    });
+  });
+
+  it("returns null when there are no activities", () => {
+    const groups = groupActivitiesForDay([]);
+    expect(getOverviewHint(groups, "Upcoming")).toBeNull();
+    expect(getOverviewHint(groups, "Today")).toBeNull();
+    expect(getOverviewHint(groups, "Past")).toBeNull();
+  });
+
+  it("returns null for upcoming day with only flexible and all-day activities", () => {
+    const groups = groupActivitiesForDay([
+      buildTimelineActivity({ id: "flex", title: "Shopping", time_mode: "FLEXIBLE", start_time: null, end_time: null }),
+    ]);
+    expect(getOverviewHint(groups, "Upcoming")).toBeNull();
+  });
+});

@@ -23,6 +23,17 @@ export type TripMemberRemovedPayload = {
   trip_name: string;
 };
 
+export type TripTimelineReminderPayload = {
+  trip_id: string;
+  trip_name: string;
+  activity_id: string;
+  activity_title: string;
+  section_label: string;
+  activity_date: string;
+  activity_time: string;
+  location_label: string;
+};
+
 export type TripInvitationRespondedPayload = {
   trip_id: string;
   trip_name: string;
@@ -37,7 +48,8 @@ export type NotificationType =
   | "TRIP_INVITATION_ACCEPTED"
   | "TRIP_INVITATION_DECLINED"
   | "TRIP_CANCELLED"
-  | "TRIP_MEMBER_REMOVED";
+  | "TRIP_MEMBER_REMOVED"
+  | "TRIP_TIMELINE_REMINDER";
 
 export type Notification = {
   id: string;

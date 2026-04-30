@@ -1,11 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import Image from "next/image";
 import { Upload } from "lucide-react";
 
-import { getTripCoverUrl } from "@/features/trips/domain/get-trip-cover-url";
 import { bffUploadTripCover } from "@/features/trips/infrastructure/trips-api";
+import { TripCoverImage } from "@/features/trips/presentation/trip-cover-image";
 import { Button } from "@/shared/ui/button";
 
 type Props = {
@@ -41,8 +40,8 @@ export function CoverImagePicker({ coverUrl, onChange }: Props) {
   return (
     <div className="space-y-2">
       <div className="relative w-full aspect-[16/7] rounded-md overflow-hidden bg-muted">
-        <Image
-          src={getTripCoverUrl(coverUrl)}
+        <TripCoverImage
+          coverUrl={coverUrl}
           alt="Trip cover preview"
           fill
           className="object-cover"

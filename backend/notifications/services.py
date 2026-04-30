@@ -45,6 +45,18 @@ NOTIFICATION_PAYLOAD_SCHEMAS = {
     ),
     NotificationType.TRIP_CANCELLED: frozenset({"trip_id", "trip_name"}),
     NotificationType.TRIP_MEMBER_REMOVED: frozenset({"trip_id", "trip_name"}),
+    NotificationType.TRIP_TIMELINE_REMINDER: frozenset(
+        {
+            "trip_id",
+            "trip_name",
+            "activity_id",
+            "activity_title",
+            "section_label",
+            "activity_date",
+            "activity_time",
+            "location_label",
+        }
+    ),
 }
 
 

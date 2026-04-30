@@ -21,6 +21,30 @@ describe("DestinationPicker", () => {
     vi.useRealTimers();
   });
 
+  it("does not suggest locations for the initial value until the user edits it", async () => {
+    render(<DestinationPicker initialValue="Da Nang" onChange={() => undefined} />);
+
+    const input = screen.getByRole("combobox") as HTMLInputElement;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(input.value).toBe("Da Nang");
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    expect(locationSearchApiMock.bffSuggestLocations).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "Da Nang City" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(locationSearchApiMock.bffSuggestLocations).toHaveBeenCalledWith(
+      "Da Nang City",
+      expect.any(AbortSignal),
+    );
+  });
+
   it("aborts the previous suggest request when a new query is typed", async () => {
     locationSearchApiMock.bffSuggestLocations
       .mockImplementationOnce((_query: string, signal?: AbortSignal) =>

@@ -1,7 +1,10 @@
+from unittest.mock import patch
+
 from rest_framework.test import APITestCase
 from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
+from trips.services import TimelineSectionDateConflictError
 
 
 def _auth(user):
@@ -49,6 +52,11 @@ class UpdateTripTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["trip"]["budget_estimate"], "5000000.00")
 
+    def test_captain_cannot_update_negative_budget(self):
+        res = self.client.patch(self._url(), {"budget_estimate": "-1.00"}, format="json", **_auth(self.captain))
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("budget_estimate", res.data)
+
     def test_captain_cannot_patch_completed_trip_409(self):
         self.trip.status = TripStatus.COMPLETED
         self.trip.save()
@@ -62,6 +70,41 @@ class UpdateTripTests(APITestCase):
         res = self.client.patch(self._url(), {"name": "New Name"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "TRIP_TERMINAL")
+
+    def test_captain_can_update_timezone(self):
+        res = self.client.patch(self._url(), {"timezone": "Asia/Tokyo"}, format="json", **_auth(self.captain))
+        self.assertEqual(res.status_code, 200)
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.timezone, "Asia/Tokyo")
+
+    def test_captain_update_invalid_timezone_400(self):
+        res = self.client.patch(self._url(), {"timezone": "Not/A_Zone"}, format="json", **_auth(self.captain))
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(
+            res.data,
+            {"detail": "Invalid trip timezone.", "error_code": "INVALID_TIMEZONE"},
+        )
+
+    @patch("trips.views.update_trip")
+    def test_captain_update_maps_timeline_date_conflict_to_409(self, mock_update_trip):
+        mock_update_trip.side_effect = TimelineSectionDateConflictError(
+            "This date already has a timeline day."
+        )
+
+        res = self.client.patch(
+            self._url(),
+            {"start_date": "2026-06-02"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "SECTION_DATE_CONFLICT")
+
+    def test_trip_detail_response_includes_timezone(self):
+        res = self.client.get(self._url(), **_auth(self.captain))
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("timezone", res.data["trip"])
 
     def test_captain_can_update_destination_provider_fields(self):
         res = self.client.patch(

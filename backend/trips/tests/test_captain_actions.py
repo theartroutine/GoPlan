@@ -1,11 +1,14 @@
-from django.utils import timezone
+from datetime import date
+
 from rest_framework.test import APITestCase
 from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
 from trips.models import (
-    InvitationStatus, MemberStatus, Trip, TripInvitation, TripMember,
+    InvitationStatus, MemberStatus, TimelineActivityAssigneeScope,
+    TimelineSection, Trip, TripInvitation, TripMember,
     TripRole, TripStatus,
 )
+from trips.tests.timeline_helpers import make_timeline_activity
 
 
 def _auth(user):
@@ -160,6 +163,26 @@ class RemoveMemberTests(APITestCase):
         membership = TripMember.objects.get(trip=self.trip, user=self.member)
         self.assertEqual(membership.status, MemberStatus.REMOVED)
         self.assertIsNotNone(membership.left_at)
+
+    def test_remove_clears_member_activity_assignees(self):
+        section = TimelineSection.objects.create(
+            trip=self.trip,
+            section_date=date(2026, 6, 1),
+            label="Day 1",
+            position=0,
+        )
+        activity = make_timeline_activity(
+            trip=self.trip,
+            section=section,
+            assignee_user=self.member,
+        )
+
+        res = self.client.delete(self._url(), **_auth(self.captain))
+
+        self.assertEqual(res.status_code, 200)
+        activity.refresh_from_db()
+        self.assertEqual(activity.assignee_scope, TimelineActivityAssigneeScope.NONE)
+        self.assertIsNone(activity.assignee_user_id)
 
     def test_only_captain_403(self):
         other = create_completed_user("other@example.com", "other", "OTH001")

@@ -54,8 +54,26 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app:Z
+      - mediadata:/app/media_files
     env_file:
       - ./backend/.env
+    depends_on:
+      postgresql-goplan:
+        condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
+
+  # -------- Backend Scheduler Service --------
+  backend-scheduler:
+    image: backend:latest
+    container_name: backend-scheduler-goplan
+    command: bash -c "while true; do python manage.py dispatch_timeline_reminders || echo 'dispatch_timeline_reminders failed'; sleep 60; done"
+    volumes:
+      - ./backend:/app:Z
+      - mediadata:/app/media_files
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
     depends_on:
       postgresql-goplan:
         condition: service_healthy
@@ -65,3 +83,4 @@ services:
 volumes:
   pgdata: {}
   redisdata: {}
+  mediadata: {}

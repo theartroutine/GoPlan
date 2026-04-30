@@ -1,4 +1,24 @@
-import type { CreateTripPayload, CreateTripResponse, InvitableFriend, TripDetail, TripDetailResponse, TripInvitation, TripListResponse, UpdateTripPayload } from "@/features/trips/domain/types";
+import type {
+  CreateActivityPayload,
+  CreateCustomTypePayload,
+  CreateSectionPayload,
+  CreateTripPayload,
+  CreateTripResponse,
+  InvitableFriend,
+  PatchActivityPayload,
+  PatchCustomTypePayload,
+  PatchSectionPayload,
+  TimelineActivity,
+  TimelineCustomTypeMeta,
+  TimelineResponse,
+  TimelineSection,
+  UpdateActivityStatusPayload,
+  TripDetail,
+  TripDetailResponse,
+  TripInvitation,
+  TripListResponse,
+  UpdateTripPayload,
+} from "@/features/trips/domain/types";
 import { bff } from "@/shared/http/bff-client";
 
 export async function bffListTrips(cursor?: string): Promise<TripListResponse> {
@@ -64,6 +84,116 @@ export async function bffRemoveMember(tripId: string, userId: string): Promise<v
 
 export async function bffLeaveTrip(tripId: string): Promise<void> {
   await bff.post(`/api/trips/${tripId}/leave`);
+}
+
+export async function bffGetTimeline(tripId: string, signal?: AbortSignal): Promise<TimelineResponse> {
+  const res = await bff.get<TimelineResponse>(`/api/trips/${tripId}/timeline`, { signal });
+  return res.data;
+}
+
+// -------- Timeline mutations (Phase 2) --------
+
+export async function bffCreateTimelineSection(
+  tripId: string,
+  payload: CreateSectionPayload,
+): Promise<{ section: TimelineSection }> {
+  const res = await bff.post<{ section: TimelineSection }>(
+    `/api/trips/${tripId}/timeline/sections`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function bffPatchTimelineSection(
+  tripId: string,
+  sectionId: string,
+  payload: PatchSectionPayload,
+): Promise<{ section: TimelineSection }> {
+  const res = await bff.patch<{ section: TimelineSection }>(
+    `/api/trips/${tripId}/timeline/sections/${sectionId}`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function bffDeleteTimelineSection(
+  tripId: string,
+  sectionId: string,
+): Promise<void> {
+  await bff.delete(`/api/trips/${tripId}/timeline/sections/${sectionId}`);
+}
+
+export async function bffCreateTimelineActivity(
+  tripId: string,
+  sectionId: string,
+  payload: CreateActivityPayload,
+): Promise<{ activity: TimelineActivity }> {
+  const res = await bff.post<{ activity: TimelineActivity }>(
+    `/api/trips/${tripId}/timeline/sections/${sectionId}/activities`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function bffPatchTimelineActivity(
+  tripId: string,
+  activityId: string,
+  payload: PatchActivityPayload,
+): Promise<{ activity: TimelineActivity }> {
+  const res = await bff.patch<{ activity: TimelineActivity }>(
+    `/api/trips/${tripId}/timeline/activities/${activityId}`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function bffDeleteTimelineActivity(
+  tripId: string,
+  activityId: string,
+): Promise<void> {
+  await bff.delete(`/api/trips/${tripId}/timeline/activities/${activityId}`);
+}
+
+export async function bffUpdateTimelineActivityStatus(
+  tripId: string,
+  activityId: string,
+  payload: UpdateActivityStatusPayload,
+): Promise<{ activity_id: string; status: TimelineActivity["status"] }> {
+  const res = await bff.post<{ activity_id: string; status: TimelineActivity["status"] }>(
+    `/api/trips/${tripId}/timeline/activities/${activityId}/status`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function bffCreateTimelineCustomType(
+  tripId: string,
+  payload: CreateCustomTypePayload,
+): Promise<{ custom_type: TimelineCustomTypeMeta }> {
+  const res = await bff.post<{ custom_type: TimelineCustomTypeMeta }>(
+    `/api/trips/${tripId}/timeline/custom-types`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function bffPatchTimelineCustomType(
+  tripId: string,
+  typeId: string,
+  payload: PatchCustomTypePayload,
+): Promise<{ custom_type: TimelineCustomTypeMeta }> {
+  const res = await bff.patch<{ custom_type: TimelineCustomTypeMeta }>(
+    `/api/trips/${tripId}/timeline/custom-types/${typeId}`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function bffDeleteTimelineCustomType(
+  tripId: string,
+  typeId: string,
+): Promise<void> {
+  await bff.delete(`/api/trips/${tripId}/timeline/custom-types/${typeId}`);
 }
 
 export async function bffUploadTripCover(file: File): Promise<string> {

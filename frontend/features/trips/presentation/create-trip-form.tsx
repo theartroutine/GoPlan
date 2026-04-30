@@ -1,13 +1,23 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
+import {
+  budgetInputToPayload,
+  DEFAULT_TRIP_CURRENCY,
+  normalizeBudgetInputForCurrencyChange,
+} from "@/features/trips/domain/money";
+import { detectBrowserTimezone } from "@/features/trips/domain/timezones";
 import type { CreateTripPayload } from "@/features/trips/domain/types";
 import { bffCreateTrip } from "@/features/trips/infrastructure/trips-api";
+import { BudgetEstimateInput } from "@/features/trips/presentation/budget-estimate-input";
 import { CoverImagePicker } from "@/features/trips/presentation/cover-image-picker";
+import { CurrencySelect } from "@/features/trips/presentation/currency-select";
 import type { DestinationPickerValue } from "@/features/trips/presentation/destination-picker";
 import { DestinationPicker } from "@/features/trips/presentation/destination-picker";
+import { TimezonePicker } from "@/features/trips/presentation/timezone-picker";
 import { Button } from "@/shared/ui/button";
 import { DatePicker } from "@/shared/ui/date-picker";
 import { Input } from "@/shared/ui/input";
@@ -18,6 +28,9 @@ export function CreateTripForm() {
   const router = useRouter();
   const [startDate, setStartDate] = useState<string | undefined>();
   const [endDate, setEndDate] = useState<string | undefined>();
+  const [timezone, setTimezone] = useState<string>(() => detectBrowserTimezone());
+  const [currencyCode, setCurrencyCode] = useState(DEFAULT_TRIP_CURRENCY);
+  const [budgetEstimate, setBudgetEstimate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -47,6 +60,13 @@ export function CreateTripForm() {
     setPermanentCoverUrl(url);
   }
 
+  function handleCurrencyChange(nextCurrencyCode: string) {
+    setCurrencyCode(nextCurrencyCode);
+    setBudgetEstimate((currentBudgetEstimate) =>
+      normalizeBudgetInputForCurrencyChange(currentBudgetEstimate, nextCurrencyCode),
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -65,12 +85,15 @@ export function CreateTripForm() {
     setLoading(true);
 
     const form = new FormData(e.currentTarget);
+    const submittedBudgetEstimate = budgetInputToPayload(budgetEstimate, currencyCode);
     const payload: CreateTripPayload = {
       name:        (form.get("name") as string | null) ?? "",
       destination,
       start_date:  startDate,
       end_date:    endDate,
       description: (form.get("description") as string | null) || undefined,
+      currency_code: currencyCode,
+      ...(submittedBudgetEstimate && { budget_estimate: submittedBudgetEstimate }),
       ...(pickerValue && {
         destination_provider:     pickerValue.destination_provider,
         destination_provider_id:  pickerValue.destination_provider_id,
@@ -79,6 +102,7 @@ export function CreateTripForm() {
         destination_country_code: pickerValue.destination_country_code,
       }),
       cover_image_url: permanentCoverUrl ?? "",
+      timezone,
     };
 
     try {
@@ -131,13 +155,46 @@ export function CreateTripForm() {
         </div>
       </div>
       <div className="space-y-1.5">
+        <Label htmlFor="timezone">Trip timezone *</Label>
+        <TimezonePicker
+          id="timezone"
+          value={timezone}
+          onChange={setTimezone}
+          required
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div className="space-y-1.5">
+          <Label htmlFor="currency_code">Currency</Label>
+          <CurrencySelect
+            id="currency_code"
+            value={currencyCode}
+            onChange={handleCurrencyChange}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="budget_estimate">Budget estimate</Label>
+          <BudgetEstimateInput
+            id="budget_estimate"
+            value={budgetEstimate}
+            currencyCode={currencyCode}
+            onChange={setBudgetEstimate}
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
         <Label htmlFor="description">Description</Label>
         <Textarea id="description" name="description" placeholder="What's this trip about?" rows={3} />
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" className="w-full" disabled={isSubmitDisabled}>
-        {loading ? "Creating…" : "Create trip"}
-      </Button>
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <Button asChild variant="outline" className="w-full sm:w-auto">
+          <Link href="/">Cancel</Link>
+        </Button>
+        <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitDisabled}>
+          {loading ? "Creating…" : "Create trip"}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -6,6 +6,7 @@ import {
   formatDateOnly,
   getInclusiveDateOnlySpan,
 } from "@/features/trips/domain/date-only";
+import { formatTripMoneyAmount } from "@/features/trips/domain/money";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import {
   Avatar,
@@ -35,12 +36,12 @@ export function OverviewTab() {
   })}`;
 
   const totalBudget = trip.budget_estimate
-    ? parseFloat(trip.budget_estimate).toLocaleString("vi-VN")
+    ? formatTripMoneyAmount(trip.budget_estimate, trip.currency_code)
     : null;
 
   const budgetPerPerson =
     trip.budget_estimate && members.length > 0
-      ? (parseFloat(trip.budget_estimate) / members.length).toLocaleString("vi-VN")
+      ? formatTripMoneyAmount(parseFloat(trip.budget_estimate) / members.length, trip.currency_code)
       : null;
 
   const MAX_AVATARS = 5;
