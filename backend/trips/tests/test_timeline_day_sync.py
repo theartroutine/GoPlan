@@ -10,14 +10,14 @@ from trips.services import update_trip
 from trips.tests.timeline_helpers import make_timeline_activity, make_trip_with_timeline
 
 
-class TimelineDaySyncTests(TestCase):
+class TimelineDaySeedTests(TestCase):
 
     def setUp(self):
         self.captain = create_completed_user(
             "captain-sync@example.com", "captain", "CAP001"
         )
 
-    def test_update_trip_extends_range_and_keeps_only_starter_generated_days(self):
+    def test_update_trip_date_range_does_not_mutate_existing_days(self):
         trip = make_trip_with_timeline(
             captain=self.captain,
             start_date=date(2026, 6, 1),
@@ -34,8 +34,8 @@ class TimelineDaySyncTests(TestCase):
         self.assertEqual(
             [section.section_date for section in sections],
             [
-                date(2026, 5, 31),
                 date(2026, 6, 1),
+                date(2026, 6, 2),
             ],
         )
         self.assertEqual(
@@ -44,7 +44,7 @@ class TimelineDaySyncTests(TestCase):
         )
         self.assertTrue(all(not section.is_label_custom for section in sections))
 
-    def test_update_trip_shrink_deletes_empty_generated_outside_days_and_preserves_non_empty_days(self):
+    def test_update_trip_shrink_preserves_empty_and_non_empty_days(self):
         trip = make_trip_with_timeline(
             captain=self.captain,
             start_date=date(2026, 6, 1),
@@ -65,11 +65,11 @@ class TimelineDaySyncTests(TestCase):
         day_with_activity.refresh_from_db()
         self.assertEqual(day_with_activity.section_date, date(2026, 6, 1))
         self.assertEqual(day_with_activity.label, "Day 1")
-        self.assertTrue(day_with_activity.is_label_custom)
+        self.assertFalse(day_with_activity.is_label_custom)
         self.assertTrue(day_with_activity.activities.filter(title="Existing booking").exists())
-        self.assertFalse(TimelineSection.objects.filter(trip=trip, section_date=date(2026, 6, 3)).exists())
+        self.assertTrue(TimelineSection.objects.filter(trip=trip, section_date=date(2026, 6, 3)).exists())
         remaining_day = TimelineSection.objects.get(trip=trip, section_date=date(2026, 6, 2))
-        self.assertEqual(remaining_day.label, "Day 1")
+        self.assertEqual(remaining_day.label, "Day 2")
 
     def test_update_trip_preserves_outside_custom_label(self):
         trip = make_trip_with_timeline(
@@ -88,7 +88,7 @@ class TimelineDaySyncTests(TestCase):
         self.assertEqual(custom_day.label, "Festival day")
         self.assertTrue(custom_day.is_label_custom)
 
-    def test_update_trip_reuses_existing_extra_day_when_range_expands_to_date(self):
+    def test_update_trip_does_not_auto_rename_existing_extra_day_when_range_expands(self):
         trip = make_trip_with_timeline(
             captain=self.captain,
             start_date=date(2026, 6, 1),
@@ -110,3 +110,6 @@ class TimelineDaySyncTests(TestCase):
         self.assertTrue(extra_day.is_label_custom)
         self.assertEqual(TimelineSection.objects.filter(trip=trip, section_date=date(2026, 5, 31)).count(), 1)
         self.assertTrue(extra_day.activities.filter(title="Pick up supplies").exists())
+        original_day = TimelineSection.objects.get(trip=trip, section_date=date(2026, 6, 1))
+        self.assertEqual(original_day.label, "Day 1")
+        self.assertFalse(original_day.is_label_custom)

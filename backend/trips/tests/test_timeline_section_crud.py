@@ -91,7 +91,7 @@ class TimelineSectionCrudTests(APITestCase):
 
     # -------- Patch --------
 
-    def test_patch_generated_day_label_marks_custom(self):
+    def test_patch_day_label_marks_custom(self):
         section = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
         res = self.client.patch(
             self._detail_url(section.id),
@@ -104,7 +104,7 @@ class TimelineSectionCrudTests(APITestCase):
         self.assertTrue(res.data["section"]["is_label_custom"])
         self.assertEqual(res.data["section"]["label"], "Arrival and check-in")
 
-    def test_patch_generated_day_to_free_outside_date_marks_custom_and_recreates_missing_day(self):
+    def test_patch_day_to_free_outside_date_does_not_recreate_original_date(self):
         section = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
 
         res = self.client.patch(
@@ -120,12 +120,11 @@ class TimelineSectionCrudTests(APITestCase):
         self.assertEqual(res.data["section"]["label"], "Day 1")
         self.assertTrue(res.data["section"]["is_label_custom"])
         self.assertFalse(res.data["section"]["is_in_trip_range"])
-        recreated = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
-        self.assertNotEqual(recreated.id, section.id)
-        self.assertEqual(recreated.label, "Day 1")
-        self.assertFalse(recreated.is_label_custom)
+        self.assertFalse(
+            TimelineSection.objects.filter(trip=self.trip, section_date=date(2026, 6, 1)).exists()
+        )
 
-    def test_patch_generated_day_to_missing_in_range_date_updates_generated_label(self):
+    def test_patch_day_to_missing_in_range_date_keeps_existing_label(self):
         target = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 2))
         target.delete()
         source = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
@@ -140,15 +139,14 @@ class TimelineSectionCrudTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertNotIn("kind", res.data["section"])
         self.assertEqual(res.data["section"]["section_date"], "2026-06-02")
-        self.assertEqual(res.data["section"]["label"], "Day 2")
-        self.assertFalse(res.data["section"]["is_label_custom"])
+        self.assertEqual(res.data["section"]["label"], "Day 1")
+        self.assertTrue(res.data["section"]["is_label_custom"])
         self.assertTrue(res.data["section"]["is_in_trip_range"])
-        recreated_source = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
-        self.assertNotEqual(recreated_source.id, source.id)
-        self.assertEqual(recreated_source.label, "Day 1")
-        self.assertFalse(recreated_source.is_label_custom)
+        self.assertFalse(
+            TimelineSection.objects.filter(trip=self.trip, section_date=date(2026, 6, 1)).exists()
+        )
 
-    def test_patch_custom_day_with_generated_label_clears_custom(self):
+    def test_patch_custom_day_with_day_label_keeps_custom(self):
         section = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
         section.label = "Arrival and check-in"
         section.is_label_custom = True
@@ -163,10 +161,33 @@ class TimelineSectionCrudTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertNotIn("kind", res.data["section"])
         self.assertEqual(res.data["section"]["label"], "Day 1")
-        self.assertFalse(res.data["section"]["is_label_custom"])
+        self.assertTrue(res.data["section"]["is_label_custom"])
         section.refresh_from_db()
         self.assertEqual(section.label, "Day 1")
-        self.assertFalse(section.is_label_custom)
+        self.assertTrue(section.is_label_custom)
+
+    def test_patch_extra_in_range_day_with_day_label_keeps_custom(self):
+        section = TimelineSection.objects.create(
+            trip=self.trip,
+            section_date=date(2026, 6, 3),
+            label="Free day",
+            is_label_custom=True,
+            position=0,
+        )
+
+        res = self.client.patch(
+            self._detail_url(section.id),
+            {"label": "Day 3"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["section"]["label"], "Day 3")
+        self.assertTrue(res.data["section"]["is_label_custom"])
+        section.refresh_from_db()
+        self.assertEqual(section.label, "Day 3")
+        self.assertTrue(section.is_label_custom)
 
     def test_patch_extra_day_allows_section_date(self):
         section = make_timeline_section(

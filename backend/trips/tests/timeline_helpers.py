@@ -17,7 +17,7 @@ from trips.models import (
     TripRole,
     TripStatus,
 )
-from trips.services import sync_timeline_days
+from trips.services import seed_starter_timeline_days
 
 
 def make_trip_with_timeline(
@@ -44,7 +44,7 @@ def make_trip_with_timeline(
     TripMember.objects.create(trip=trip, user=captain, role=TripRole.CAPTAIN, status=MemberStatus.ACTIVE)
     for member in members or []:
         TripMember.objects.create(trip=trip, user=member, role=TripRole.MEMBER, status=MemberStatus.ACTIVE)
-    sync_timeline_days(trip)
+    seed_starter_timeline_days(trip)
     return trip
 
 

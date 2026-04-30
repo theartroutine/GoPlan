@@ -52,6 +52,11 @@ class UpdateTripTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["trip"]["budget_estimate"], "5000000.00")
 
+    def test_captain_cannot_update_negative_budget(self):
+        res = self.client.patch(self._url(), {"budget_estimate": "-1.00"}, format="json", **_auth(self.captain))
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("budget_estimate", res.data)
+
     def test_captain_cannot_patch_completed_trip_409(self):
         self.trip.status = TripStatus.COMPLETED
         self.trip.save()

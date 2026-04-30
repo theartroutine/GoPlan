@@ -86,6 +86,12 @@ def _validate_iana_timezone(value: str) -> str:
     return value
 
 
+def _validate_non_negative_budget_estimate(value):
+    if value is not None and value < 0:
+        raise serializers.ValidationError("budget_estimate must be greater than or equal to 0.")
+    return value
+
+
 class CreateTripSerializer(serializers.Serializer):
     name            = serializers.CharField(max_length=120)
     destination     = serializers.CharField(max_length=200)
@@ -104,6 +110,9 @@ class CreateTripSerializer(serializers.Serializer):
 
     def validate_timezone(self, value):
         return _validate_iana_timezone(value)
+
+    def validate_budget_estimate(self, value):
+        return _validate_non_negative_budget_estimate(value)
 
     def validate(self, data):
         if data["end_date"] < data["start_date"]:
@@ -202,6 +211,9 @@ class UpdateTripSerializer(serializers.Serializer):
 
     def validate_timezone(self, value):
         return _validate_iana_timezone(value)
+
+    def validate_budget_estimate(self, value):
+        return _validate_non_negative_budget_estimate(value)
 
     def validate(self, data):
         trip = self.context.get("trip")

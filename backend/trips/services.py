@@ -213,16 +213,11 @@ def create_trip(
             role=TripRole.CAPTAIN,
             status=MemberStatus.ACTIVE,
         )
-        sync_timeline_days(trip)
+        seed_starter_timeline_days(trip)
     return trip
 
 
-# -------- Timeline day sync --------
-
-def _is_date_in_trip_range(trip: Trip, section_date) -> bool:
-    if not trip.start_date or not trip.end_date:
-        return False
-    return trip.start_date <= section_date <= trip.end_date
+# -------- Timeline day seed --------
 
 
 def _ensure_section_date_available(
@@ -247,63 +242,36 @@ def _starter_timeline_dates(trip: Trip) -> list[date]:
     return dates
 
 
-def sync_timeline_days(trip: Trip) -> None:
-    """Sync generated starter timeline days to the trip's current date range."""
+def seed_starter_timeline_days(trip: Trip) -> None:
+    """Create the initial starter days for a trip without mutating existing days."""
     with transaction.atomic():
         trip = Trip.objects.select_for_update().get(pk=trip.pk)
         if not trip.start_date or not trip.end_date:
             return
 
-        starter_dates = set(_starter_timeline_dates(trip))
-        sections = list(
+        existing_dates = set(
             TimelineSection.objects
             .select_for_update()
             .filter(trip=trip)
-            .order_by("section_date", "created_at")
-            .prefetch_related("activities")
+            .values_list("section_date", flat=True)
         )
-        for section in sections:
-            if section.section_date in starter_dates:
-                continue
-            if section.is_label_custom:
-                continue
-            if section.activities.exists():
-                section.is_label_custom = True
-                section.save(update_fields=["is_label_custom", "updated_at"])
-            else:
-                section.delete()
 
-        existing = {
-            s.section_date: s
-            for s in TimelineSection.objects.select_for_update().filter(trip=trip)
-        }
-        for current in _starter_timeline_dates(trip):
-            expected_label = _generated_day_label_for(trip, current)
-            section = existing.get(current)
-            if section is None:
-                try:
-                    TimelineSection.objects.create(
-                        trip=trip,
-                        section_date=current,
-                        label=expected_label,
-                        is_label_custom=False,
-                        position=0,
-                    )
-                except IntegrityError as exc:
-                    raise TimelineSectionDateConflictError(
-                        "This date already has a timeline day."
-                    ) from exc
-            elif not section.is_label_custom:
-                update_fields = []
-                if section.label != expected_label:
-                    section.label = expected_label
-                    update_fields.append("label")
-                if section.position != 0:
-                    section.position = 0
-                    update_fields.append("position")
-                if update_fields:
-                    update_fields.append("updated_at")
-                    section.save(update_fields=update_fields)
+        for index, current in enumerate(_starter_timeline_dates(trip), start=1):
+            if current in existing_dates:
+                continue
+            try:
+                TimelineSection.objects.create(
+                    trip=trip,
+                    section_date=current,
+                    label=f"Day {index}",
+                    is_label_custom=False,
+                    position=0,
+                )
+                existing_dates.add(current)
+            except IntegrityError as exc:
+                raise TimelineSectionDateConflictError(
+                    "This date already has a timeline day."
+                ) from exc
 
 
 def get_user_trips(user):
@@ -351,8 +319,6 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
     """
     with transaction.atomic():
         trip = Trip.objects.select_for_update().get(pk=trip.pk)
-        old_start_date = trip.start_date
-        old_end_date = trip.end_date
         old_timezone = trip.timezone
 
         if name is not _UNSET:                       trip.name = name
@@ -370,15 +336,9 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
         if timezone is not _UNSET:                   trip.timezone = timezone
         if budget_estimate is not _UNSET:            trip.budget_estimate = budget_estimate
 
-        date_range_changed = (
-            trip.start_date != old_start_date
-            or trip.end_date != old_end_date
-        )
         timezone_changed = trip.timezone != old_timezone
 
         trip.save()
-        if date_range_changed:
-            sync_timeline_days(trip)
         if timezone_changed:
             regenerate_unsent_trip_reminders(trip)
     return trip
@@ -772,16 +732,6 @@ def leave_trip(trip_id, actor) -> TripMember:
     return membership
 
 
-# -------- Timeline mutation helpers --------
-
-def _generated_day_label_for(trip: Trip, section_date) -> str | None:
-    """Return the generated 'Day N' label expected for this section_date inside the trip range."""
-    if not _is_date_in_trip_range(trip, section_date):
-        return None
-    delta = (section_date - trip.start_date).days
-    return f"Day {delta + 1}"
-
-
 def _ensure_captain_can_mutate(trip, actor):
     if not TripMember.objects.filter(
         trip=trip,
@@ -828,22 +778,6 @@ def create_timeline_day(trip_id, *, actor, section_date, label) -> tuple[Trip, T
 _UNSET_TIMELINE = object()
 
 
-def _resolve_section_label_state(
-    trip: Trip,
-    *,
-    section: TimelineSection,
-    final_date,
-    label,
-) -> tuple[str, bool]:
-    final_label = section.label if label is _UNSET_TIMELINE else label
-    generated = _generated_day_label_for(trip, final_date)
-    if generated is None:
-        return final_label, True
-    if label is _UNSET_TIMELINE and not section.is_label_custom:
-        return generated, False
-    return final_label, final_label != generated
-
-
 def patch_section(
     trip_id,
     section_id,
@@ -871,15 +805,10 @@ def patch_section(
                 exclude_section_id=section.id,
             )
 
-        final_label, is_label_custom = _resolve_section_label_state(
-            trip,
-            section=section,
-            final_date=final_date,
-            label=label,
-        )
+        final_label = section.label if label is _UNSET_TIMELINE else label
         section.section_date = final_date
         section.label = final_label
-        section.is_label_custom = is_label_custom
+        section.is_label_custom = True
         section.updated_by = actor
         try:
             section.save(
@@ -897,9 +826,6 @@ def patch_section(
             ) from exc
         if date_changed:
             regenerate_unsent_section_reminders(section)
-        if _is_date_in_trip_range(trip, old_date) or _is_date_in_trip_range(trip, final_date):
-            sync_timeline_days(trip)
-            section = TimelineSection.objects.get(pk=section.pk, trip=trip)
     return trip, section
 
 

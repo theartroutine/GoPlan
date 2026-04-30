@@ -111,6 +111,10 @@ class Trip(models.Model):
             models.CheckConstraint(
                 condition=Q(end_date__gte=F("start_date")),
                 name="trip_end_date_gte_start_date",
+            ),
+            models.CheckConstraint(
+                condition=Q(budget_estimate__isnull=True) | Q(budget_estimate__gte=0),
+                name="trip_budget_estimate_non_negative",
             )
         ]
 

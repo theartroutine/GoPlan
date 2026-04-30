@@ -44,6 +44,11 @@ class TripModelTests(TestCase):
             with transaction.atomic():
                 _make_trip(self.user, start_date="2026-06-05", end_date="2026-06-01")
 
+    def test_negative_budget_estimate_raises(self):
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                _make_trip(self.user, budget_estimate="-1.00")
+
     def test_same_start_and_end_date_allowed(self):
         trip = _make_trip(self.user, start_date="2026-06-01", end_date="2026-06-01")
         self.assertIsNotNone(trip.pk)

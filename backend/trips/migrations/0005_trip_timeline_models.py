@@ -8,7 +8,10 @@ from django.conf import settings
 from django.db import migrations, models
 
 
-def create_system_days_for_existing_trips(apps, schema_editor):
+TIMELINE_STARTER_DAY_COUNT = 2
+
+
+def create_starter_days_for_existing_trips(apps, schema_editor):
     Trip = apps.get_model("trips", "Trip")
     TimelineSection = apps.get_model("trips", "TimelineSection")
     for trip in Trip.objects.all().iterator():
@@ -16,7 +19,7 @@ def create_system_days_for_existing_trips(apps, schema_editor):
             continue
         current = trip.start_date
         index = 0
-        while current <= trip.end_date:
+        while current <= trip.end_date and index < TIMELINE_STARTER_DAY_COUNT:
             TimelineSection.objects.create(
                 trip=trip,
                 kind="SYSTEM_DAY",
@@ -162,7 +165,7 @@ class Migration(migrations.Migration):
             index=models.Index(fields=['trip', 'assignee_user'], name='trips_timel_trip_id_6638c8_idx'),
         ),
         migrations.RunPython(
-            create_system_days_for_existing_trips,
+            create_starter_days_for_existing_trips,
             reverse_code=migrations.RunPython.noop,
         ),
     ]

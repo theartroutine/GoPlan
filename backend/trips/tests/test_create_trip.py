@@ -53,6 +53,18 @@ class CreateTripTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["trip"]["currency_code"], "USD")
 
+    def test_create_trip_rejects_negative_budget(self):
+        payload = {
+            "name": "Bad Budget",
+            "destination": "Nha Trang",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-03",
+            "budget_estimate": "-1.00",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("budget_estimate", response.data)
+
     def test_create_trip_end_before_start_400(self):
         payload = {
             "name": "Bad Dates",
