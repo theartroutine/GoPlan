@@ -1035,6 +1035,8 @@ def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> Timel
         except TimelineSection.DoesNotExist:
             raise TimelineSectionNotFoundError("Section not found.")
 
+        _apply_activity_create_invariants(data)
+
         custom_type = None
         if data.get("custom_type_id") is not None:
             custom_type = _resolve_custom_type(trip, data["custom_type_id"])
@@ -1098,14 +1100,51 @@ def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> Timel
     return activity
 
 
-def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict, trip: Trip) -> None:
-    """Validate that the merged final state still satisfies cross-field invariants."""
+def _validate_activity_final_invariants(
+    *,
+    time_mode: str,
+    start_time,
+    end_time,
+    system_type: str,
+    custom_type_id,
+    location_mode: str,
+    place,
+    reminder_offsets,
+) -> None:
     from trips.serializers import (
         _validate_activity_location,
         _validate_activity_time_fields,
         _validate_activity_type_selection,
+        _validate_reminder_offsets,
     )
 
+    if time_mode not in TimelineActivityTimeMode.values:
+        raise drf_serializers.ValidationError({"time_mode": "Unknown time_mode."})
+    if location_mode not in TimelineLocationMode.values:
+        raise drf_serializers.ValidationError({"location_mode": "Unknown location_mode."})
+    _validate_activity_time_fields(time_mode, start_time, end_time)
+    _validate_reminder_offsets(reminder_offsets)
+    _validate_activity_reminder_offsets_allowed(time_mode, reminder_offsets)
+    _validate_activity_type_selection(system_type, custom_type_id)
+    _validate_activity_location(location_mode, place)
+
+
+def _apply_activity_create_invariants(data: dict) -> None:
+    """Validate service-level create invariants before persistence."""
+    _validate_activity_final_invariants(
+        time_mode=data.get("time_mode"),
+        start_time=data.get("start_time"),
+        end_time=data.get("end_time"),
+        system_type=data.get("system_type", ""),
+        custom_type_id=data.get("custom_type_id"),
+        location_mode=data.get("location_mode", TimelineLocationMode.MANUAL),
+        place=data.get("place"),
+        reminder_offsets=data.get("reminder_offsets_minutes", []),
+    )
+
+
+def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict) -> None:
+    """Validate that the merged final state still satisfies cross-field invariants."""
     final_time_mode = data.get("time_mode", activity.time_mode)
     if final_time_mode in (
         TimelineActivityTimeMode.ALL_DAY,
@@ -1116,11 +1155,6 @@ def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict, tri
     else:
         final_start = data["start_time"] if "start_time" in data else activity.start_time
         final_end = data["end_time"] if "end_time" in data else activity.end_time
-    _validate_activity_time_fields(final_time_mode, final_start, final_end)
-    _validate_activity_reminder_offsets_allowed(
-        final_time_mode,
-        data.get("reminder_offsets_minutes"),
-    )
 
     explicit_system_type = "system_type" in data
     final_system_type = data.get("system_type", activity.system_type)
@@ -1132,7 +1166,6 @@ def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict, tri
         final_custom_type_id = activity.custom_type_id
     if final_custom_type_id is not None and not (explicit_system_type and final_system_type):
         final_system_type = ""
-    _validate_activity_type_selection(final_system_type, final_custom_type_id)
 
     final_location_mode = data.get("location_mode", activity.location_mode)
     if final_location_mode == TimelineLocationMode.MANUAL:
@@ -1149,7 +1182,17 @@ def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict, tri
             }
         else:
             final_place = None
-    _validate_activity_location(final_location_mode, final_place)
+
+    _validate_activity_final_invariants(
+        time_mode=final_time_mode,
+        start_time=final_start,
+        end_time=final_end,
+        system_type=final_system_type,
+        custom_type_id=final_custom_type_id,
+        location_mode=final_location_mode,
+        place=final_place,
+        reminder_offsets=data.get("reminder_offsets_minutes"),
+    )
 
 
 def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> TimelineActivity:
@@ -1168,7 +1211,7 @@ def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> Timel
         )
 
         try:
-            _apply_activity_patch_invariants(activity, data, trip)
+            _apply_activity_patch_invariants(activity, data)
         except drf_serializers.ValidationError:
             raise
 
@@ -1279,10 +1322,9 @@ def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str)
         except TimelineActivity.DoesNotExist:
             raise TimelineActivityNotFoundError("Activity not found.")
 
-        if status == activity.status:
-            return activity
-
         if membership.role == TripRole.CAPTAIN:
+            if status == activity.status:
+                return activity
             allowed_targets = _CAPTAIN_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
             if status not in allowed_targets:
                 raise StatusTransitionError("This activity status transition is not allowed.")
@@ -1296,6 +1338,8 @@ def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str)
             )
             if not actor_is_assigned:
                 raise TripPermissionError("Only the captain or assigned member can update this activity status.")
+            if status == activity.status:
+                return activity
             allowed_targets = _ASSIGNEE_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
             if status not in allowed_targets:
                 raise TripPermissionError("Assigned members cannot perform this activity status transition.")

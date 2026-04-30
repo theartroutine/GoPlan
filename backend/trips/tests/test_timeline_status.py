@@ -119,6 +119,24 @@ class TimelineStatusTests(APITestCase):
         self.assertEqual(res.status_code, 403)
         self.assertEqual(res.data["error_code"], "PERMISSION_DENIED")
 
+    def test_non_assignee_member_cannot_noop_update_status(self):
+        activity = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            assignee_user=self.assignee,
+            status=TimelineActivityStatus.UPCOMING,
+        )
+
+        res = self.client.post(
+            self._status_url(activity.id),
+            {"status": "UPCOMING"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.data["error_code"], "PERMISSION_DENIED")
+
     def test_captain_can_perform_captain_allowed_transition(self):
         activity = make_timeline_activity(
             trip=self.trip,

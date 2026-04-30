@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time
 
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
@@ -12,6 +13,7 @@ from trips.models import (
     TimelineCustomType,
     TimelineSection,
 )
+from trips.services import create_timeline_activity
 from trips.tests.timeline_helpers import (
     make_timeline_activity,
     make_trip_with_timeline,
@@ -47,6 +49,18 @@ class TimelineActivityCrudTests(APITestCase):
             "title": "Bus to Da Lat",
             "time_mode": "AT_TIME",
             "start_time": "06:30:00",
+            "system_type": "TRANSPORTATION",
+            "location_mode": "MANUAL",
+            "location_label": "Bus station",
+        }
+        payload.update(overrides)
+        return payload
+
+    def _valid_service_payload(self, **overrides):
+        payload = {
+            "title": "Bus to Da Lat",
+            "time_mode": "AT_TIME",
+            "start_time": time(6, 30),
             "system_type": "TRANSPORTATION",
             "location_mode": "MANUAL",
             "location_label": "Bus station",
@@ -245,6 +259,104 @@ class TimelineActivityCrudTests(APITestCase):
 
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.data["error_code"], "INVALID_CUSTOM_TYPE")
+
+    def test_service_create_rejects_invalid_time_fields_before_persisting(self):
+        with self.assertRaises(ValidationError):
+            create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data=self._valid_service_payload(
+                    title="Invalid all day",
+                    time_mode="ALL_DAY",
+                    start_time=time(6, 30),
+                ),
+            )
+
+        self.assertFalse(TimelineActivity.objects.filter(title="Invalid all day").exists())
+
+    def test_service_create_rejects_invalid_choice_fields_before_persisting(self):
+        invalid_cases = [
+            self._valid_service_payload(title="Invalid time mode", time_mode="NOT_A_MODE"),
+            self._valid_service_payload(title="Invalid location mode", location_mode="NOT_A_MODE"),
+        ]
+
+        for payload in invalid_cases:
+            with self.subTest(title=payload["title"]):
+                with self.assertRaises(ValidationError):
+                    create_timeline_activity(
+                        self.trip.id,
+                        self.section.id,
+                        actor=self.captain,
+                        data=payload,
+                    )
+
+        self.assertFalse(
+            TimelineActivity.objects.filter(
+                title__in=["Invalid time mode", "Invalid location mode"],
+            ).exists()
+        )
+
+    def test_service_create_rejects_invalid_type_selection_before_persisting(self):
+        invalid_cases = [
+            self._valid_service_payload(title="Missing type", system_type=""),
+            self._valid_service_payload(title="Unknown type", system_type="NOT_A_TYPE"),
+            self._valid_service_payload(
+                title="Two types",
+                custom_type_id=TimelineCustomType.objects.create(
+                    trip=self.trip,
+                    name="Coffee",
+                    normalized_name="coffee",
+                ).id,
+            ),
+        ]
+
+        for payload in invalid_cases:
+            with self.subTest(title=payload["title"]):
+                with self.assertRaises(ValidationError):
+                    create_timeline_activity(
+                        self.trip.id,
+                        self.section.id,
+                        actor=self.captain,
+                        data=payload,
+                    )
+
+        self.assertFalse(
+            TimelineActivity.objects.filter(
+                title__in=["Missing type", "Unknown type", "Two types"],
+            ).exists()
+        )
+
+    def test_service_create_rejects_invalid_location_before_persisting(self):
+        with self.assertRaises(ValidationError):
+            create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data=self._valid_service_payload(
+                    title="Invalid structured location",
+                    location_mode="STRUCTURED",
+                    place=None,
+                ),
+            )
+
+        self.assertFalse(
+            TimelineActivity.objects.filter(title="Invalid structured location").exists()
+        )
+
+    def test_service_create_rejects_invalid_reminder_offsets_before_persisting(self):
+        with self.assertRaises(ValidationError):
+            create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data=self._valid_service_payload(
+                    title="Invalid reminder",
+                    reminder_offsets_minutes=[45],
+                ),
+            )
+
+        self.assertFalse(TimelineActivity.objects.filter(title="Invalid reminder").exists())
 
     # -------- Patch --------
 
