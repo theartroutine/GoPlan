@@ -367,6 +367,25 @@ class TimelineActivityCrudTests(APITestCase):
         self.assertEqual(res.data["activity"]["title"], "Coffee stop")
         self.assertEqual(res.data["activity"]["activity_type"]["id"], str(ct.id))
 
+    def test_patch_system_type_clears_existing_custom_type(self):
+        ct = TimelineCustomType.objects.create(
+            trip=self.trip, name="Coffee", normalized_name="coffee"
+        )
+        activity = make_timeline_activity(trip=self.trip, section=self.section, custom_type=ct)
+
+        res = self.client.patch(
+            self._detail_url(activity.id),
+            {"system_type": "FOOD"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["activity"]["activity_type"]["code"], "FOOD")
+        activity.refresh_from_db()
+        self.assertEqual(activity.system_type, "FOOD")
+        self.assertIsNone(activity.custom_type_id)
+
     # -------- Delete --------
 
     def test_delete_activity_200(self):

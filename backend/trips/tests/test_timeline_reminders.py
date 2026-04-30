@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone as dt_timezone
+from unittest.mock import patch
 
 from django.core.management import call_command
 from django.utils import timezone
@@ -63,6 +64,31 @@ class TimelineReminderGenerationTests(APITestCase):
         self.assertEqual(
             reminders[1].due_at_utc,
             datetime(2026, 6, 1, 1, 30, tzinfo=dt_timezone.utc),
+        )
+
+    def test_create_skips_expired_reminder_offsets(self):
+        now = datetime(2026, 6, 1, 2, 0, tzinfo=dt_timezone.utc)
+
+        with patch("trips.services.timezone.now", return_value=now):
+            activity = create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data={
+                    "title": "Late breakfast",
+                    "time_mode": TimelineActivityTimeMode.AT_TIME,
+                    "start_time": time(8, 0),
+                    "system_type": "FOOD",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [30],
+                },
+            )
+
+        self.assertEqual(activity.reminders.count(), 0)
+        call_command("dispatch_timeline_reminders")
+        self.assertEqual(
+            Notification.objects.filter(type=NotificationType.TRIP_TIMELINE_REMINDER).count(),
+            0,
         )
 
     def test_create_all_day_activity_rejects_reminders_through_service(self):
@@ -138,6 +164,36 @@ class TimelineReminderGenerationTests(APITestCase):
             unsent_reminders[0].due_at_utc,
             datetime(2026, 6, 1, 1, 0, tzinfo=dt_timezone.utc),
         )
+
+    def test_patch_start_time_skips_expired_reminder_offsets(self):
+        before_due = datetime(2026, 5, 31, 12, 0, tzinfo=dt_timezone.utc)
+        after_new_due = datetime(2026, 6, 1, 0, 45, tzinfo=dt_timezone.utc)
+
+        with patch("trips.services.timezone.now", return_value=before_due):
+            activity = create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data={
+                    "title": "Breakfast",
+                    "time_mode": TimelineActivityTimeMode.AT_TIME,
+                    "start_time": time(9, 0),
+                    "system_type": "FOOD",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [30],
+                },
+            )
+        self.assertEqual(activity.reminders.filter(sent_at__isnull=True).count(), 1)
+
+        with patch("trips.services.timezone.now", return_value=after_new_due):
+            patch_timeline_activity(
+                self.trip.id,
+                activity.id,
+                actor=self.captain,
+                data={"start_time": time(8, 0)},
+            )
+
+        self.assertFalse(activity.reminders.filter(sent_at__isnull=True).exists())
 
     def test_trip_timezone_change_regenerates_unsent_reminders(self):
         activity = create_timeline_activity(

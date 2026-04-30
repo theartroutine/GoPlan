@@ -681,6 +681,11 @@ def remove_member(trip_id, target_user_id, actor) -> TripMember:
         membership.status = MemberStatus.REMOVED
         membership.left_at = timezone.now()
         membership.save(update_fields=["status", "left_at"])
+        _clear_activity_assignees_for_user(
+            trip=trip,
+            user_id=target_user_id,
+            updated_by=actor,
+        )
 
         create_notification(
             recipient=membership.user,
@@ -728,6 +733,11 @@ def leave_trip(trip_id, actor) -> TripMember:
         membership.status = MemberStatus.LEFT
         membership.left_at = timezone.now()
         membership.save(update_fields=["status", "left_at"])
+        _clear_activity_assignees_for_user(
+            trip=trip,
+            user_id=actor.id,
+            updated_by=actor,
+        )
 
     return membership
 
@@ -852,6 +862,19 @@ def _assert_active_member(trip, user_id):
         raise TimelineInvalidAssigneeError("Assignee must be an active member of this trip.")
 
 
+def _clear_activity_assignees_for_user(*, trip: Trip, user_id, updated_by) -> None:
+    TimelineActivity.objects.filter(
+        trip=trip,
+        assignee_scope=TimelineActivityAssigneeScope.USER,
+        assignee_user_id=user_id,
+    ).update(
+        assignee_scope=TimelineActivityAssigneeScope.NONE,
+        assignee_user_id=None,
+        updated_by_id=updated_by.id,
+        updated_at=timezone.now(),
+    )
+
+
 def _resolve_custom_type(trip, custom_type_id, *, require_active: bool = True) -> TimelineCustomType:
     try:
         ct = TimelineCustomType.objects.get(pk=custom_type_id, trip=trip)
@@ -913,8 +936,11 @@ def replace_unsent_activity_reminders(activity: TimelineActivity, offsets: list[
     if activity_start_utc is None:
         return
 
+    now = timezone.now()
     for offset in sorted(set(offsets), reverse=True):
         due_at_utc = activity_start_utc - timedelta(minutes=offset)
+        if due_at_utc <= now:
+            continue
         TimelineActivityReminder.objects.get_or_create(
             activity=activity,
             offset_minutes_before=offset,
@@ -1096,12 +1122,15 @@ def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict, tri
         data.get("reminder_offsets_minutes"),
     )
 
+    explicit_system_type = "system_type" in data
     final_system_type = data.get("system_type", activity.system_type)
     if "custom_type_id" in data:
         final_custom_type_id = data["custom_type_id"]
+    elif explicit_system_type and final_system_type:
+        final_custom_type_id = None
     else:
         final_custom_type_id = activity.custom_type_id
-    if final_custom_type_id is not None:
+    if final_custom_type_id is not None and not (explicit_system_type and final_system_type):
         final_system_type = ""
     _validate_activity_type_selection(final_system_type, final_custom_type_id)
 
@@ -1155,8 +1184,12 @@ def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> Timel
                     activity.custom_type = _resolve_custom_type(trip, data["custom_type_id"])
                 activity.system_type = ""
 
-        if "system_type" in data and activity.custom_type_id is None:
-            activity.system_type = data["system_type"]
+        if "system_type" in data:
+            if data["system_type"]:
+                activity.custom_type = None
+                activity.system_type = data["system_type"]
+            elif activity.custom_type_id is None:
+                activity.system_type = data["system_type"]
 
         if "assignee_scope" in data or "assignee_user_id" in data:
             assignee_scope = data.get("assignee_scope", activity.assignee_scope)
