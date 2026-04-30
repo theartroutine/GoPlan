@@ -228,6 +228,36 @@ describe("TimelineTab", () => {
     expect(screen.queryByRole("menuitem", { name: /Delete day/i })).toBeNull();
   });
 
+  it("hides overview day delete for required generated days", async () => {
+    tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+      buildTimelineResponse({
+        permissions: {
+          can_edit_timeline: true,
+          can_manage_custom_types: true,
+          can_create_sections: true,
+        },
+        sections: [
+          buildTimelineSection({
+            id: "day-1",
+            label: "Day 1",
+            is_in_trip_range: true,
+            is_label_custom: false,
+            activities: [],
+          }),
+        ],
+      }),
+    );
+
+    render(<TimelineTab />);
+
+    fireEvent.keyDown(await screen.findByRole("button", { name: "Day options" }), {
+      key: "Enter",
+      code: "Enter",
+    });
+    expect(await screen.findByRole("menuitem", { name: /Edit day/i })).not.toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /Delete day/i })).toBeNull();
+  });
+
   it("renders the overview-level now divider with the day label", async () => {
     vi.useFakeTimers({ now: new Date("2026-06-01T03:30:00.000Z") });
     mockUseSearchParams("filter=mine");

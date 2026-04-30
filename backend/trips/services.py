@@ -109,6 +109,10 @@ class TimelineSectionNotEmptyError(TripServiceError):
     error_code = "SECTION_NOT_EMPTY"
 
 
+class TimelineSectionRequiredError(TripServiceError):
+    error_code = "SECTION_REQUIRED"
+
+
 class TimelineCustomTypeInUseError(TripServiceError):
     error_code = "CUSTOM_TYPE_IN_USE"
 
@@ -899,7 +903,7 @@ def patch_section(
 
 
 def delete_section(trip_id, section_id, *, actor) -> None:
-    """Delete a section. Only allowed if activities.count() == 0."""
+    """Delete an extra section. Required trip-range sections are never removed."""
     with transaction.atomic():
         trip = _get_locked_trip(trip_id)
         _ensure_captain_can_mutate(trip, actor)
@@ -909,10 +913,9 @@ def delete_section(trip_id, section_id, *, actor) -> None:
             raise TimelineSectionNotFoundError("Section not found.")
         if section.activities.count() > 0:
             raise TimelineSectionNotEmptyError("Cannot delete a section that still contains activities.")
-        should_sync = _is_date_in_trip_range(trip, section.section_date)
+        if _is_date_in_trip_range(trip, section.section_date):
+            raise TimelineSectionRequiredError("Required trip days cannot be deleted.")
         section.delete()
-        if should_sync:
-            sync_timeline_days(trip)
 
 
 def reorder_sections(trip_id, *, actor, section_date, ordered_section_ids) -> tuple[Trip, list[TimelineSection]]:
@@ -951,11 +954,13 @@ def _assert_active_member(trip, user_id):
         raise TimelineInvalidAssigneeError("Assignee must be an active member of this trip.")
 
 
-def _resolve_custom_type(trip, custom_type_id) -> TimelineCustomType:
+def _resolve_custom_type(trip, custom_type_id, *, require_active: bool = True) -> TimelineCustomType:
     try:
         ct = TimelineCustomType.objects.get(pk=custom_type_id, trip=trip)
     except TimelineCustomType.DoesNotExist:
         raise TimelineInvalidCustomTypeError("Custom type does not belong to this trip.")
+    if require_active and not ct.is_active:
+        raise TimelineInvalidCustomTypeError("Inactive custom types cannot be assigned to activities.")
     return ct
 
 
@@ -1231,8 +1236,12 @@ def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> Timel
             if data["custom_type_id"] is None:
                 activity.custom_type = None
             else:
-                ct = _resolve_custom_type(trip, data["custom_type_id"])
-                activity.custom_type = ct
+                preserves_existing_custom_type = (
+                    activity.custom_type_id is not None
+                    and str(activity.custom_type_id) == str(data["custom_type_id"])
+                )
+                if not preserves_existing_custom_type:
+                    activity.custom_type = _resolve_custom_type(trip, data["custom_type_id"])
                 activity.system_type = ""
 
         if "system_type" in data and activity.custom_type_id is None:

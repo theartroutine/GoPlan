@@ -205,6 +205,21 @@ class TimelineActivityCrudTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.data["error_code"], "INVALID_CUSTOM_TYPE")
 
+    def test_create_rejects_inactive_custom_type(self):
+        ct = TimelineCustomType.objects.create(
+            trip=self.trip, name="Coffee", normalized_name="coffee", is_active=False
+        )
+
+        res = self.client.post(
+            self._create_url(),
+            self._valid_payload(system_type="", custom_type_id=str(ct.id)),
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error_code"], "INVALID_CUSTOM_TYPE")
+
     # -------- Patch --------
 
     def test_patch_title(self):
@@ -271,6 +286,39 @@ class TimelineActivityCrudTests(APITestCase):
         activity.refresh_from_db()
         self.assertIsNone(activity.start_time)
         self.assertIsNone(activity.end_time)
+
+    def test_patch_rejects_inactive_custom_type_assignment(self):
+        activity = make_timeline_activity(trip=self.trip, section=self.section)
+        ct = TimelineCustomType.objects.create(
+            trip=self.trip, name="Coffee", normalized_name="coffee", is_active=False
+        )
+
+        res = self.client.patch(
+            self._detail_url(activity.id),
+            {"system_type": "", "custom_type_id": str(ct.id)},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error_code"], "INVALID_CUSTOM_TYPE")
+
+    def test_patch_preserves_existing_inactive_custom_type(self):
+        ct = TimelineCustomType.objects.create(
+            trip=self.trip, name="Coffee", normalized_name="coffee", is_active=False
+        )
+        activity = make_timeline_activity(trip=self.trip, section=self.section, custom_type=ct)
+
+        res = self.client.patch(
+            self._detail_url(activity.id),
+            {"title": "Coffee stop", "system_type": "", "custom_type_id": str(ct.id)},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["activity"]["title"], "Coffee stop")
+        self.assertEqual(res.data["activity"]["activity_type"]["id"], str(ct.id))
 
     # -------- Delete --------
 

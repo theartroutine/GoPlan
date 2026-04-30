@@ -136,6 +136,30 @@ describe("ActivityLocationField", () => {
     } satisfies ActivityLocationValue);
   });
 
+  it("shows a recoverable search error when selected location lookup fails", async () => {
+    vi.mocked(bffSuggestLocations).mockResolvedValue([
+      { provider: "here", provider_id: "here:1", title: "Ho Xuan Huong", subtitle: "Da Lat" },
+    ]);
+    vi.mocked(bffLookupLocation).mockRejectedValue(
+      new LocationSearchError("Location lookup is disabled.", { status: 503 }),
+    );
+    const onChange = vi.fn();
+    render(<Harness initial={{ label: "", place: null }} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText("Location"), { target: { value: "Ho Xuan" } });
+    await waitFor(() => expect(bffSuggestLocations).toHaveBeenCalledWith("Ho Xuan", expect.any(AbortSignal)));
+    fireEvent.mouseDown(await screen.findByText("Ho Xuan Huong"));
+
+    await waitFor(() => expect(bffLookupLocation).toHaveBeenCalledWith("here:1", expect.any(AbortSignal)));
+    expect(
+      await screen.findByText("Location search is unavailable. You can still enter a place manually."),
+    ).not.toBeNull();
+    expect(onChange).toHaveBeenLastCalledWith({
+      label: "Ho Xuan Huong",
+      place: null,
+    } satisfies ActivityLocationValue);
+  });
+
   it("does not request suggestions again while lookup is resolving a selected suggestion", async () => {
     let resolveLookup: ((value: Awaited<ReturnType<typeof bffLookupLocation>>) => void) | undefined;
     vi.mocked(bffSuggestLocations).mockResolvedValue([

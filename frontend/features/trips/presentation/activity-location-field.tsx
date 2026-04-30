@@ -167,6 +167,10 @@ export function ActivityLocationField({
             lng: details?.destination_lng ?? null,
           },
         });
+      } catch {
+        if (controller.signal.aborted || requestId !== lookupRequestIdRef.current) return;
+        pendingSelectionQueryRef.current = "";
+        setSearchError("Location search is unavailable. You can still enter a place manually.");
       } finally {
         if (lookupAbortRef.current === controller) {
           lookupAbortRef.current = null;

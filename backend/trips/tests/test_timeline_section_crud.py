@@ -215,16 +215,14 @@ class TimelineSectionCrudTests(APITestCase):
         res = self.client.delete(self._detail_url(section.id), **_auth(self.member))
         self.assertEqual(res.status_code, 403)
 
-    def test_delete_empty_in_range_day_recreates_required_generated_day(self):
+    def test_delete_empty_required_in_range_day_409(self):
         section = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
 
         res = self.client.delete(self._detail_url(section.id), **_auth(self.captain))
 
-        self.assertEqual(res.status_code, 200)
-        self.assertFalse(TimelineSection.objects.filter(pk=section.id).exists())
-        recreated = TimelineSection.objects.get(trip=self.trip, section_date=date(2026, 6, 1))
-        self.assertEqual(recreated.label, "Day 1")
-        self.assertFalse(recreated.is_label_custom)
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "SECTION_REQUIRED")
+        self.assertTrue(TimelineSection.objects.filter(pk=section.id).exists())
 
     # -------- Reorder --------
 
