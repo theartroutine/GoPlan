@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
@@ -109,10 +109,6 @@ class TimelineSectionNotEmptyError(TripServiceError):
     error_code = "SECTION_NOT_EMPTY"
 
 
-class TimelineSectionRequiredError(TripServiceError):
-    error_code = "SECTION_REQUIRED"
-
-
 class TimelineCustomTypeInUseError(TripServiceError):
     error_code = "CUSTOM_TYPE_IN_USE"
 
@@ -167,6 +163,8 @@ _TIMELINE_REMINDER_DISPATCH_TRIP_STATUSES = {
     TripStatus.ONGOING,
 }
 
+_TIMELINE_STARTER_DAY_COUNT = 2
+
 
 # -------- Services --------
 
@@ -188,7 +186,7 @@ def create_trip(
     timezone: str = "Asia/Ho_Chi_Minh",
     budget_estimate=None,
 ) -> Trip:
-    """Create a trip and add the creator as CAPTAIN. Auto-generates timeline days."""
+    """Create a trip and add the creator as CAPTAIN. Auto-generates starter timeline days."""
     with transaction.atomic():
         trip = Trip.objects.create(
             name=name,
@@ -239,13 +237,23 @@ def _ensure_section_date_available(
         raise TimelineSectionDateConflictError("This date already has a timeline day.")
 
 
+def _starter_timeline_dates(trip: Trip) -> list[date]:
+    current = trip.start_date
+    dates = []
+    while current <= trip.end_date and len(dates) < _TIMELINE_STARTER_DAY_COUNT:
+        dates.append(current)
+        current = current + timedelta(days=1)
+    return dates
+
+
 def sync_timeline_days(trip: Trip) -> None:
-    """Sync generated timeline days to the trip's current date range."""
+    """Sync generated starter timeline days to the trip's current date range."""
     with transaction.atomic():
         trip = Trip.objects.select_for_update().get(pk=trip.pk)
         if not trip.start_date or not trip.end_date:
             return
 
+        starter_dates = set(_starter_timeline_dates(trip))
         sections = list(
             TimelineSection.objects
             .select_for_update()
@@ -254,7 +262,7 @@ def sync_timeline_days(trip: Trip) -> None:
             .prefetch_related("activities")
         )
         for section in sections:
-            if _is_date_in_trip_range(trip, section.section_date):
+            if section.section_date in starter_dates:
                 continue
             if section.is_label_custom:
                 continue
@@ -268,10 +276,8 @@ def sync_timeline_days(trip: Trip) -> None:
             s.section_date: s
             for s in TimelineSection.objects.select_for_update().filter(trip=trip)
         }
-        current = trip.start_date
-        index = 0
-        while current <= trip.end_date:
-            expected_label = f"Day {index + 1}"
+        for current in _starter_timeline_dates(trip):
+            expected_label = _generated_day_label_for(trip, current)
             section = existing.get(current)
             if section is None:
                 try:
@@ -297,8 +303,6 @@ def sync_timeline_days(trip: Trip) -> None:
                 if update_fields:
                     update_fields.append("updated_at")
                     section.save(update_fields=update_fields)
-            current = current + timedelta(days=1)
-            index += 1
 
 
 def get_user_trips(user):
@@ -899,7 +903,7 @@ def patch_section(
 
 
 def delete_section(trip_id, section_id, *, actor) -> None:
-    """Delete an extra section. Required trip-range sections are never removed."""
+    """Delete an empty timeline day. Captain only."""
     with transaction.atomic():
         trip = _get_locked_trip(trip_id)
         _ensure_captain_can_mutate(trip, actor)
@@ -909,8 +913,6 @@ def delete_section(trip_id, section_id, *, actor) -> None:
             raise TimelineSectionNotFoundError("Section not found.")
         if section.activities.count() > 0:
             raise TimelineSectionNotEmptyError("Cannot delete a section that still contains activities.")
-        if _is_date_in_trip_range(trip, section.section_date):
-            raise TimelineSectionRequiredError("Required trip days cannot be deleted.")
         section.delete()
 
 

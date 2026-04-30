@@ -197,7 +197,7 @@ function SectionDateBadge({
 }
 
 function canDeleteDay(section: TimelineSection): boolean {
-  return !section.is_in_trip_range && section.activities.length === 0;
+  return section.activities.length === 0;
 }
 
 function timelineActivityElementId(activityId: string): string {

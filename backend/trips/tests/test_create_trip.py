@@ -138,7 +138,7 @@ class CreateTripTests(APITestCase):
             {"detail": "Invalid trip timezone.", "error_code": "INVALID_TIMEZONE"},
         )
 
-    def test_create_trip_seeds_system_day_sections(self):
+    def test_create_trip_seeds_starter_day_sections(self):
         payload = {
             "name": "Seed Days",
             "destination": "Hoi An",
@@ -149,11 +149,25 @@ class CreateTripTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         trip = Trip.objects.get(pk=response.data["trip"]["id"])
         sections = list(trip.timeline_sections.order_by("section_date"))
-        self.assertEqual(len(sections), 3)
-        self.assertEqual([s.label for s in sections], ["Day 1", "Day 2", "Day 3"])
+        self.assertEqual(len(sections), 2)
+        self.assertEqual([s.label for s in sections], ["Day 1", "Day 2"])
         for section in sections:
             self.assertFalse(section.is_label_custom)
             self.assertEqual(section.position, 0)
+
+    def test_create_single_day_trip_seeds_one_day_section(self):
+        payload = {
+            "name": "Single Day",
+            "destination": "Hue",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-01",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        trip = Trip.objects.get(pk=response.data["trip"]["id"])
+        sections = list(trip.timeline_sections.order_by("section_date"))
+        self.assertEqual(len(sections), 1)
+        self.assertEqual(sections[0].label, "Day 1")
 
     def test_create_trip_without_destination_provider_fields_still_201(self):
         """Backward compatibility: creating without structured destination fields must still work."""

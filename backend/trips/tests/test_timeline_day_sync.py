@@ -17,7 +17,7 @@ class TimelineDaySyncTests(TestCase):
             "captain-sync@example.com", "captain", "CAP001"
         )
 
-    def test_update_trip_extends_range_and_renumbers_generated_days(self):
+    def test_update_trip_extends_range_and_keeps_only_starter_generated_days(self):
         trip = make_trip_with_timeline(
             captain=self.captain,
             start_date=date(2026, 6, 1),
@@ -36,13 +36,11 @@ class TimelineDaySyncTests(TestCase):
             [
                 date(2026, 5, 31),
                 date(2026, 6, 1),
-                date(2026, 6, 2),
-                date(2026, 6, 3),
             ],
         )
         self.assertEqual(
             [section.label for section in sections],
-            ["Day 1", "Day 2", "Day 3", "Day 4"],
+            ["Day 1", "Day 2"],
         )
         self.assertTrue(all(not section.is_label_custom for section in sections))
 
@@ -51,6 +49,13 @@ class TimelineDaySyncTests(TestCase):
             captain=self.captain,
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 3),
+        )
+        TimelineSection.objects.create(
+            trip=trip,
+            section_date=date(2026, 6, 3),
+            label="Day 3",
+            is_label_custom=False,
+            position=0,
         )
         day_with_activity = TimelineSection.objects.get(trip=trip, section_date=date(2026, 6, 1))
         make_timeline_activity(trip=trip, section=day_with_activity, title="Existing booking")

@@ -226,7 +226,7 @@ describe("TimelineTab", () => {
     expect(screen.queryByRole("menuitem", { name: /Delete day/i })).toBeNull();
   });
 
-  it("hides overview day delete for required generated days", async () => {
+  it("shows overview day delete for empty in-range days", async () => {
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -253,7 +253,7 @@ describe("TimelineTab", () => {
       code: "Enter",
     });
     expect(await screen.findByRole("menuitem", { name: /Edit day/i })).not.toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /Delete day/i })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Delete day/i })).not.toBeNull();
   });
 
   it("renders the overview-level now divider with the day label", async () => {
@@ -976,7 +976,7 @@ describe("TimelineTab", () => {
     });
   });
 
-  it("hides extra day delete while the section still has activities", async () => {
+  it("hides day delete while the section still has activities", async () => {
     mockUseSearchParams("day=extra-1");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
@@ -1003,8 +1003,8 @@ describe("TimelineTab", () => {
     expect(screen.queryByRole("button", { name: "Delete Recovery" })).toBeNull();
   });
 
-  it("confirms deleting an empty extra day without promising activity deletion", async () => {
-    mockUseSearchParams("day=extra-1");
+  it("confirms deleting an empty in-range day without promising activity deletion", async () => {
+    mockUseSearchParams("day=day-1");
     tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
       buildTimelineResponse({
         permissions: {
@@ -1014,10 +1014,10 @@ describe("TimelineTab", () => {
         },
         sections: [
           buildTimelineSection({
-            id: "extra-1",
-            label: "Day 0",
-            section_date: "2026-05-31",
-            is_in_trip_range: false,
+            id: "day-1",
+            label: "Day 1",
+            section_date: "2026-06-01",
+            is_in_trip_range: true,
             activities: [],
           }),
         ],
@@ -1026,10 +1026,10 @@ describe("TimelineTab", () => {
 
     render(<TimelineTab />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete Day 0" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Day 1" }));
 
     expect(await screen.findByText("Delete day?")).not.toBeNull();
-    expect(screen.getByText('This will permanently delete "Day 0".')).not.toBeNull();
-    expect(screen.queryByText('This will permanently delete "Day 0" and its activities.')).toBeNull();
+    expect(screen.getByText('This will permanently delete "Day 1".')).not.toBeNull();
+    expect(screen.queryByText('This will permanently delete "Day 1" and its activities.')).toBeNull();
   });
 });

@@ -46,7 +46,7 @@ class TimelineDetailTests(APITestCase):
         self.assertEqual(len(data["system_types"]), 8)
         self.assertEqual(data["system_types"][0]["code"], "TRANSPORTATION")
         self.assertEqual(data["system_types"][-1]["code"], "OTHER")
-        self.assertEqual(len(data["sections"]), 3)
+        self.assertEqual(len(data["sections"]), 2)
         for idx, section in enumerate(data["sections"]):
             self.assertNotIn("kind", section)
             self.assertEqual(section["label"], f"Day {idx + 1}")
