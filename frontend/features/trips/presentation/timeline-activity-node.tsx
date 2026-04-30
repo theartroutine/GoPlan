@@ -101,6 +101,11 @@ function formatStatusLabel(status: TimelineActivityStatus): string {
   return status.replace("_", " ");
 }
 
+function activityAssigneeLabel(activity: TimelineActivity): string {
+  if (activity.assignee_scope === "EVERYONE") return "Everyone";
+  return activity.assignee?.display_name ?? "";
+}
+
 export function TimelineActivityNode({
   activity,
   isCurrent = false,
@@ -119,6 +124,7 @@ export function TimelineActivityNode({
   const locationAddress = activity.location.place?.address || "";
   const locationNote = activity.location.location_note;
   const locationSubtitle = locationAddress || locationNote;
+  const assigneeLabel = activityAssigneeLabel(activity);
   const hasDetails = Boolean(
     activity.note ||
       activity.meeting_point ||
@@ -126,7 +132,7 @@ export function TimelineActivityNode({
       activity.contact_phone ||
       activity.booking_reference ||
       activity.external_link ||
-      activity.assignee,
+      assigneeLabel,
   );
   const statusControl = canOpenStatusMenu ? (
     <DropdownMenu>
@@ -258,9 +264,7 @@ export function TimelineActivityNode({
           <DetailRow icon={UserRound} label="Contact" value={activity.contact_name} />
           <DetailRow icon={Phone} label="Phone" value={activity.contact_phone} />
           <DetailRow icon={Ticket} label="Booking" value={activity.booking_reference} />
-          {activity.assignee && (
-            <DetailRow icon={UserRound} label="Assigned to" value={activity.assignee.display_name} />
-          )}
+          <DetailRow icon={UserRound} label="Assigned to" value={assigneeLabel} />
           {activity.external_link && (
             <div className="flex min-w-0 gap-2">
               <LinkIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />

@@ -17,6 +17,7 @@ from trips.models import (
     InvitationStatus,
     MemberStatus,
     TimelineActivity,
+    TimelineActivityAssigneeScope,
     TimelineActivityReminder,
     TimelineActivityStatus,
     TimelineActivityTimeMode,
@@ -1086,8 +1087,20 @@ def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> Timel
         if data.get("custom_type_id") is not None:
             custom_type = _resolve_custom_type(trip, data["custom_type_id"])
 
-        if data.get("assignee_user_id") is not None:
-            _assert_active_member(trip, data["assignee_user_id"])
+        assignee_scope = data.get(
+            "assignee_scope",
+            TimelineActivityAssigneeScope.USER
+            if data.get("assignee_user_id") is not None
+            else TimelineActivityAssigneeScope.NONE,
+        )
+        assignee_user_id = (
+            data.get("assignee_user_id")
+            if assignee_scope == TimelineActivityAssigneeScope.USER
+            else None
+        )
+
+        if assignee_user_id is not None:
+            _assert_active_member(trip, assignee_user_id)
 
         place = data.get("place") or {}
         location_mode = data.get("location_mode", TimelineLocationMode.MANUAL)
@@ -1106,7 +1119,8 @@ def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> Timel
             system_type=data.get("system_type", "") if custom_type is None else "",
             custom_type=custom_type,
             position=section.activities.count(),
-            assignee_user_id=data.get("assignee_user_id"),
+            assignee_scope=assignee_scope,
+            assignee_user_id=assignee_user_id,
             location_mode=location_mode,
             location_label=data.get("location_label", ""),
             location_note=data.get("location_note", ""),
@@ -1218,12 +1232,15 @@ def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> Timel
         if "system_type" in data and activity.custom_type_id is None:
             activity.system_type = data["system_type"]
 
-        if "assignee_user_id" in data:
-            if data["assignee_user_id"] is None:
-                activity.assignee_user_id = None
+        if "assignee_scope" in data or "assignee_user_id" in data:
+            assignee_scope = data.get("assignee_scope", activity.assignee_scope)
+            if assignee_scope == TimelineActivityAssigneeScope.USER:
+                assignee_user_id = data.get("assignee_user_id", activity.assignee_user_id)
+                _assert_active_member(trip, assignee_user_id)
+                activity.assignee_user_id = assignee_user_id
             else:
-                _assert_active_member(trip, data["assignee_user_id"])
-                activity.assignee_user_id = data["assignee_user_id"]
+                activity.assignee_user_id = None
+            activity.assignee_scope = assignee_scope
 
         simple_fields = (
             "title", "time_mode", "start_time", "end_time",
@@ -1311,7 +1328,14 @@ def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str)
             if status not in allowed_targets:
                 raise StatusTransitionError("This activity status transition is not allowed.")
         else:
-            if activity.assignee_user_id is None or activity.assignee_user_id != actor.id:
+            actor_is_assigned = (
+                activity.assignee_scope == TimelineActivityAssigneeScope.EVERYONE
+                or (
+                    activity.assignee_scope == TimelineActivityAssigneeScope.USER
+                    and activity.assignee_user_id == actor.id
+                )
+            )
+            if not actor_is_assigned:
                 raise TripPermissionError("Only the captain or assigned member can update this activity status.")
             allowed_targets = _ASSIGNEE_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
             if status not in allowed_targets:

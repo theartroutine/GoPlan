@@ -8,6 +8,7 @@ from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
 from trips.models import (
     TimelineActivity,
+    TimelineActivityAssigneeScope,
     TimelineCustomType,
     TimelineSection,
 )
@@ -184,7 +185,37 @@ class TimelineActivityCrudTests(APITestCase):
             **_auth(self.captain),
         )
         self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["activity"]["assignee_scope"], "USER")
         self.assertEqual(res.data["activity"]["assignee"]["id"], str(self.member.id))
+
+    def test_assignee_everyone_ok(self):
+        res = self.client.post(
+            self._create_url(),
+            self._valid_payload(assignee_scope="EVERYONE"),
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["activity"]["assignee_scope"], "EVERYONE")
+        self.assertIsNone(res.data["activity"]["assignee"])
+        activity = TimelineActivity.objects.get(pk=res.data["activity"]["id"])
+        self.assertEqual(activity.assignee_scope, TimelineActivityAssigneeScope.EVERYONE)
+        self.assertIsNone(activity.assignee_user_id)
+
+    def test_everyone_rejects_specific_assignee_user(self):
+        res = self.client.post(
+            self._create_url(),
+            self._valid_payload(
+                assignee_scope="EVERYONE",
+                assignee_user_id=str(self.member.id),
+            ),
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("assignee_user_id", res.data)
 
     def test_custom_type_must_belong_to_trip(self):
         other_trip = make_trip_with_timeline(captain=self.captain, name="Other", start_date=date(2026, 7, 1), end_date=date(2026, 7, 2))
@@ -227,6 +258,27 @@ class TimelineActivityCrudTests(APITestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["activity"]["title"], "New title")
+
+    def test_patch_assignee_to_everyone_clears_user(self):
+        activity = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            assignee_user=self.member,
+        )
+
+        res = self.client.patch(
+            self._detail_url(activity.id),
+            {"assignee_scope": "EVERYONE"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["activity"]["assignee_scope"], "EVERYONE")
+        self.assertIsNone(res.data["activity"]["assignee"])
+        activity.refresh_from_db()
+        self.assertEqual(activity.assignee_scope, TimelineActivityAssigneeScope.EVERYONE)
+        self.assertIsNone(activity.assignee_user_id)
 
     def test_patch_clears_place_when_switching_to_manual(self):
         activity = make_timeline_activity(

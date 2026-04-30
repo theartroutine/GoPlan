@@ -48,6 +48,12 @@ class TimelineActivityStatus(models.TextChoices):
     CANCELLED   = "CANCELLED",   "Cancelled"
 
 
+class TimelineActivityAssigneeScope(models.TextChoices):
+    NONE     = "NONE",     "Unassigned"
+    USER     = "USER",     "User"
+    EVERYONE = "EVERYONE", "Everyone"
+
+
 class TimelineLocationMode(models.TextChoices):
     MANUAL     = "MANUAL",     "Manual"
     STRUCTURED = "STRUCTURED", "Structured"
@@ -276,6 +282,11 @@ class TimelineActivity(models.Model):
         related_name="activities",
     )
     position             = models.PositiveIntegerField(default=0)
+    assignee_scope       = models.CharField(
+        max_length=16,
+        choices=TimelineActivityAssigneeScope.choices,
+        default=TimelineActivityAssigneeScope.NONE,
+    )
     assignee_user        = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True, blank=True,

@@ -99,6 +99,7 @@ class TimelineDetailTests(APITestCase):
         activity = day_one["activities"][0]
         self.assertEqual(activity["title"], "Bus to Da Lat")
         self.assertEqual(activity["activity_type"]["code"], "TRANSPORTATION")
+        self.assertEqual(activity["assignee_scope"], "USER")
         self.assertEqual(activity["assignee"]["display_name"], self.member.display_name)
         self.assertEqual(activity["location"]["location_mode"], "MANUAL")
         self.assertIsNone(activity["location"]["place"])

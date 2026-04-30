@@ -8,6 +8,7 @@ from rest_framework.test import APITestCase
 from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
 from trips.models import (
+    TimelineActivityAssigneeScope,
     TimelineActivityStatus,
     TimelineLocationMode,
     TimelineSection,
@@ -58,6 +59,25 @@ class TimelineStatusTests(APITestCase):
 
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data, {"activity_id": str(activity.id), "status": "IN_PROGRESS"})
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, TimelineActivityStatus.IN_PROGRESS)
+
+    def test_member_can_update_everyone_activity_allowed_transition(self):
+        activity = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            assignee_scope=TimelineActivityAssigneeScope.EVERYONE,
+            status=TimelineActivityStatus.UPCOMING,
+        )
+
+        res = self.client.post(
+            self._status_url(activity.id),
+            {"status": "IN_PROGRESS"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(res.status_code, 200)
         activity.refresh_from_db()
         self.assertEqual(activity.status, TimelineActivityStatus.IN_PROGRESS)
 
@@ -249,3 +269,24 @@ class TimelineStatusTests(APITestCase):
         }
         self.assertTrue(activities[str(assigned.id)]["capabilities"]["can_update_status"])
         self.assertFalse(activities[str(unassigned.id)]["capabilities"]["can_update_status"])
+
+    def test_everyone_activity_status_capability_is_available_to_active_members(self):
+        everyone = make_timeline_activity(
+            trip=self.trip,
+            section=self.section,
+            title="Group transfer",
+            assignee_scope=TimelineActivityAssigneeScope.EVERYONE,
+            status=TimelineActivityStatus.UPCOMING,
+        )
+
+        res = self.client.get(self._timeline_url(), **_auth(self.member))
+
+        self.assertEqual(res.status_code, 200)
+        activities = {
+            item["id"]: item
+            for section in res.data["sections"]
+            for item in section["activities"]
+        }
+        self.assertEqual(activities[str(everyone.id)]["assignee_scope"], "EVERYONE")
+        self.assertIsNone(activities[str(everyone.id)]["assignee"])
+        self.assertTrue(activities[str(everyone.id)]["capabilities"]["can_update_status"])

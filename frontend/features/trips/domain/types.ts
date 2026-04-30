@@ -120,6 +120,7 @@ export type UpdateTripPayload = Partial<{
 
 export type TimelineActivityTimeMode = "ALL_DAY" | "AT_TIME" | "TIME_RANGE" | "FLEXIBLE";
 export type TimelineActivityStatus = "UPCOMING" | "IN_PROGRESS" | "DONE" | "CANCELLED";
+export type TimelineActivityAssigneeScope = "NONE" | "USER" | "EVERYONE";
 export type TimelineLocationMode = "MANUAL" | "STRUCTURED";
 
 export type TimelineSystemTypeMeta = {
@@ -180,6 +181,7 @@ export type TimelineActivity = {
   status: TimelineActivityStatus;
   position: number;
   activity_type: TimelineActivityType | null;
+  assignee_scope: TimelineActivityAssigneeScope;
   assignee: TimelineAssignee | null;
   location: TimelineLocation;
   note: string;
@@ -244,6 +246,7 @@ export type CreateActivityPayload = {
   end_time?: string | null;
   system_type?: string;
   custom_type_id?: string | null;
+  assignee_scope?: TimelineActivityAssigneeScope;
   assignee_user_id?: string | null;
   location_mode?: TimelineLocationMode;
   location_label?: string;

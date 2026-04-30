@@ -83,6 +83,30 @@ describe("TimelineActivityForm", () => {
     expect(payload.location_mode).toBe("MANUAL");
   });
 
+  it("submits Everyone as the activity assignee", () => {
+    const onSubmit = vi.fn();
+    render(
+      <TimelineActivityForm
+        members={MEMBERS}
+        systemTypes={SYSTEM_TYPES}
+        customTypes={CUSTOM_TYPES}
+        onCancel={() => {}}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/title/i), { target: { value: "Meet at the beach" } });
+    fireEvent.change(screen.getByLabelText(/start time/i), { target: { value: "08:30" } });
+    fireEvent.change(screen.getByLabelText("Assignee"), { target: { value: "EVERYONE" } });
+    fireEvent.click(screen.getByRole("button", { name: /add activity/i }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      assignee_scope: "EVERYONE",
+      assignee_user_id: null,
+    });
+  });
+
   it("rejects TIME_RANGE when end is not after start", () => {
     const onSubmit = vi.fn();
     render(

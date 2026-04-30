@@ -10,6 +10,7 @@ from rest_framework import serializers
 from trips.models import (
     MemberStatus,
     TimelineActivity,
+    TimelineActivityAssigneeScope,
     TimelineActivityStatus,
     TimelineActivityTimeMode,
     TimelineCustomType,
@@ -329,7 +330,13 @@ def _can_update_any_status(
         return False
     if is_captain:
         return bool(_CAPTAIN_STATUS_TARGETS.get(activity.status))
-    if activity.assignee_user_id is None or activity.assignee_user_id != viewer_user_id:
+    if activity.assignee_scope == TimelineActivityAssigneeScope.EVERYONE:
+        return bool(_ASSIGNEE_STATUS_TARGETS.get(activity.status))
+    if (
+        activity.assignee_scope != TimelineActivityAssigneeScope.USER
+        or activity.assignee_user_id is None
+        or activity.assignee_user_id != viewer_user_id
+    ):
         return False
     return bool(_ASSIGNEE_STATUS_TARGETS.get(activity.status))
 
@@ -348,7 +355,11 @@ def _activity_payload(
     else:
         activity_type = None
 
-    if activity.assignee_user_id is not None:
+    assignee_scope = activity.assignee_scope
+    if (
+        assignee_scope == TimelineActivityAssigneeScope.USER
+        and activity.assignee_user_id is not None
+    ):
         assignee = {
             "id": str(activity.assignee_user.id),
             "display_name": activity.assignee_user.display_name,
@@ -356,6 +367,8 @@ def _activity_payload(
         }
     else:
         assignee = None
+        if assignee_scope == TimelineActivityAssigneeScope.USER:
+            assignee_scope = TimelineActivityAssigneeScope.NONE
 
     if activity.location_mode == "STRUCTURED" and activity.place_provider_id:
         place = {
@@ -387,6 +400,7 @@ def _activity_payload(
         "status": activity.status,
         "position": activity.position,
         "activity_type": activity_type,
+        "assignee_scope": assignee_scope,
         "assignee": assignee,
         "location": location,
         "note": activity.note,
@@ -568,6 +582,48 @@ def _validate_activity_location(location_mode: str, place) -> None:
             )
 
 
+def _validate_activity_assignee_selection(data: dict, *, partial: bool = False) -> None:
+    has_scope = "assignee_scope" in data
+    has_user = "assignee_user_id" in data
+
+    if not has_scope and not has_user:
+        if not partial:
+            data["assignee_scope"] = TimelineActivityAssigneeScope.NONE
+        return
+
+    if not has_scope:
+        data["assignee_scope"] = (
+            TimelineActivityAssigneeScope.USER
+            if data.get("assignee_user_id") is not None
+            else TimelineActivityAssigneeScope.NONE
+        )
+
+    assignee_scope = data["assignee_scope"]
+    assignee_user_id = data.get("assignee_user_id")
+
+    if assignee_scope == TimelineActivityAssigneeScope.USER:
+        if assignee_user_id is None:
+            raise serializers.ValidationError(
+                {
+                    "assignee_user_id": (
+                        "assignee_user_id is required when assignee_scope is USER."
+                    )
+                }
+            )
+        return
+
+    if has_user and assignee_user_id is not None:
+        raise serializers.ValidationError(
+            {
+                "assignee_user_id": (
+                    "assignee_user_id must be null unless assignee_scope is USER."
+                )
+            }
+        )
+
+    data["assignee_user_id"] = None
+
+
 class CreateTimelineActivitySerializer(serializers.Serializer):
     title                    = serializers.CharField(max_length=140)
     time_mode                = serializers.ChoiceField(choices=TimelineActivityTimeMode.choices)
@@ -575,6 +631,10 @@ class CreateTimelineActivitySerializer(serializers.Serializer):
     end_time                 = serializers.TimeField(required=False, allow_null=True)
     system_type              = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
     custom_type_id           = serializers.UUIDField(required=False, allow_null=True)
+    assignee_scope           = serializers.ChoiceField(
+        choices=TimelineActivityAssigneeScope.choices,
+        required=False,
+    )
     assignee_user_id         = serializers.UUIDField(required=False, allow_null=True)
     location_mode            = serializers.ChoiceField(
         choices=TimelineLocationMode.choices,
@@ -609,6 +669,7 @@ class CreateTimelineActivitySerializer(serializers.Serializer):
         _validate_activity_location(
             data.get("location_mode", TimelineLocationMode.MANUAL), data.get("place")
         )
+        _validate_activity_assignee_selection(data)
         return data
 
 
@@ -619,6 +680,10 @@ class PatchTimelineActivitySerializer(serializers.Serializer):
     end_time                 = serializers.TimeField(required=False, allow_null=True)
     system_type              = serializers.CharField(max_length=32, required=False, allow_blank=True)
     custom_type_id           = serializers.UUIDField(required=False, allow_null=True)
+    assignee_scope           = serializers.ChoiceField(
+        choices=TimelineActivityAssigneeScope.choices,
+        required=False,
+    )
     assignee_user_id         = serializers.UUIDField(required=False, allow_null=True)
     location_mode            = serializers.ChoiceField(
         choices=TimelineLocationMode.choices, required=False
@@ -651,6 +716,7 @@ class PatchTimelineActivitySerializer(serializers.Serializer):
             data["time_mode"] if "time_mode" in data else "",
             data.get("reminder_offsets_minutes"),
         )
+        _validate_activity_assignee_selection(data, partial=True)
         return data
 
 

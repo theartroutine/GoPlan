@@ -50,6 +50,7 @@ export function buildTimelineActivity(
     status: "UPCOMING",
     position: 0,
     activity_type: { kind: "SYSTEM", code: "TRANSPORTATION", label: "Transportation", color_token: "sky", icon_key: "bus" },
+    assignee_scope: "NONE",
     assignee: null,
     location: { location_mode: "MANUAL", location_label: "", location_note: "", open_url: null, place: null },
     note: "",

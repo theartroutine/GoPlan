@@ -47,7 +47,7 @@ type LocalState = {
   start_time: string;
   end_time: string;
   type_choice: string;
-  assignee_user_id: string;
+  assignee_choice: string;
   location: ActivityLocationValue;
   location_note: string;
   note: string;
@@ -63,6 +63,12 @@ function isTimedMode(mode: TimelineActivityTimeMode): boolean {
   return mode === "AT_TIME" || mode === "TIME_RANGE";
 }
 
+function activityAssigneeChoice(activity: TimelineActivity): string {
+  if (activity.assignee_scope === "EVERYONE") return "EVERYONE";
+  if (activity.assignee) return `USER:${activity.assignee.id}`;
+  return "NONE";
+}
+
 function initialStateFrom(activity?: TimelineActivity): LocalState {
   if (!activity) {
     return {
@@ -71,7 +77,7 @@ function initialStateFrom(activity?: TimelineActivity): LocalState {
       start_time: "",
       end_time: "",
       type_choice: "system:OTHER",
-      assignee_user_id: "",
+      assignee_choice: "NONE",
       location: { label: "", place: null },
       location_note: "",
       note: "",
@@ -94,7 +100,7 @@ function initialStateFrom(activity?: TimelineActivity): LocalState {
     start_time: activity.start_time?.slice(0, 5) ?? "",
     end_time: activity.end_time?.slice(0, 5) ?? "",
     type_choice: typeChoice,
-    assignee_user_id: activity.assignee?.id ?? "",
+    assignee_choice: activityAssigneeChoice(activity),
     location: {
       label: activity.location.location_label,
       place: activity.location.place,
@@ -261,7 +267,16 @@ function TimelineActivityFormFields({
       return null;
     }
 
-    payload.assignee_user_id = s.assignee_user_id || null;
+    if (s.assignee_choice === "EVERYONE") {
+      payload.assignee_scope = "EVERYONE";
+      payload.assignee_user_id = null;
+    } else if (s.assignee_choice.startsWith("USER:")) {
+      payload.assignee_scope = "USER";
+      payload.assignee_user_id = s.assignee_choice.slice("USER:".length);
+    } else {
+      payload.assignee_scope = "NONE";
+      payload.assignee_user_id = null;
+    }
     return payload;
   }
 
@@ -372,14 +387,15 @@ function TimelineActivityFormFields({
         <Label htmlFor="activity-assignee">Assignee</Label>
         <select
           id="activity-assignee"
-          value={s.assignee_user_id}
-          onChange={(event) => update("assignee_user_id", event.target.value)}
+          value={s.assignee_choice}
+          onChange={(event) => update("assignee_choice", event.target.value)}
           disabled={!!submitting}
           className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
         >
-          <option value="">Unassigned</option>
+          <option value="NONE">Unassigned</option>
+          <option value="EVERYONE">Everyone</option>
           {members.map((member) => (
-            <option key={member.user.id} value={member.user.id}>
+            <option key={member.user.id} value={`USER:${member.user.id}`}>
               {member.user.display_name}
             </option>
           ))}

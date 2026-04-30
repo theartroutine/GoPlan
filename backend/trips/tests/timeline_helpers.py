@@ -7,6 +7,7 @@ from typing import Optional
 from trips.models import (
     MemberStatus,
     TimelineActivity,
+    TimelineActivityAssigneeScope,
     TimelineActivityStatus,
     TimelineActivityTimeMode,
     TimelineLocationMode,
@@ -76,10 +77,19 @@ def make_timeline_activity(
     system_type: str = "TRANSPORTATION",
     custom_type=None,
     position: int = 0,
+    assignee_scope: Optional[str] = None,
     assignee_user=None,
     location_mode: str = TimelineLocationMode.MANUAL,
     location_label: str = "",
 ) -> TimelineActivity:
+    resolved_assignee_scope = (
+        assignee_scope
+        or (
+            TimelineActivityAssigneeScope.USER
+            if assignee_user is not None
+            else TimelineActivityAssigneeScope.NONE
+        )
+    )
     return TimelineActivity.objects.create(
         trip=trip,
         section=section,
@@ -91,6 +101,7 @@ def make_timeline_activity(
         system_type=system_type if custom_type is None else "",
         custom_type=custom_type,
         position=position,
+        assignee_scope=resolved_assignee_scope,
         assignee_user=assignee_user,
         location_mode=location_mode,
         location_label=location_label,

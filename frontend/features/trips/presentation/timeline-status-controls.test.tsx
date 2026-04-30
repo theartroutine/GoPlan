@@ -58,6 +58,20 @@ describe("TimelineActivityNode operational controls", () => {
     expect(screen.getByText("Flexible")).not.toBeNull();
   });
 
+  it("renders Everyone as an activity assignee detail", () => {
+    render(
+      <TimelineActivityNode
+        activity={buildTimelineActivity({
+          assignee_scope: "EVERYONE",
+          assignee: null,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Assigned to")).not.toBeNull();
+    expect(screen.getByText("Everyone")).not.toBeNull();
+  });
+
   it("keeps supplied actions inside the activity card", () => {
     render(
       <TimelineActivityNode
