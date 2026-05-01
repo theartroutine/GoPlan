@@ -8,16 +8,20 @@ import type {
   ExpenseDashboardResponse,
   ExpenseListItem,
 } from "@/features/trips/domain/expenses-types";
+import { useAuth } from "@/features/auth/application/auth-context";
+import { DEFAULT_TRIP_CURRENCY } from "@/features/trips/domain/money";
 import { getExpensesDashboard } from "@/features/trips/infrastructure/expenses-api";
 import { ExpenseCard } from "@/features/trips/presentation/expense-card";
 import { ExpenseDetailPanel } from "@/features/trips/presentation/expense-detail-panel";
 import { ExpenseSummaryStrip } from "@/features/trips/presentation/expense-summary-strip";
+import { SettlementPanel } from "@/features/trips/presentation/settlement-panel";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
 export function ExpensesTab() {
   const { tripId } = useTripContext();
+  const { user } = useAuth();
   const [dashboard, setDashboard] = useState<ExpenseDashboardResponse | null>(null);
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,6 +105,7 @@ export function ExpensesTab() {
   if (!dashboard) return null;
 
   const canManageExpenses = dashboard.permissions.can_manage_expenses;
+  const dashboardCurrencyCode = dashboard.expenses[0]?.currency_code || DEFAULT_TRIP_CURRENCY;
 
   return (
     <div className="space-y-5">
@@ -131,6 +136,14 @@ export function ExpensesTab() {
       </div>
 
       <ExpenseSummaryStrip dashboard={dashboard} />
+
+      <SettlementPanel
+        tripId={tripId}
+        settlement={dashboard.settlement}
+        currentUserId={user?.id ?? null}
+        currencyCode={dashboardCurrencyCode}
+        onChanged={loadDashboard}
+      />
 
       {dashboard.expenses.length === 0 ? (
         <ExpensesEmptyState canManageExpenses={canManageExpenses} />

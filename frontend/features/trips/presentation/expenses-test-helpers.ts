@@ -3,6 +3,8 @@ import type {
   ExpenseListItem,
   ExpenseMoneySummary,
   ExpensePerson,
+  SettlementTransfer,
+  TripSettlement,
 } from "@/features/trips/domain/expenses-types";
 
 export function buildExpensePerson(overrides: Partial<ExpensePerson> = {}): ExpensePerson {
@@ -53,5 +55,37 @@ export function buildExpenseDashboardResponse(
     member_balances: overrides.member_balances ?? {},
     expenses,
     settlement: overrides.settlement ?? null,
+  };
+}
+
+export function buildSettlementTransfer(
+  overrides: Partial<SettlementTransfer> = {},
+): SettlementTransfer {
+  return {
+    id: "transfer-1",
+    payer: buildExpensePerson({
+      id: "user-payer",
+      display_name: "Payer User",
+      identify_tag: "@payer",
+    }),
+    recipient: buildExpensePerson({
+      id: "user-recipient",
+      display_name: "Recipient User",
+      identify_tag: "@recipient",
+    }),
+    amount: "300000.00",
+    payer_marked_sent_at: null,
+    recipient_confirmed_at: null,
+    ...overrides,
+  };
+}
+
+export function buildTripSettlement(overrides: Partial<TripSettlement> = {}): TripSettlement {
+  return {
+    id: "settlement-1",
+    status: "FINALIZED",
+    finalized_at: "2026-05-01T12:00:00Z",
+    transfers: [buildSettlementTransfer()],
+    ...overrides,
   };
 }

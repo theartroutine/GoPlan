@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildExpenseDashboardResponse,
   buildExpenseListItem,
+  buildTripSettlement,
 } from "@/features/trips/presentation/expenses-test-helpers";
 
 const expensesApiMock = vi.hoisted(() => ({
@@ -14,6 +15,13 @@ vi.mock("@/features/trips/infrastructure/expenses-api", () => expensesApiMock);
 
 vi.mock("@/features/trips/presentation/trip-context", () => ({
   useTripContext: () => ({ tripId: "trip-1" }),
+}));
+
+vi.mock("@/features/auth/application/auth-context", () => ({
+  useAuth: () => ({
+    user: { id: "user-payer" },
+    status: "authenticated",
+  }),
 }));
 
 import { ExpensesTab } from "@/features/trips/presentation/expenses-tab";
@@ -164,5 +172,18 @@ describe("ExpensesTab", () => {
 
     expect(await screen.findByText("Chế độ xem")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Thêm khoản chi" })).toBeNull();
+  });
+
+  it("renders the active settlement transfer checklist when present", async () => {
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
+      buildExpenseDashboardResponse({ settlement: buildTripSettlement() }),
+    );
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Settlement checklist")).not.toBeNull();
+    expect(screen.getByText("Payer User")).not.toBeNull();
+    expect(screen.getByText("Recipient User")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "I've sent" })).not.toBeNull();
   });
 });
