@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence, Sized
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 
 from django.db import transaction
 
@@ -15,6 +17,7 @@ from trips.services import TripNotFoundError, TripPermissionError, TripTerminalE
 
 
 ZERO_DECIMAL_CURRENCIES = {"VND", "JPY", "KRW"}
+MAX_OPTIMAL_SETTLEMENT_PARTICIPANTS = 16
 
 
 class ExpenseServiceError(Exception):
@@ -83,20 +86,139 @@ def minor_units_to_amount(amount: int, currency_code: str) -> Decimal:
 
 def split_amount_evenly(
     total: Decimal,
-    participants: int,
+    participants: int | Sized,
     currency_code: str = "VND",
 ) -> list[Decimal]:
-    if participants <= 0:
+    participant_count = participants if isinstance(participants, int) else len(participants)
+    if participant_count <= 0:
         raise ExpenseServiceError("At least one participant is required.")
 
     normalized_total = normalize_currency_amount(total, currency_code)
     total_minor_units = amount_to_minor_units(normalized_total, currency_code)
-    base_share, remainder = divmod(total_minor_units, participants)
+    base_share, remainder = divmod(total_minor_units, participant_count)
 
     return [
         minor_units_to_amount(base_share + (1 if index < remainder else 0), currency_code)
-        for index in range(participants)
+        for index in range(participant_count)
     ]
+
+
+def _partition_signature(
+    partition: tuple[tuple[int, ...], ...],
+    key_strings: Sequence[str],
+) -> tuple[tuple[str, ...], ...]:
+    return tuple(
+        sorted(tuple(key_strings[index] for index in group) for group in partition)
+    )
+
+
+def _max_zero_sum_partition(items: Sequence[tuple[object, Decimal]]) -> tuple[tuple[int, ...], ...]:
+    item_count = len(items)
+    key_strings = [str(user_key) for user_key, _balance in items]
+    subset_sums: dict[int, Decimal] = {0: Decimal("0")}
+
+    for mask in range(1, 1 << item_count):
+        lowest_bit = mask & -mask
+        lowest_bit_index = lowest_bit.bit_length() - 1
+        subset_sums[mask] = subset_sums[mask ^ lowest_bit] + items[lowest_bit_index][1]
+
+    @lru_cache(maxsize=None)
+    def best_partition(mask: int) -> tuple[tuple[int, ...], ...]:
+        if mask == 0:
+            return ()
+
+        first_bit = mask & -mask
+        submask = mask
+        best: tuple[tuple[int, ...], ...] | None = None
+
+        while submask:
+            if submask & first_bit and subset_sums[submask] == 0:
+                group = tuple(index for index in range(item_count) if submask & (1 << index))
+                remainder_partition = best_partition(mask ^ submask)
+                candidate = (group, *remainder_partition)
+
+                if best is None or len(candidate) > len(best):
+                    best = candidate
+                elif len(candidate) == len(best) and _partition_signature(
+                    candidate,
+                    key_strings,
+                ) < _partition_signature(best, key_strings):
+                    best = candidate
+
+            submask = (submask - 1) & mask
+
+        if best is None:
+            return (tuple(index for index in range(item_count) if mask & (1 << index)),)
+
+        return best
+
+    full_mask = (1 << item_count) - 1
+    partition = best_partition(full_mask)
+    return tuple(
+        sorted(
+            partition,
+            key=lambda group: tuple(key_strings[index] for index in group),
+        )
+    )
+
+
+def _build_group_transfers(group_items: Sequence[tuple[object, Decimal]]) -> list[dict[str, object]]:
+    debtors = [(user_key, -balance) for user_key, balance in group_items if balance < 0]
+    creditors = [(user_key, balance) for user_key, balance in group_items if balance > 0]
+
+    transfers: list[dict[str, object]] = []
+    debtor_index = 0
+    creditor_index = 0
+
+    while debtor_index < len(debtors) and creditor_index < len(creditors):
+        debtor_key, debt_amount = debtors[debtor_index]
+        creditor_key, credit_amount = creditors[creditor_index]
+        transfer_amount = min(debt_amount, credit_amount)
+
+        transfers.append(
+            {
+                "payer": debtor_key,
+                "recipient": creditor_key,
+                "amount": transfer_amount,
+            }
+        )
+
+        debt_amount -= transfer_amount
+        credit_amount -= transfer_amount
+
+        if debt_amount == 0:
+            debtor_index += 1
+        else:
+            debtors[debtor_index] = (debtor_key, debt_amount)
+
+        if credit_amount == 0:
+            creditor_index += 1
+        else:
+            creditors[creditor_index] = (creditor_key, credit_amount)
+
+    return transfers
+
+
+def build_settlement_transfers(balances: dict[str, Decimal]) -> list[dict[str, object]]:
+    """Build minimum-count settlement transfers for balances keyed by unique user ID strings."""
+    if sum(balances.values(), Decimal("0")) != 0:
+        raise ExpenseServiceError("Settlement balances must net to zero.")
+
+    items = sorted(
+        ((user_key, balance) for user_key, balance in balances.items() if balance != 0),
+        key=lambda item: str(item[0]),
+    )
+    if not items:
+        return []
+    if len(items) > MAX_OPTIMAL_SETTLEMENT_PARTICIPANTS:
+        raise ExpenseServiceError("Settlement has too many non-zero balances to optimize safely.")
+
+    transfers: list[dict[str, object]] = []
+    for group in _max_zero_sum_partition(items):
+        group_items = [items[index] for index in group]
+        transfers.extend(_build_group_transfers(group_items))
+
+    return transfers
 
 
 @transaction.atomic
