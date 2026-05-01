@@ -24,25 +24,26 @@ type SummaryMetric = {
 export function ExpenseSummaryStrip({ dashboard }: ExpenseSummaryStripProps) {
   const summary = summarizeExpenseDashboard(dashboard);
   const metrics = getSummaryMetrics(summary);
+  const fundingProgressStyle = getProgressBarStyle(summary.fundingPercent);
 
   return (
     <section className="space-y-4" aria-label="Expense summary">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {metrics.map((metric, index) => {
           const Icon = metric.icon;
 
           return (
             <div
               key={metric.label}
-              className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both rounded-xl border border-border bg-card p-4 shadow-xs transition-colors hover:border-foreground/20"
-              style={{ animationDelay: `${index * 55}ms`, animationDuration: "420ms" }}
+              className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both min-h-32 overflow-hidden rounded-xl border border-border bg-card p-4 shadow-xs transition-colors hover:border-foreground/20 motion-reduce:animate-none motion-reduce:transition-none"
+              style={{ animationDuration: "450ms", animationDelay: `${index * 70}ms` }}
             >
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {metric.label}
                   </p>
-                  <p className="mt-2 truncate text-lg font-semibold text-foreground">
+                  <p className="mt-2 break-words text-lg font-semibold text-foreground">
                     {metric.value}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">{metric.helper}</p>
@@ -61,7 +62,10 @@ export function ExpenseSummaryStrip({ dashboard }: ExpenseSummaryStripProps) {
         })}
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div
+        className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both rounded-xl border border-border bg-card p-4 shadow-xs motion-reduce:animate-none"
+        style={{ animationDuration: "450ms", animationDelay: "80ms" }}
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-sm font-semibold">Tiến độ thu tiền</p>
@@ -71,15 +75,22 @@ export function ExpenseSummaryStrip({ dashboard }: ExpenseSummaryStripProps) {
           </div>
           <p className="text-sm font-semibold tabular-nums">{Math.round(summary.fundingPercent)}%</p>
         </div>
-        <div className="mt-3 h-3 overflow-hidden rounded-full bg-muted">
+        <div className="mt-3 h-3 min-w-0 overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-linear-to-r from-emerald-500 via-sky-500 to-amber-400 shadow-[0_0_18px_rgba(14,165,233,0.28)] transition-all duration-700 ease-out motion-safe:animate-pulse"
-            style={{ width: `${summary.fundingPercent}%` }}
+            className="h-full rounded-full bg-linear-to-r from-emerald-500 via-sky-500 to-amber-400 shadow-[0_0_18px_rgba(14,165,233,0.28)] transition-all duration-700 ease-out motion-safe:animate-pulse motion-reduce:transition-none"
+            style={fundingProgressStyle}
           />
         </div>
       </div>
     </section>
   );
+}
+
+function getProgressBarStyle(percent: number) {
+  return {
+    width: `${percent}%`,
+    minWidth: percent > 0 ? "0.25rem" : undefined,
+  };
 }
 
 function getSummaryMetrics(summary: ExpenseDashboardMoneySummary): SummaryMetric[] {

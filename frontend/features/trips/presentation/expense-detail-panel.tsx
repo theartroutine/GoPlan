@@ -44,6 +44,8 @@ export function ExpenseDetailPanel({
   const matchedDetail = detail?.id === expense.id ? detail : null;
   const displayExpense = matchedDetail ?? expense;
   const fundingPercent = getExpenseFundingPercent(displayExpense);
+  const fundingProgressStyle = getProgressBarStyle(fundingPercent);
+  const isLocked = displayExpense.locked || settlementFinalized;
   const breakdown = [
     { label: "Tổng cần thu", value: formatExpenseMoney(displayExpense.total_amount, displayExpense.currency_code) },
     { label: "Đã thu", value: formatExpenseMoney(displayExpense.paid_amount, displayExpense.currency_code) },
@@ -52,7 +54,10 @@ export function ExpenseDetailPanel({
   ];
 
   return (
-    <aside className="animate-in rounded-xl border border-border bg-card p-5 shadow-xs fade-in-0 slide-in-from-right-2 fill-mode-both">
+    <aside
+      className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both rounded-xl border border-border bg-card p-5 shadow-xs motion-reduce:animate-none"
+      style={{ animationDuration: "450ms", animationDelay: "80ms" }}
+    >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
@@ -65,22 +70,28 @@ export function ExpenseDetailPanel({
             </p>
           )}
         </div>
-        {displayExpense.locked && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+        {isLocked && (
+          <span className="inline-flex max-w-48 shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
             <LockKeyhole className="size-3" />
-            Locked
+            <span className="truncate">Locked</span>
           </span>
         )}
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-border">
+      {isLocked && (
+        <p className="mt-4 rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground">
+          Locked by finalized settlement. Reopen settlement to edit.
+        </p>
+      )}
+
+      <div className="mt-5 grid overflow-hidden rounded-lg border border-border sm:grid-cols-2">
         {breakdown.map((item) => (
           <div
             key={item.label}
-            className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0"
+            className="flex min-w-0 items-center justify-between gap-3 border-b border-border px-3 py-2.5 sm:[&:nth-child(odd)]:border-r sm:[&:nth-last-child(-n+2)]:border-b-0"
           >
             <span className="text-xs text-muted-foreground">{item.label}</span>
-            <span className="text-sm font-semibold tabular-nums">{item.value}</span>
+            <span className="break-words text-right text-sm font-semibold tabular-nums">{item.value}</span>
           </div>
         ))}
       </div>
@@ -111,8 +122,8 @@ export function ExpenseDetailPanel({
         </div>
         <div className="mt-2 h-3 overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-linear-to-r from-sky-500 via-emerald-500 to-amber-400 transition-all duration-700 ease-out"
-            style={{ width: `${fundingPercent}%` }}
+            className="h-full rounded-full bg-linear-to-r from-sky-500 via-emerald-500 to-amber-400 transition-all duration-700 ease-out motion-reduce:transition-none"
+            style={fundingProgressStyle}
           />
         </div>
       </div>
@@ -141,4 +152,11 @@ export function ExpenseDetailPanel({
       )}
     </aside>
   );
+}
+
+function getProgressBarStyle(percent: number) {
+  return {
+    width: `${percent}%`,
+    minWidth: percent > 0 ? "0.25rem" : undefined,
+  };
 }

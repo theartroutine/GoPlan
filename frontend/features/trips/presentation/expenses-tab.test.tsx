@@ -69,6 +69,46 @@ describe("ExpensesTab", () => {
     expect(screen.getAllByText("Đã đủ tiền").length).toBeGreaterThan(0);
   });
 
+  it("renders exact financial status copy for underfunded, funded, and overfunded expenses", async () => {
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
+      buildExpenseDashboardResponse({
+        expenses: [
+          buildExpenseListItem({
+            id: "expense-underfunded",
+            title: "Dinner in Da Nang",
+            missing_amount: "400000.00",
+            surplus_amount: "0.00",
+            status: "UNDERFUNDED",
+          }),
+          buildExpenseListItem({
+            id: "expense-funded",
+            title: "Hotel deposit",
+            total_amount: "2000000.00",
+            paid_amount: "2000000.00",
+            missing_amount: "0.00",
+            surplus_amount: "0.00",
+            status: "FUNDED",
+          }),
+          buildExpenseListItem({
+            id: "expense-overfunded",
+            title: "Boat tickets",
+            paid_amount: "1250000.00",
+            missing_amount: "0.00",
+            surplus_amount: "50000.00",
+            status: "OVERFUNDED",
+            collector: { id: "user-linh", display_name: "Linh Tran", identify_tag: "@linh" },
+          }),
+        ],
+      }),
+    );
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Still missing 400,000 VND.")).not.toBeNull();
+    expect(screen.getByText("Funded exactly.")).not.toBeNull();
+    expect(screen.getByText("Surplus 50,000 VND is held by Linh Tran.")).not.toBeNull();
+  });
+
   it("renders an empty state when the dashboard has no expenses", async () => {
     expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
       buildExpenseDashboardResponse({ expenses: [] }),
@@ -274,7 +314,9 @@ describe("ExpensesTab", () => {
 
     render(<ExpensesTab />);
 
-    expect(await screen.findByText("Settlement đã finalized nên khoản chi đang bị khóa.")).not.toBeNull();
+    expect(
+      await screen.findAllByText("Locked by finalized settlement. Reopen settlement to edit."),
+    ).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Thêm khoản chi" })).toBeNull();
   });
 

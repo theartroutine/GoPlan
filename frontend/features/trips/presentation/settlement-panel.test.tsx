@@ -110,8 +110,48 @@ describe("SettlementPanel", () => {
 
     expect(screen.getByText("Đã gửi")).not.toBeNull();
     expect(screen.getByText("Đã nhận")).not.toBeNull();
+    const completedRow = screen.getByText("Payer User").closest("article");
+    expect(completedRow?.getAttribute("data-confirmed")).toBe("true");
     expect(screen.queryByRole("button", { name: "I've sent" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Received" })).toBeNull();
+  });
+
+  it("shows exact sent and recipient-ready guidance for in-progress transfers", () => {
+    const settlement = buildTripSettlement({
+      transfers: [
+        buildSettlementTransfer({
+          payer_marked_sent_at: "2026-05-01T12:30:00Z",
+          recipient_confirmed_at: null,
+        }),
+      ],
+    });
+
+    const { rerender } = render(
+      <SettlementPanel
+        tripId="trip-1"
+        settlement={settlement}
+        currentUserId="user-payer"
+        currencyCode="VND"
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Waiting for Recipient User to confirm.")).not.toBeNull();
+
+    rerender(
+      <SettlementPanel
+        tripId="trip-1"
+        settlement={settlement}
+        currentUserId="user-recipient"
+        currencyCode="VND"
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Payer User marked this as sent. Confirm only after money arrives."),
+    ).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Received" })).not.toBeNull();
   });
 
   it("renders an inline error when a settlement action fails", async () => {

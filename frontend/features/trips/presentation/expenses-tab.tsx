@@ -198,7 +198,10 @@ export function ExpensesTab() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div
+        className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both flex flex-wrap items-start justify-between gap-3 motion-reduce:animate-none"
+        style={{ animationDuration: "450ms", animationDelay: "80ms" }}
+      >
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Chi phí chuyến đi</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -216,7 +219,7 @@ export function ExpensesTab() {
         ) : canManageExpenses && settlementFinalized ? (
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
             <ShieldCheck className="size-3.5" />
-            Settlement đã finalized nên khoản chi đang bị khóa.
+            Locked by finalized settlement. Reopen settlement to edit.
           </span>
         ) : (
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground">
@@ -250,8 +253,8 @@ export function ExpensesTab() {
           onCreate={() => setCreateDialogOpen(true)}
         />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-          <section className="space-y-3" aria-label="Expense list">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] 2xl:grid-cols-[minmax(0,1fr)_440px]">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2" aria-label="Expense list">
             {dashboard.expenses.map((expense, index) => (
               <ExpenseCard
                 key={expense.id}
@@ -261,7 +264,7 @@ export function ExpensesTab() {
                   setSelectedExpenseDetail(null);
                   setSelectedExpenseId(expense.id);
                 }}
-                animationDelay={index * 65}
+                animationDelay={index * 70}
               />
             ))}
           </section>

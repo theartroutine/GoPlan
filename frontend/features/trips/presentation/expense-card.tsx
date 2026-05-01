@@ -21,6 +21,8 @@ type ExpenseCardProps = {
 export function ExpenseCard({ expense, selected, onSelect, animationDelay = 0 }: ExpenseCardProps) {
   const fundingPercent = getExpenseFundingPercent(expense);
   const statusTone = getExpenseStatusTone(expense.status);
+  const statusCopy = getExpenseStatusCopy(expense);
+  const fundingProgressStyle = getProgressBarStyle(fundingPercent);
 
   return (
     <button
@@ -29,10 +31,10 @@ export function ExpenseCard({ expense, selected, onSelect, animationDelay = 0 }:
       aria-label={`Open ${expense.title}`}
       onClick={onSelect}
       className={cn(
-        "group w-full animate-in rounded-xl border bg-card p-4 text-left shadow-xs outline-none transition-all duration-200 fade-in-0 slide-in-from-bottom-2 fill-mode-both hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40",
+        "animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both group w-full min-w-0 overflow-hidden rounded-xl border bg-card p-4 text-left shadow-xs outline-none transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40 motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:translate-y-0",
         selected && "border-primary/60 bg-primary/5 shadow-sm ring-1 ring-primary/20",
       )}
-      style={{ animationDelay: `${animationDelay}ms`, animationDuration: "420ms" }}
+      style={{ animationDuration: "450ms", animationDelay: `${animationDelay}ms` }}
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
@@ -45,6 +47,11 @@ export function ExpenseCard({ expense, selected, onSelect, animationDelay = 0 }:
           {expense.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
               {expense.description}
+            </p>
+          )}
+          {expense.locked && (
+            <p className="mt-2 text-xs font-medium text-muted-foreground">
+              Locked by finalized settlement. Reopen settlement to edit.
             </p>
           )}
         </div>
@@ -61,15 +68,15 @@ export function ExpenseCard({ expense, selected, onSelect, animationDelay = 0 }:
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-        <div>
+        <div className="min-w-0 rounded-lg bg-muted/40 px-3 py-2">
           <p className="text-muted-foreground">Tổng</p>
-          <p className="mt-1 font-semibold tabular-nums">
+          <p className="mt-1 break-words font-semibold tabular-nums">
             {formatExpenseMoney(expense.total_amount, expense.currency_code)}
           </p>
         </div>
-        <div>
+        <div className="min-w-0 rounded-lg bg-muted/40 px-3 py-2">
           <p className="text-muted-foreground">Đã thu</p>
-          <p className="mt-1 font-semibold tabular-nums">
+          <p className="mt-1 break-words font-semibold tabular-nums">
             {formatExpenseMoney(expense.paid_amount, expense.currency_code)}
           </p>
         </div>
@@ -83,14 +90,15 @@ export function ExpenseCard({ expense, selected, onSelect, animationDelay = 0 }:
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
           <div
             className={cn(
-              "h-full rounded-full transition-all duration-700 ease-out",
+              "h-full rounded-full transition-all duration-700 ease-out motion-reduce:transition-none",
               statusTone === "success" && "bg-emerald-500",
               statusTone === "warning" && "bg-amber-500",
               statusTone === "danger" && "bg-rose-500",
             )}
-            style={{ width: `${fundingPercent}%` }}
+            style={fundingProgressStyle}
           />
         </div>
+        <p className="mt-2 text-xs font-medium text-muted-foreground">{statusCopy}</p>
       </div>
 
       <div className="mt-4 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
@@ -99,4 +107,35 @@ export function ExpenseCard({ expense, selected, onSelect, animationDelay = 0 }:
       </div>
     </button>
   );
+}
+
+function getProgressBarStyle(percent: number) {
+  return {
+    width: `${percent}%`,
+    minWidth: percent > 0 ? "0.25rem" : undefined,
+  };
+}
+
+function getExpenseStatusCopy(expense: ExpenseListItem): string {
+  const currencyCode = expense.currency_code;
+
+  if (expense.status === "UNDERFUNDED") {
+    return `Still missing ${formatPlainAmount(expense.missing_amount, currencyCode)} ${currencyCode}.`;
+  }
+
+  if (expense.status === "FUNDED") {
+    return "Funded exactly.";
+  }
+
+  return `Surplus ${formatPlainAmount(expense.surplus_amount, currencyCode)} ${currencyCode} is held by ${expense.collector.display_name}.`;
+}
+
+function formatPlainAmount(amount: string, currencyCode: string): string {
+  const numericAmount = Number.parseFloat(amount);
+  const isZeroDecimal = currencyCode === "VND" || currencyCode === "JPY" || currencyCode === "KRW";
+
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: isZeroDecimal ? 0 : 2,
+    maximumFractionDigits: isZeroDecimal ? 0 : 2,
+  }).format(Number.isFinite(numericAmount) ? numericAmount : 0);
 }

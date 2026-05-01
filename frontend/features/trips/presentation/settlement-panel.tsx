@@ -15,6 +15,7 @@ import {
   confirmSettlementTransferReceived,
   markSettlementTransferSent,
 } from "@/features/trips/infrastructure/expenses-api";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 
 type SettlementPanelProps = {
@@ -71,7 +72,8 @@ export function SettlementPanel({
 
   return (
     <section
-      className="rounded-xl border border-border bg-card p-4 shadow-xs"
+      className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both rounded-xl border border-border bg-card p-4 shadow-xs motion-reduce:animate-none"
+      style={{ animationDuration: "450ms", animationDelay: "80ms" }}
       aria-label="Settlement checklist"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -99,11 +101,16 @@ export function SettlementPanel({
           const canMarkSent = roleState?.canMarkSent ?? false;
           const canConfirmReceived = roleState?.canConfirmReceived ?? false;
           const isPending = pendingTransferIds.has(transfer.id);
+          const transferGuidance = getTransferGuidance(transfer, roleState);
 
           return (
             <article
               key={transfer.id}
-              className="rounded-lg border border-border bg-background p-3"
+              data-confirmed={Boolean(transfer.recipient_confirmed_at)}
+              className={cn(
+                "transition duration-300 data-[confirmed=true]:border-emerald-200 data-[confirmed=true]:bg-emerald-50 dark:data-[confirmed=true]:border-emerald-900/60 dark:data-[confirmed=true]:bg-emerald-950/30 motion-reduce:transition-none",
+                "rounded-lg border border-border bg-background p-3",
+              )}
             >
               <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] md:items-center">
                 <TransferPerson
@@ -117,12 +124,18 @@ export function SettlementPanel({
                   name={transfer.recipient.display_name}
                   tag={transfer.recipient.identify_tag}
                 />
-                <p className="text-left text-base font-semibold md:text-right">
+                <p className="break-words text-left text-base font-semibold tabular-nums md:text-right">
                   {formatExpenseMoney(transfer.amount, currencyCode)}
                 </p>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              {transferGuidance && (
+                <p className="mt-3 rounded-md bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground">
+                  {transferGuidance}
+                </p>
+              )}
+
+              <div className="mt-3 grid gap-3 border-t border-border pt-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                 <div className="flex flex-wrap items-center gap-2">
                   <TransferStatusBadge
                     completed={Boolean(transfer.payer_marked_sent_at)}
@@ -140,6 +153,7 @@ export function SettlementPanel({
                   <Button
                     type="button"
                     size="sm"
+                    className="w-full justify-center sm:w-auto"
                     onClick={() => void handleTransferAction(transfer, "sent")}
                     disabled={isPending}
                   >
@@ -153,6 +167,7 @@ export function SettlementPanel({
                     type="button"
                     size="sm"
                     variant="secondary"
+                    className="w-full justify-center sm:w-auto"
                     onClick={() => void handleTransferAction(transfer, "received")}
                     disabled={isPending}
                   >
@@ -162,7 +177,7 @@ export function SettlementPanel({
                 )}
 
                 {!canMarkSent && !canConfirmReceived && (
-                  <span className="text-xs font-medium text-muted-foreground">Theo dõi</span>
+                  <span className="text-xs font-medium text-muted-foreground sm:text-right">Theo dõi</span>
                 )}
               </div>
 
@@ -177,6 +192,19 @@ export function SettlementPanel({
       </div>
     </section>
   );
+}
+
+function getTransferGuidance(
+  transfer: SettlementTransfer,
+  roleState: ReturnType<typeof getSettlementTransferRoleState> | null,
+): string | null {
+  if (!transfer.payer_marked_sent_at || transfer.recipient_confirmed_at) return null;
+
+  if (roleState?.isRecipient) {
+    return `${transfer.payer.display_name} marked this as sent. Confirm only after money arrives.`;
+  }
+
+  return `Waiting for ${transfer.recipient.display_name} to confirm.`;
 }
 
 function TransferPerson({
