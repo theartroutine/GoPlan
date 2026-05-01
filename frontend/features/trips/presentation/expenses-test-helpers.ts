@@ -1,7 +1,9 @@
 import type {
   ExpenseDashboardResponse,
+  ExpenseDetailResponse,
   ExpenseListItem,
   ExpenseMoneySummary,
+  ExpenseParticipantContribution,
   ExpensePerson,
   SettlementTransfer,
   TripSettlement,
@@ -30,6 +32,41 @@ export function buildExpenseListItem(overrides: Partial<ExpenseListItem> = {}): 
     collector: buildExpensePerson(),
     locked: false,
     ...overrides,
+  };
+}
+
+export function buildExpenseParticipantContribution(
+  overrides: Partial<ExpenseParticipantContribution> = {},
+): ExpenseParticipantContribution {
+  return {
+    user_id: "user-collector",
+    display_name: "Minh Nguyen",
+    identify_tag: "@minh",
+    share_amount: "600000.00",
+    contributed_amount: "300000.00",
+    balance: "-300000.00",
+    ...overrides,
+  };
+}
+
+export function buildExpenseDetailResponse(
+  overrides: Partial<ExpenseDetailResponse> = {},
+): ExpenseDetailResponse {
+  const baseExpense = buildExpenseListItem(overrides);
+
+  return {
+    ...baseExpense,
+    locked_at: overrides.locked_at ?? null,
+    created_at: overrides.created_at ?? "2026-05-01T12:00:00Z",
+    permissions: { can_manage_expenses: true, ...overrides.permissions },
+    participants: overrides.participants ?? [
+      buildExpenseParticipantContribution(),
+      buildExpenseParticipantContribution({
+        user_id: "user-member",
+        display_name: "Linh Tran",
+        identify_tag: "@linh",
+      }),
+    ],
   };
 }
 

@@ -114,6 +114,54 @@ class ExpenseAPITests(APITestCase):
         self.assertEqual(contribution.amount, Decimal("300000"))
         self.assertEqual(contribution.user, self.member)
 
+    def test_expense_detail_returns_participant_snapshot_for_departed_member(self):
+        expense_response = self.client.post(
+            self.expenses_url,
+            {"title": "Dinner", "description": "Shared seafood", "total_amount": "600000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        expense_id = expense_response.data["id"]
+        self.client.patch(
+            f"{self.expenses_url}/{expense_id}/contributions/{self.member.id}",
+            {"amount": "300000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        TripMember.objects.filter(trip=self.trip, user=self.member).update(
+            status=MemberStatus.LEFT,
+            left_at=timezone.now(),
+        )
+
+        response = self.client.get(
+            f"{self.expenses_url}/{expense_id}",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], expense_id)
+        self.assertEqual(response.data["title"], "Dinner")
+        self.assertEqual(response.data["description"], "Shared seafood")
+        self.assertEqual(response.data["total_amount"], "600000")
+        self.assertEqual(response.data["paid_amount"], "300000")
+        self.assertEqual(response.data["missing_amount"], "300000")
+        self.assertEqual(response.data["surplus_amount"], "0")
+        self.assertEqual(response.data["currency_code"], "VND")
+        self.assertEqual(response.data["status"], "UNDERFUNDED")
+        self.assertFalse(response.data["locked"])
+        self.assertEqual(len(response.data["participants"]), 2)
+
+        participant_by_user_id = {
+            participant["user_id"]: participant
+            for participant in response.data["participants"]
+        }
+        departed_participant = participant_by_user_id[str(self.member.id)]
+        self.assertEqual(departed_participant["display_name"], "Expense Member")
+        self.assertEqual(departed_participant["identify_tag"], self.member.identify_tag)
+        self.assertEqual(departed_participant["share_amount"], "300000")
+        self.assertEqual(departed_participant["contributed_amount"], "300000")
+        self.assertEqual(departed_participant["balance"], "0")
+
     def test_unauthenticated_dashboard_request_is_rejected(self):
         response = self.client.get(self.expenses_url)
 

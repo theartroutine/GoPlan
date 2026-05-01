@@ -4,6 +4,7 @@ from django.urls import path
 
 from expenses.views import (
     ExpenseContributionAPIView,
+    ExpenseDetailAPIView,
     ExpenseListCreateAPIView,
     SettlementFinalizeAPIView,
     SettlementReopenAPIView,
@@ -35,6 +36,11 @@ urlpatterns = [
         name="settlement-transfer-received",
     ),
     path("<uuid:trip_id>/expenses", ExpenseListCreateAPIView.as_view(), name="list-create"),
+    path(
+        "<uuid:trip_id>/expenses/<uuid:expense_id>",
+        ExpenseDetailAPIView.as_view(),
+        name="detail",
+    ),
     path(
         "<uuid:trip_id>/expenses/<uuid:expense_id>/contributions/<uuid:user_id>",
         ExpenseContributionAPIView.as_view(),

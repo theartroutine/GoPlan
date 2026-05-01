@@ -13,6 +13,7 @@ from expenses.serializers import (
     SettlementTransferSerializer,
     TripSettlementSerializer,
     serialize_dashboard_response,
+    serialize_expense_detail_response,
 )
 from expenses.services import (
     ContributionUserNotParticipantError,
@@ -25,6 +26,7 @@ from expenses.services import (
     SettlementNotFinalizedError,
     TransferNotFoundError,
     build_expense_dashboard,
+    build_expense_detail,
     confirm_transfer_received,
     create_expense,
     finalize_settlement,
@@ -104,6 +106,25 @@ class ExpenseListCreateAPIView(APIView):
             return _service_error_response(exc, status_code=status.HTTP_400_BAD_REQUEST)
 
         return Response(ExpenseResponseSerializer(expense).data, status=status.HTTP_201_CREATED)
+
+
+class ExpenseDetailAPIView(APIView):
+    permission_classes = EXPENSE_PERMISSIONS
+    throttle_scope = "expenses_detail"
+
+    def get(self, request, trip_id, expense_id):
+        try:
+            detail = build_expense_detail(
+                trip_id=trip_id,
+                expense_id=expense_id,
+                actor=request.user,
+            )
+        except (TripNotFoundError, ExpenseNotFoundError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+
+        return Response(serialize_expense_detail_response(detail))
 
 
 class ExpenseContributionAPIView(APIView):

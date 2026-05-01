@@ -7,6 +7,7 @@ import {
   getExpenseStatusLabel,
   getSettlementTransferRoleState,
   getUserBalanceLabel,
+  normalizeExpenseMoneyInput,
   summarizeExpenseDashboard,
 } from "@/features/trips/domain/expenses-money";
 
@@ -44,6 +45,40 @@ describe("expense money helpers", () => {
 
     expect(formatExpenseMoney("10.5", "USD")).toBe("$10.50");
     expect(formatExpenseMoney(0, "USD")).toBe("$0.00");
+  });
+
+  it("normalizes zero-decimal currency money input with common grouping separators", () => {
+    expect(normalizeExpenseMoneyInput("1.500.000", "VND")).toMatchObject({
+      value: "1500000",
+      error: null,
+    });
+    expect(normalizeExpenseMoneyInput("1,500,000", "VND")).toMatchObject({
+      value: "1500000",
+      error: null,
+    });
+    expect(normalizeExpenseMoneyInput("1500000", "VND")).toMatchObject({
+      value: "1500000",
+      error: null,
+    });
+    expect(normalizeExpenseMoneyInput("1500000.50", "VND")).toMatchObject({
+      value: null,
+      error: expect.any(String),
+    });
+  });
+
+  it("normalizes decimal currency money input without stripping decimal separators", () => {
+    expect(normalizeExpenseMoneyInput("1,500.50", "USD")).toMatchObject({
+      value: "1500.50",
+      error: null,
+    });
+    expect(normalizeExpenseMoneyInput("1500.50", "USD")).toMatchObject({
+      value: "1500.50",
+      error: null,
+    });
+    expect(normalizeExpenseMoneyInput("1.500,50", "USD")).toMatchObject({
+      value: null,
+      error: expect.any(String),
+    });
   });
 
   it("calculates funding percent with clamping and invalid totals", () => {

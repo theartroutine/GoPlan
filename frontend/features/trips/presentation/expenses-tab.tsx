@@ -6,13 +6,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   ExpenseDashboardResponse,
+  ExpenseDetailResponse,
   ExpenseListItem,
+  ExpenseResponse,
 } from "@/features/trips/domain/expenses-types";
 import { useAuth } from "@/features/auth/application/auth-context";
 import { DEFAULT_TRIP_CURRENCY } from "@/features/trips/domain/money";
-import { getExpensesDashboard } from "@/features/trips/infrastructure/expenses-api";
+import {
+  getExpenseDetail,
+  getExpensesDashboard,
+} from "@/features/trips/infrastructure/expenses-api";
 import { ExpenseCard } from "@/features/trips/presentation/expense-card";
 import { ExpenseDetailPanel } from "@/features/trips/presentation/expense-detail-panel";
+import { ExpenseFormDialog } from "@/features/trips/presentation/expense-form-dialog";
 import { ExpenseSummaryStrip } from "@/features/trips/presentation/expense-summary-strip";
 import { SettlementPanel } from "@/features/trips/presentation/settlement-panel";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
@@ -24,10 +30,16 @@ export function ExpensesTab() {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState<ExpenseDashboardResponse | null>(null);
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null);
+  const [selectedExpenseDetail, setSelectedExpenseDetail] = useState<ExpenseDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const activeRequestRef = useRef<AbortController | null>(null);
+  const activeDetailRequestRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
+  const detailRequestIdRef = useRef(0);
 
   const loadDashboard = useCallback(async () => {
     activeRequestRef.current?.abort();
@@ -47,8 +59,12 @@ export function ExpensesTab() {
 
       setDashboard(result);
       setSelectedExpenseId((current) => {
-        if (current && result.expenses.some((expense) => expense.id === current)) return current;
-        return result.expenses[0]?.id ?? null;
+        const nextExpenseId =
+          current && result.expenses.some((expense) => expense.id === current)
+            ? current
+            : result.expenses[0]?.id ?? null;
+        if (nextExpenseId !== current) setSelectedExpenseDetail(null);
+        return nextExpenseId;
       });
     } catch {
       if (!isActiveRequest(controller, requestId, activeRequestRef, requestIdRef)) return;
@@ -69,10 +85,71 @@ export function ExpensesTab() {
 
     return () => {
       activeRequestRef.current?.abort();
+      activeDetailRequestRef.current?.abort();
       activeRequestRef.current = null;
+      activeDetailRequestRef.current = null;
       requestIdRef.current += 1;
+      detailRequestIdRef.current += 1;
     };
   }, [loadDashboard]);
+
+  const loadSelectedExpenseDetail = useCallback(
+    async (expenseId: string) => {
+      activeDetailRequestRef.current?.abort();
+
+      const controller = new AbortController();
+      const requestId = detailRequestIdRef.current + 1;
+
+      activeDetailRequestRef.current = controller;
+      detailRequestIdRef.current = requestId;
+      setSelectedExpenseDetail(null);
+      setDetailLoading(true);
+      setDetailError(null);
+
+      try {
+        const result = await getExpenseDetail(tripId, expenseId, { signal: controller.signal });
+
+        if (!isActiveRequest(controller, requestId, activeDetailRequestRef, detailRequestIdRef)) {
+          return;
+        }
+
+        setSelectedExpenseDetail(result);
+      } catch {
+        if (!isActiveRequest(controller, requestId, activeDetailRequestRef, detailRequestIdRef)) {
+          return;
+        }
+
+        setSelectedExpenseDetail(null);
+        setDetailError("Không tải được chi tiết đóng góp.");
+      } finally {
+        if (isActiveRequest(controller, requestId, activeDetailRequestRef, detailRequestIdRef)) {
+          setDetailLoading(false);
+          activeDetailRequestRef.current = null;
+        }
+      }
+    },
+    [tripId],
+  );
+
+  useEffect(() => {
+    if (!selectedExpenseId) {
+      activeDetailRequestRef.current?.abort();
+      activeDetailRequestRef.current = null;
+      detailRequestIdRef.current += 1;
+      setSelectedExpenseDetail(null);
+      setDetailLoading(false);
+      setDetailError(null);
+      return;
+    }
+
+    void loadSelectedExpenseDetail(selectedExpenseId);
+
+    return () => {
+      activeDetailRequestRef.current?.abort();
+      activeDetailRequestRef.current = null;
+      detailRequestIdRef.current += 1;
+    };
+  }, [loadSelectedExpenseDetail, selectedExpenseId]);
 
   const selectedExpense = useMemo(
     () => findSelectedExpense(dashboard?.expenses ?? [], selectedExpenseId),
@@ -106,6 +183,18 @@ export function ExpensesTab() {
 
   const canManageExpenses = dashboard.permissions.can_manage_expenses;
   const dashboardCurrencyCode = dashboard.expenses[0]?.currency_code || DEFAULT_TRIP_CURRENCY;
+  const settlementFinalized = dashboard.settlement?.status === "FINALIZED";
+  const canCreateExpense = canManageExpenses && !settlementFinalized;
+
+  async function handleExpenseCreated(expense: ExpenseResponse) {
+    setSelectedExpenseId(expense.id);
+    await loadDashboard();
+  }
+
+  async function handleContributionChanged() {
+    if (selectedExpenseId) await loadSelectedExpenseDetail(selectedExpenseId);
+    await loadDashboard();
+  }
 
   return (
     <div className="space-y-5">
@@ -117,16 +206,18 @@ export function ExpensesTab() {
           </p>
         </div>
 
-        {canManageExpenses ? (
+        {canCreateExpense ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              Sẽ mở ở task sau
-            </span>
-            <Button type="button" disabled>
+            <Button type="button" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="size-4" />
               Thêm khoản chi
             </Button>
           </div>
+        ) : canManageExpenses && settlementFinalized ? (
+          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            <ShieldCheck className="size-3.5" />
+            Settlement đã finalized nên khoản chi đang bị khóa.
+          </span>
         ) : (
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground">
             <ShieldCheck className="size-3.5" />
@@ -145,8 +236,19 @@ export function ExpensesTab() {
         onChanged={loadDashboard}
       />
 
+      <ExpenseFormDialog
+        tripId={tripId}
+        currencyCode={dashboardCurrencyCode}
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onCreated={handleExpenseCreated}
+      />
+
       {dashboard.expenses.length === 0 ? (
-        <ExpensesEmptyState canManageExpenses={canManageExpenses} />
+        <ExpensesEmptyState
+          canCreateExpense={canCreateExpense}
+          onCreate={() => setCreateDialogOpen(true)}
+        />
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
           <section className="space-y-3" aria-label="Expense list">
@@ -155,12 +257,23 @@ export function ExpensesTab() {
                 key={expense.id}
                 expense={expense}
                 selected={expense.id === selectedExpense?.id}
-                onSelect={() => setSelectedExpenseId(expense.id)}
+                onSelect={() => {
+                  setSelectedExpenseDetail(null);
+                  setSelectedExpenseId(expense.id);
+                }}
                 animationDelay={index * 65}
               />
             ))}
           </section>
-          <ExpenseDetailPanel expense={selectedExpense} />
+          <ExpenseDetailPanel
+            expense={selectedExpense}
+            detail={selectedExpenseDetail}
+            detailLoading={detailLoading}
+            detailError={detailError}
+            tripId={tripId}
+            settlementFinalized={settlementFinalized}
+            onContributionChanged={handleContributionChanged}
+          />
         </div>
       )}
     </div>
@@ -176,7 +289,13 @@ function ExpensesLoadingState() {
   );
 }
 
-function ExpensesEmptyState({ canManageExpenses }: { canManageExpenses: boolean }) {
+function ExpensesEmptyState({
+  canCreateExpense,
+  onCreate,
+}: {
+  canCreateExpense: boolean;
+  onCreate: () => void;
+}) {
   return (
     <section className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
       <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -186,8 +305,8 @@ function ExpensesEmptyState({ canManageExpenses }: { canManageExpenses: boolean 
       <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
         Dashboard sẽ hiển thị tổng tiền và tiến độ đóng góp khi có khoản chi đầu tiên.
       </p>
-      {canManageExpenses && (
-        <Button type="button" className="mt-5" disabled>
+      {canCreateExpense && (
+        <Button type="button" className="mt-5" onClick={onCreate}>
           <Plus className="size-4" />
           Thêm khoản chi
         </Button>

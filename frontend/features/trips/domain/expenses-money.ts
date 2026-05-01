@@ -8,11 +8,18 @@ import { DEFAULT_TRIP_CURRENCY, normalizeCurrencyCode } from "@/features/trips/d
 
 type ExpenseFundingAmounts = Pick<ExpenseMoneySummary, "paid_amount" | "total_amount">;
 
+export type NormalizedExpenseMoneyInput = {
+  value: string | null;
+  error: string | null;
+};
+
 type CurrencyFormatOption = {
   locale: string;
   minimumFractionDigits: number;
   maximumFractionDigits: number;
 };
+
+const ZERO_DECIMAL_CURRENCIES = new Set(["VND", "JPY", "KRW"]);
 
 const CURRENCY_FORMAT_OPTIONS: Record<string, CurrencyFormatOption> = {
   VND: {
@@ -64,6 +71,22 @@ export function formatExpenseMoney(
       maximumFractionDigits: 2,
     }).format(numericAmount)} ${normalizedCurrencyCode}`;
   }
+}
+
+export function normalizeExpenseMoneyInput(
+  value: string,
+  currencyCode: string,
+): NormalizedExpenseMoneyInput {
+  const trimmedValue = value.trim();
+  const normalizedCurrencyCode = normalizeCurrencyCode(currencyCode) || DEFAULT_TRIP_CURRENCY;
+
+  if (!trimmedValue) return { value: null, error: "Amount is required." };
+
+  if (ZERO_DECIMAL_CURRENCIES.has(normalizedCurrencyCode)) {
+    return normalizeZeroDecimalMoneyInput(trimmedValue);
+  }
+
+  return normalizeDecimalMoneyInput(trimmedValue);
 }
 
 export function getExpenseFundingPercent(expenseOrAmounts: ExpenseFundingAmounts): number {
@@ -163,6 +186,35 @@ const EXPENSE_STATUS_TONES: Record<ExpenseStatus, ExpenseStatusTone> = {
 function parseMoneyAmount(amount: string | number): number {
   const numericAmount = typeof amount === "number" ? amount : Number.parseFloat(amount);
   return Number.isFinite(numericAmount) ? numericAmount : 0;
+}
+
+function normalizeZeroDecimalMoneyInput(value: string): NormalizedExpenseMoneyInput {
+  const groups = value.split(/[.,\s]+/);
+  if (groups.some((group) => group === "" || !/^\d+$/.test(group))) {
+    return { value: null, error: "Invalid amount." };
+  }
+
+  if (groups.length === 1) return { value: groups[0], error: null };
+
+  const [firstGroup, ...restGroups] = groups;
+  const isValidGroupedInput =
+    firstGroup.length >= 1 &&
+    firstGroup.length <= 3 &&
+    restGroups.every((group) => group.length === 3);
+
+  if (!isValidGroupedInput) return { value: null, error: "Invalid amount." };
+
+  return { value: groups.join(""), error: null };
+}
+
+function normalizeDecimalMoneyInput(value: string): NormalizedExpenseMoneyInput {
+  const decimalMoneyPattern = /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/;
+
+  if (!decimalMoneyPattern.test(value)) {
+    return { value: null, error: "Invalid amount." };
+  }
+
+  return { value: value.replace(/,/g, ""), error: null };
 }
 
 function clampPercent(percent: number): number {

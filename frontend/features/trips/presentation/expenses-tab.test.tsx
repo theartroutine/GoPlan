@@ -3,12 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildExpenseDashboardResponse,
+  buildExpenseDetailResponse,
   buildExpenseListItem,
   buildTripSettlement,
 } from "@/features/trips/presentation/expenses-test-helpers";
 
 const expensesApiMock = vi.hoisted(() => ({
+  confirmSettlementTransferReceived: vi.fn(),
+  createExpense: vi.fn(),
+  finalizeSettlement: vi.fn(),
+  getExpenseDetail: vi.fn(),
   getExpensesDashboard: vi.fn(),
+  markSettlementTransferSent: vi.fn(),
+  reopenSettlement: vi.fn(),
+  setExpenseContribution: vi.fn(),
 }));
 
 vi.mock("@/features/trips/infrastructure/expenses-api", () => expensesApiMock);
@@ -30,6 +38,7 @@ describe("ExpensesTab", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.resetAllMocks();
+    expensesApiMock.getExpenseDetail.mockResolvedValue(buildExpenseDetailResponse());
   });
 
   it("shows loading state then renders summary metrics and expense cards", async () => {
@@ -153,25 +162,301 @@ describe("ExpensesTab", () => {
     expect(screen.getByText("Linh Tran")).not.toBeNull();
   });
 
-  it("shows captain management placeholder and member read-only state", async () => {
+  it("opens create dialog, submits an expense, and reloads the dashboard", async () => {
     expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
       buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
+    ).mockResolvedValueOnce(
+      buildExpenseDashboardResponse({
+        permissions: { can_manage_expenses: true },
+        expenses: [buildExpenseListItem({ id: "expense-created", title: "Hotel deposit" })],
+      }),
     );
+    expensesApiMock.createExpense.mockResolvedValueOnce({
+      id: "expense-created",
+      title: "Hotel deposit",
+      description: "First night",
+      total_amount: "1500000",
+      currency_code: "VND",
+      locked_at: null,
+      created_at: "2026-05-01T00:00:00Z",
+    });
 
-    const { unmount } = render(<ExpensesTab />);
+    render(<ExpensesTab />);
 
-    expect((await screen.findByRole("button", { name: "Thêm khoản chi" })).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText("Sẽ mở ở task sau")).not.toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Thêm khoản chi" }));
+    fireEvent.change(screen.getByLabelText("Tên khoản chi"), {
+      target: { value: "Hotel deposit" },
+    });
+    fireEvent.change(screen.getByLabelText("Mô tả"), {
+      target: { value: "First night" },
+    });
+    fireEvent.change(screen.getByLabelText("Tổng tiền"), {
+      target: { value: "1.500.000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Tạo khoản chi" }));
 
-    unmount();
+    await waitFor(() => {
+      expect(expensesApiMock.createExpense).toHaveBeenCalledWith("trip-1", {
+        title: "Hotel deposit",
+        description: "First night",
+        total_amount: "1500000",
+      });
+    });
+    await waitFor(() => {
+      expect(expensesApiMock.getExpensesDashboard).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("normalizes comma-grouped VND create input and rejects VND decimal fractions", async () => {
+    expensesApiMock.getExpensesDashboard.mockResolvedValue(
+      buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
+    );
+    expensesApiMock.createExpense.mockResolvedValue({
+      id: "expense-created",
+      title: "Hotel deposit",
+      description: "",
+      total_amount: "1500000",
+      currency_code: "VND",
+      locked_at: null,
+      created_at: "2026-05-01T00:00:00Z",
+    });
+
+    render(<ExpensesTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Thêm khoản chi" }));
+    fireEvent.change(screen.getByLabelText("Tên khoản chi"), {
+      target: { value: "Hotel deposit" },
+    });
+    fireEvent.change(screen.getByLabelText("Tổng tiền"), {
+      target: { value: "1,500,000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Tạo khoản chi" }));
+
+    await waitFor(() => {
+      expect(expensesApiMock.createExpense).toHaveBeenCalledWith(
+        "trip-1",
+        expect.objectContaining({ total_amount: "1500000" }),
+      );
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Thêm khoản chi" }));
+    fireEvent.change(screen.getByLabelText("Tên khoản chi"), {
+      target: { value: "Invalid decimal" },
+    });
+    fireEvent.change(screen.getByLabelText("Tổng tiền"), {
+      target: { value: "1500000.50" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Tạo khoản chi" }));
+
+    expect(await screen.findByText("Nhập tổng tiền hợp lệ.")).not.toBeNull();
+    expect(expensesApiMock.createExpense).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides expense management controls for member and finalized settlement", async () => {
     expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
       buildExpenseDashboardResponse({ permissions: { can_manage_expenses: false } }),
     );
 
-    render(<ExpensesTab />);
+    const { unmount } = render(<ExpensesTab />);
 
     expect(await screen.findByText("Chế độ xem")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Thêm khoản chi" })).toBeNull();
+
+    unmount();
+    vi.resetAllMocks();
+    expensesApiMock.getExpenseDetail.mockResolvedValue(buildExpenseDetailResponse({ locked: true }));
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
+      buildExpenseDashboardResponse({
+        permissions: { can_manage_expenses: true },
+        settlement: buildTripSettlement(),
+      }),
+    );
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Settlement đã finalized nên khoản chi đang bị khóa.")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Thêm khoản chi" })).toBeNull();
+  });
+
+  it("lets captain edit participant contribution and reloads detail and dashboard", async () => {
+    expensesApiMock.getExpensesDashboard.mockResolvedValue(
+      buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
+    );
+    expensesApiMock.getExpenseDetail
+      .mockResolvedValueOnce(
+        buildExpenseDetailResponse({
+          id: "expense-food",
+          participants: [
+            buildExpenseDetailResponse().participants[0],
+            buildExpenseDetailResponse().participants[1],
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildExpenseDetailResponse({
+          id: "expense-food",
+          participants: [
+            buildExpenseDetailResponse().participants[0],
+            buildExpenseDetailResponse().participants[1],
+          ],
+        }),
+      );
+    expensesApiMock.setExpenseContribution.mockResolvedValueOnce({
+      id: "contribution-1",
+      user: { id: "user-member", display_name: "Linh Tran", identify_tag: "@linh" },
+      amount: "450000",
+      updated_at: "2026-05-01T00:00:00Z",
+    });
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Linh Tran")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Sửa đóng góp của Linh Tran" }));
+    fireEvent.change(screen.getByLabelText("Số tiền Linh Tran đã đóng"), {
+      target: { value: "1.500.000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Lưu đóng góp của Linh Tran" }));
+
+    await waitFor(() => {
+      expect(expensesApiMock.setExpenseContribution).toHaveBeenCalledWith(
+        "trip-1",
+        "expense-food",
+        "user-member",
+        { amount: "1500000" },
+      );
+    });
+    await waitFor(() => {
+      expect(expensesApiMock.getExpenseDetail).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("normalizes comma-grouped contribution input and rejects VND decimal fractions", async () => {
+    expensesApiMock.getExpensesDashboard.mockResolvedValue(
+      buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
+    );
+    expensesApiMock.getExpenseDetail.mockResolvedValue(buildExpenseDetailResponse({ id: "expense-food" }));
+    expensesApiMock.setExpenseContribution.mockResolvedValue({
+      id: "contribution-1",
+      user: { id: "user-member", display_name: "Linh Tran", identify_tag: "@linh" },
+      amount: "1500000",
+      updated_at: "2026-05-01T00:00:00Z",
+    });
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Linh Tran")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Sửa đóng góp của Linh Tran" }));
+    fireEvent.change(screen.getByLabelText("Số tiền Linh Tran đã đóng"), {
+      target: { value: "1,500,000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Lưu đóng góp của Linh Tran" }));
+
+    await waitFor(() => {
+      expect(expensesApiMock.setExpenseContribution).toHaveBeenCalledWith(
+        "trip-1",
+        "expense-food",
+        "user-member",
+        { amount: "1500000" },
+      );
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sửa đóng góp của Linh Tran" }));
+    fireEvent.change(screen.getByLabelText("Số tiền Linh Tran đã đóng"), {
+      target: { value: "1500000.50" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Lưu đóng góp của Linh Tran" }));
+
+    expect(await screen.findByText("Nhập số tiền đóng góp hợp lệ.")).not.toBeNull();
+    expect(expensesApiMock.setExpenseContribution).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render stale detail participants under another selected expense", async () => {
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
+      buildExpenseDashboardResponse({
+        permissions: { can_manage_expenses: true },
+        expenses: [
+          buildExpenseListItem({ id: "expense-food", title: "Dinner in Da Nang" }),
+          buildExpenseListItem({ id: "expense-van", title: "Airport van" }),
+        ],
+      }),
+    );
+    expensesApiMock.getExpenseDetail
+      .mockResolvedValueOnce(
+        buildExpenseDetailResponse({
+          id: "expense-food",
+          participants: [
+            {
+              user_id: "user-stale",
+              display_name: "Stale Participant",
+              identify_tag: "@stale",
+              share_amount: "100000",
+              contributed_amount: "0",
+              balance: "-100000",
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildExpenseDetailResponse({
+          id: "expense-food",
+          participants: [
+            {
+              user_id: "user-stale",
+              display_name: "Stale Participant",
+              identify_tag: "@stale",
+              share_amount: "100000",
+              contributed_amount: "0",
+              balance: "-100000",
+            },
+          ],
+        }),
+      );
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Stale Participant")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Airport van/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("heading", { name: "Airport van" }).length).toBeGreaterThan(0);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Stale Participant")).toBeNull();
+    });
+    expect(screen.queryByRole("button", { name: /Sửa đóng góp của Stale Participant/i })).toBeNull();
+  });
+
+  it("uses expense detail permissions for contribution editing", async () => {
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
+      buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
+    );
+    expensesApiMock.getExpenseDetail.mockResolvedValueOnce(
+      buildExpenseDetailResponse({
+        id: "expense-food",
+        permissions: { can_manage_expenses: false },
+      }),
+    );
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Linh Tran")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Sửa đóng góp/i })).toBeNull();
+    expect(screen.queryByLabelText("Số tiền Linh Tran đã đóng")).toBeNull();
+  });
+
+  it("shows contribution rows as read-only for non-captain", async () => {
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
+      buildExpenseDashboardResponse({ permissions: { can_manage_expenses: false } }),
+    );
+    expensesApiMock.getExpenseDetail.mockResolvedValueOnce(
+      buildExpenseDetailResponse({ permissions: { can_manage_expenses: false } }),
+    );
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Linh Tran")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Sửa đóng góp/i })).toBeNull();
+    expect(screen.queryByLabelText("Số tiền Linh Tran đã đóng")).toBeNull();
   });
 
   it("renders the active settlement transfer checklist when present", async () => {

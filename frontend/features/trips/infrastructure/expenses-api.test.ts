@@ -14,6 +14,7 @@ import {
   confirmSettlementTransferReceived,
   createExpense,
   finalizeSettlement,
+  getExpenseDetail,
   getExpensesDashboard,
   markSettlementTransferSent,
   reopenSettlement,
@@ -64,6 +65,41 @@ describe("expenses-api", () => {
     await expect(createExpense("trip_1", payload)).resolves.toBe(response);
 
     expect(bffMock.post).toHaveBeenCalledWith("/api/trips/trip_1/expenses", payload);
+  });
+
+  it("reads expense detail through the BFF", async () => {
+    const detail = {
+      id: "expense_1",
+      title: "Hotel",
+      description: "",
+      total_amount: "100",
+      paid_amount: "25",
+      missing_amount: "75",
+      surplus_amount: "0",
+      currency_code: "USD",
+      status: "UNDERFUNDED",
+      collector: { id: "user_1", display_name: "Minh", identify_tag: "@minh" },
+      locked: false,
+      participants: [
+        {
+          user_id: "user_1",
+          display_name: "Minh",
+          identify_tag: "@minh",
+          share_amount: "50",
+          contributed_amount: "25",
+          balance: "-25",
+        },
+      ],
+    };
+    bffMock.get.mockResolvedValue({ data: detail });
+
+    await expect(
+      getExpenseDetail("trip_1", "expense_1", { signal: new AbortController().signal }),
+    ).resolves.toBe(detail);
+
+    expect(bffMock.get).toHaveBeenCalledWith("/api/trips/trip_1/expenses/expense_1", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("sets a contribution through the contribution BFF route", async () => {

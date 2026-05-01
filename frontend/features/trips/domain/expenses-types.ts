@@ -23,6 +23,22 @@ export type ExpenseListItem = ExpenseMoneySummary & {
   locked: boolean;
 };
 
+export type ExpenseParticipantContribution = {
+  user_id: string;
+  display_name: string;
+  identify_tag: string | null;
+  share_amount: string;
+  contributed_amount: string;
+  balance: string;
+};
+
+export type ExpenseDetailResponse = ExpenseListItem & {
+  locked_at: string | null;
+  created_at: string;
+  permissions: { can_manage_expenses: boolean };
+  participants: ExpenseParticipantContribution[];
+};
+
 export type SettlementTransfer = {
   id: string;
   payer: ExpensePerson;

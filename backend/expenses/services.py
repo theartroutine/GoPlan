@@ -463,6 +463,38 @@ def build_expense_dashboard(*, trip_id, actor) -> dict[str, object]:
     }
 
 
+def build_expense_detail(*, trip_id, expense_id, actor) -> dict[str, object]:
+    trip, membership = _get_member_trip(trip_id, actor)
+    try:
+        expense = (
+            Expense.objects.filter(trip=trip)
+            .select_related("collector", "created_by")
+            .prefetch_related(
+                Prefetch(
+                    "participants",
+                    queryset=ExpenseParticipant.objects.select_related("user").order_by(
+                        "created_at",
+                        "id",
+                    ),
+                ),
+                Prefetch(
+                    "contributions",
+                    queryset=ExpenseContribution.objects.select_related("user"),
+                ),
+            )
+            .get(pk=expense_id)
+        )
+    except Expense.DoesNotExist:
+        raise ExpenseNotFoundError("Expense not found.")
+
+    return {
+        "trip": trip,
+        "expense": expense,
+        "financials": _expense_financials(expense),
+        "permissions": {"can_manage_expenses": membership.role == TripRole.CAPTAIN},
+    }
+
+
 @transaction.atomic
 def create_expense(
     *,

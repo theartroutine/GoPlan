@@ -2,6 +2,7 @@ import type {
   ContributionResponse,
   CreateExpensePayload,
   ExpenseDashboardResponse,
+  ExpenseDetailResponse,
   ExpenseResponse,
   SetContributionPayload,
   SettlementTransfer,
@@ -29,6 +30,18 @@ export async function createExpense(
   payload: CreateExpensePayload,
 ): Promise<ExpenseResponse> {
   const res = await bff.post<ExpenseResponse>(`/api/trips/${tripId}/expenses`, payload);
+  return res.data;
+}
+
+export async function getExpenseDetail(
+  tripId: string,
+  expenseId: string,
+  options?: RequestOptions,
+): Promise<ExpenseDetailResponse> {
+  const res = await bff.get<ExpenseDetailResponse>(
+    `/api/trips/${tripId}/expenses/${expenseId}`,
+    options?.signal ? { signal: options.signal } : undefined,
+  );
   return res.data;
 }
 
