@@ -147,37 +147,25 @@ describe("expense money helpers", () => {
     });
   });
 
-  it("summarizes dashboard money using the first expense currency", () => {
+  it("summarizes dashboard money using the dashboard currency", () => {
     const response: ExpenseDashboardResponse = {
+      currency_code: "USD",
       summary: {
-        total_amount: "500000",
-        paid_amount: "250000",
-        missing_amount: "250000",
+        total_amount: "500.50",
+        paid_amount: "250.25",
+        missing_amount: "250.25",
         surplus_amount: "0",
       },
       permissions: { can_manage_expenses: true },
-      my_balance: { balance: "-250000" },
+      my_balance: { balance: "-250.25" },
       member_balances: {},
-      expenses: [
-        {
-          id: "expense-1",
-          title: "Hotel",
-          description: "",
-          currency_code: "VND",
-          status: "UNDERFUNDED",
-          collector: payer,
-          locked: false,
-          total_amount: "500000",
-          paid_amount: "250000",
-          missing_amount: "250000",
-          surplus_amount: "0",
-        },
-      ],
+      expenses: [],
       settlement: null,
     };
 
     expect(summarizeExpenseDashboard(response)).toMatchObject({
-      currencyCode: "VND",
+      currencyCode: "USD",
+      formattedTotal: "$500.50",
       fundingPercent: 50,
       myBalanceLabel: expect.stringContaining("Cần trả"),
     });

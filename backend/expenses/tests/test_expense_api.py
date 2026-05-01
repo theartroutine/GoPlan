@@ -181,6 +181,22 @@ class ExpenseAPITests(APITestCase):
         self.assertFalse(response.data["permissions"]["can_manage_expenses"])
         self.assertEqual(len(response.data["expenses"]), 1)
 
+    def test_empty_dashboard_returns_trip_currency_code(self):
+        usd_trip = _make_trip(self.captain, name="Empty USD Trip", currency_code="USD")
+        TripMember.objects.create(
+            trip=usd_trip,
+            user=self.captain,
+            role=TripRole.CAPTAIN,
+            status=MemberStatus.ACTIVE,
+        )
+        usd_expenses_url = f"/api/trips/{usd_trip.id}/expenses"
+
+        response = self.client.get(usd_expenses_url, **_auth(self.captain))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["currency_code"], "USD")
+        self.assertEqual(response.data["expenses"], [])
+
     def test_invalid_amount_returns_400_without_creating_expense(self):
         response = self.client.post(
             self.expenses_url,

@@ -158,7 +158,7 @@ export function getSettlementTransferRoleState(
 export function summarizeExpenseDashboard(
   response: ExpenseDashboardResponse,
 ): ExpenseDashboardMoneySummary {
-  const currencyCode = response.expenses[0]?.currency_code || DEFAULT_TRIP_CURRENCY;
+  const currencyCode = response.currency_code || DEFAULT_TRIP_CURRENCY;
 
   return {
     currencyCode,

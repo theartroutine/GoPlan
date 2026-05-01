@@ -223,7 +223,8 @@ describe("ExpensesTab", () => {
 
     render(<ExpensesTab />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Thêm khoản chi" }));
+    const createButtons = await screen.findAllByRole("button", { name: "Thêm khoản chi" });
+    fireEvent.click(createButtons[0]);
     fireEvent.change(screen.getByLabelText("Tên khoản chi"), {
       target: { value: "Hotel deposit" },
     });
@@ -263,7 +264,8 @@ describe("ExpensesTab", () => {
 
     render(<ExpensesTab />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Thêm khoản chi" }));
+    const emptyStateCreateButtons = await screen.findAllByRole("button", { name: "Thêm khoản chi" });
+    fireEvent.click(emptyStateCreateButtons[0]);
     fireEvent.change(screen.getByLabelText("Tên khoản chi"), {
       target: { value: "Hotel deposit" },
     });
@@ -290,6 +292,68 @@ describe("ExpensesTab", () => {
 
     expect(await screen.findByText("Nhập tổng tiền hợp lệ.")).not.toBeNull();
     expect(expensesApiMock.createExpense).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses an empty dashboard trip currency when creating the first USD expense", async () => {
+    const emptyUsdDashboard = {
+      ...buildExpenseDashboardResponse({
+        permissions: { can_manage_expenses: true },
+        expenses: [],
+        summary: {
+          total_amount: "0",
+          paid_amount: "0",
+          missing_amount: "0",
+          surplus_amount: "0",
+        },
+        my_balance: { balance: "0" },
+      }),
+      currency_code: "USD",
+    };
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(emptyUsdDashboard).mockResolvedValueOnce(
+      buildExpenseDashboardResponse({
+        currency_code: "USD",
+        permissions: { can_manage_expenses: true },
+        expenses: [
+          buildExpenseListItem({
+            id: "expense-created",
+            title: "Coffee",
+            total_amount: "10.50",
+            currency_code: "USD",
+          }),
+        ],
+      }),
+    );
+    expensesApiMock.createExpense.mockResolvedValueOnce({
+      id: "expense-created",
+      title: "Coffee",
+      description: "",
+      total_amount: "10.50",
+      currency_code: "USD",
+      locked_at: null,
+      created_at: "2026-05-01T00:00:00Z",
+    });
+
+    render(<ExpensesTab />);
+
+    const emptyUsdCreateButtons = await screen.findAllByRole("button", { name: "Thêm khoản chi" });
+    fireEvent.click(emptyUsdCreateButtons[0]);
+    expect(screen.getAllByText("USD").length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("Tên khoản chi"), {
+      target: { value: "Coffee" },
+    });
+    fireEvent.change(screen.getByLabelText("Tổng tiền"), {
+      target: { value: "10.50" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Tạo khoản chi" }));
+
+    await waitFor(() => {
+      expect(expensesApiMock.createExpense).toHaveBeenCalledWith("trip-1", {
+        title: "Coffee",
+        description: "",
+        total_amount: "10.50",
+      });
+    });
+    expect(screen.queryByText("Nhập tổng tiền hợp lệ.")).toBeNull();
   });
 
   it("hides expense management controls for member and finalized settlement", async () => {

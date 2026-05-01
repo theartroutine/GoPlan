@@ -86,6 +86,7 @@ export function buildExpenseDashboardResponse(
   const expenses = overrides.expenses ?? [buildExpenseListItem()];
 
   return {
+    currency_code: overrides.currency_code ?? "VND",
     summary: buildExpenseSummary(overrides.summary),
     permissions: { can_manage_expenses: false, ...overrides.permissions },
     my_balance: { balance: "-300000.00", ...overrides.my_balance },

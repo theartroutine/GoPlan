@@ -92,6 +92,7 @@ def serialize_dashboard_response(dashboard: dict[str, object], *, request_user) 
     request_user_key = str(request_user.id)
 
     return {
+        "currency_code": dashboard["currency_code"],
         "summary": {
             "total_amount": format_decimal(dashboard["summary"]["total_amount"]),
             "paid_amount": format_decimal(dashboard["summary"]["paid_amount"]),

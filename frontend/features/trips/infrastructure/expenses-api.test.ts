@@ -28,6 +28,7 @@ describe("expenses-api", () => {
 
   it("reads the expenses dashboard through the BFF", async () => {
     const dashboard = {
+      currency_code: "USD",
       summary: {
         total_amount: "100.00",
         paid_amount: "80.00",

@@ -11,7 +11,6 @@ import type {
   ExpenseResponse,
 } from "@/features/trips/domain/expenses-types";
 import { useAuth } from "@/features/auth/application/auth-context";
-import { DEFAULT_TRIP_CURRENCY } from "@/features/trips/domain/money";
 import {
   getExpenseDetail,
   getExpensesDashboard,
@@ -182,7 +181,7 @@ export function ExpensesTab() {
   if (!dashboard) return null;
 
   const canManageExpenses = dashboard.permissions.can_manage_expenses;
-  const dashboardCurrencyCode = dashboard.expenses[0]?.currency_code || DEFAULT_TRIP_CURRENCY;
+  const dashboardCurrencyCode = dashboard.currency_code;
   const settlementFinalized = dashboard.settlement?.status === "FINALIZED";
   const canCreateExpense = canManageExpenses && !settlementFinalized;
 

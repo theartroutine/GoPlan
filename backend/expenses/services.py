@@ -321,7 +321,7 @@ def _build_group_transfers(group_items: Sequence[tuple[object, Decimal]]) -> lis
 
 
 def build_settlement_transfers(balances: dict[str, Decimal]) -> list[dict[str, object]]:
-    """Build minimum-count settlement transfers for balances keyed by unique user ID strings."""
+    """Build settlement transfers for balances keyed by unique user ID strings."""
     if sum(balances.values(), Decimal("0")) != 0:
         raise ExpenseServiceError("Settlement balances must net to zero.")
 
@@ -332,7 +332,7 @@ def build_settlement_transfers(balances: dict[str, Decimal]) -> list[dict[str, o
     if not items:
         return []
     if len(items) > MAX_OPTIMAL_SETTLEMENT_PARTICIPANTS:
-        raise ExpenseServiceError("Settlement has too many non-zero balances to optimize safely.")
+        return _build_group_transfers(items)
 
     transfers: list[dict[str, object]] = []
     for group in _max_zero_sum_partition(items):
@@ -450,6 +450,7 @@ def build_expense_dashboard(*, trip_id, actor) -> dict[str, object]:
 
     return {
         "trip": trip,
+        "currency_code": trip.currency_code,
         "settlement": _active_settlement(trip, prefetch_transfers=True),
         "permissions": {"can_manage_expenses": membership.role == TripRole.CAPTAIN},
         "summary": {

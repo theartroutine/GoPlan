@@ -56,6 +56,7 @@ export type TripSettlement = {
 };
 
 export type ExpenseDashboardResponse = {
+  currency_code: string;
   summary: ExpenseMoneySummary;
   permissions: { can_manage_expenses: boolean };
   my_balance: { balance: string };

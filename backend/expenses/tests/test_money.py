@@ -96,7 +96,7 @@ class MoneyHelperTests(SimpleTestCase):
 
         self.assertEqual(transfers, [])
 
-    def test_build_settlement_transfers_rejects_more_than_safe_optimization_cap(self):
+    def test_build_settlement_transfers_falls_back_for_more_than_safe_optimization_cap(self):
         balances = {
             **{
                 f"debtor-{index}": Decimal("-1")
@@ -109,11 +109,18 @@ class MoneyHelperTests(SimpleTestCase):
             "large-creditor": Decimal("1"),
         }
 
-        with self.assertRaisesMessage(
-            ExpenseServiceError,
-            "Settlement has too many non-zero balances to optimize safely.",
-        ):
-            build_settlement_transfers(balances)
+        transfers = build_settlement_transfers(balances)
+
+        settled_balances = balances.copy()
+        for transfer in transfers:
+            self.assertGreater(transfer["amount"], Decimal("0"))
+            self.assertLess(balances[transfer["payer"]], Decimal("0"))
+            self.assertGreater(balances[transfer["recipient"]], Decimal("0"))
+            settled_balances[transfer["payer"]] += transfer["amount"]
+            settled_balances[transfer["recipient"]] -= transfer["amount"]
+
+        self.assertGreater(len(transfers), 0)
+        self.assertTrue(all(balance == 0 for balance in settled_balances.values()))
 
     def test_build_settlement_transfers_allows_safe_optimization_cap_boundary(self):
         balances = {
