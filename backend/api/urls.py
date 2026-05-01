@@ -7,6 +7,7 @@ urlpatterns = [
     path("notifications/", include("notifications.urls")),
     path("friends/", include("friends.urls")),
     path("trips/", include("trips.urls")),
+    path("trips/", include("expenses.urls")),
     path("invitations/", include("trips.invitation_urls")),
     path("media/", include("media.urls")),
 ]
