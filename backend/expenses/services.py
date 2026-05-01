@@ -5,15 +5,22 @@ from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 
 from django.db import transaction
+from django.db.models import Prefetch
 
 from expenses.models import (
     Expense,
+    ExpenseContribution,
     ExpenseLedgerEntry,
     ExpenseLedgerEventType,
     ExpenseParticipant,
 )
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
-from trips.services import TripNotFoundError, TripPermissionError, TripTerminalError
+from trips.services import (
+    NotTripMemberError,
+    TripNotFoundError,
+    TripPermissionError,
+    TripTerminalError,
+)
 
 
 ZERO_DECIMAL_CURRENCIES = {"VND", "JPY", "KRW"}
@@ -26,6 +33,14 @@ class ExpenseServiceError(Exception):
 
 class ExpenseLockedError(ExpenseServiceError):
     error_code = "EXPENSE_LOCKED"
+
+
+class ExpenseNotFoundError(ExpenseServiceError):
+    error_code = "EXPENSE_NOT_FOUND"
+
+
+class ContributionUserNotParticipantError(ExpenseServiceError):
+    error_code = "CONTRIBUTION_USER_NOT_PARTICIPANT"
 
 
 def _assert_captain(trip: Trip, actor) -> None:
@@ -41,6 +56,36 @@ def _assert_captain(trip: Trip, actor) -> None:
 def _assert_trip_open_for_expenses(trip: Trip) -> None:
     if trip.status == TripStatus.CANCELLED:
         raise TripTerminalError("Cancelled trips cannot accept expenses.")
+
+
+def _get_member_trip(trip_id, actor) -> tuple[Trip, TripMember]:
+    try:
+        trip = Trip.objects.get(pk=trip_id)
+    except Trip.DoesNotExist:
+        raise TripNotFoundError("Trip not found.")
+
+    try:
+        membership = TripMember.objects.get(
+            trip=trip,
+            user=actor,
+            status=MemberStatus.ACTIVE,
+        )
+    except TripMember.DoesNotExist:
+        raise NotTripMemberError("You are not an active member of this trip.")
+
+    return trip, membership
+
+
+def _get_expense_for_update(trip: Trip, expense_id) -> Expense:
+    try:
+        return Expense.objects.select_for_update().get(pk=expense_id, trip=trip)
+    except Expense.DoesNotExist:
+        raise ExpenseNotFoundError("Expense not found.")
+
+
+def _assert_expense_unlocked(expense: Expense) -> None:
+    if expense.locked_at is not None:
+        raise ExpenseLockedError("Locked expenses cannot be changed.")
 
 
 def currency_minor_unit_factor(currency_code: str) -> int:
@@ -69,6 +114,22 @@ def normalize_currency_amount(amount: Decimal, currency_code: str) -> Decimal:
 
     if normalized_amount <= 0:
         raise ExpenseServiceError("Amount must be greater than zero.")
+
+    return normalized_amount
+
+
+def normalize_non_negative_currency_amount(amount: Decimal, currency_code: str) -> Decimal:
+    quantum = currency_amount_quantum(currency_code)
+    try:
+        normalized_amount = amount.quantize(quantum)
+    except InvalidOperation as exc:
+        raise ExpenseServiceError("Invalid amount for this currency.") from exc
+
+    if amount != normalized_amount:
+        raise ExpenseServiceError("Amount has too many decimal places for this currency.")
+
+    if normalized_amount < 0:
+        raise ExpenseServiceError("Amount must be greater than or equal to zero.")
 
     return normalized_amount
 
@@ -219,6 +280,126 @@ def build_settlement_transfers(balances: dict[str, Decimal]) -> list[dict[str, o
         transfers.extend(_build_group_transfers(group_items))
 
     return transfers
+
+
+@transaction.atomic
+def set_contribution(
+    *,
+    trip_id,
+    expense_id,
+    target_user_id,
+    actor,
+    amount: Decimal,
+) -> ExpenseContribution:
+    trip, membership = _get_member_trip(trip_id, actor)
+    if membership.role != TripRole.CAPTAIN:
+        raise TripPermissionError("Only the trip captain can perform this action.")
+
+    expense = _get_expense_for_update(trip, expense_id)
+    _assert_expense_unlocked(expense)
+    normalized_amount = normalize_non_negative_currency_amount(amount, expense.currency_code)
+
+    if not ExpenseParticipant.objects.filter(expense=expense, user_id=target_user_id).exists():
+        raise ContributionUserNotParticipantError(
+            "Contribution user must be in the expense participant snapshot."
+        )
+
+    contribution, _created = ExpenseContribution.objects.update_or_create(
+        expense=expense,
+        user_id=target_user_id,
+        defaults={
+            "amount": normalized_amount,
+            "updated_by": actor,
+        },
+    )
+
+    ExpenseLedgerEntry.objects.create(
+        trip=trip,
+        expense=expense,
+        actor=actor,
+        event_type=ExpenseLedgerEventType.CONTRIBUTION_SET,
+        payload={
+            "user_id": str(target_user_id),
+            "amount": str(normalized_amount),
+        },
+    )
+
+    return contribution
+
+
+def _expense_financials(expense: Expense) -> dict[str, object]:
+    participants = list(expense.participants.all())
+    contributions_by_user_id = {
+        contribution.user_id: contribution.amount
+        for contribution in expense.contributions.all()
+    }
+    paid_total = sum(contributions_by_user_id.values(), Decimal("0"))
+    surplus = max(paid_total - expense.total_amount, Decimal("0"))
+    missing = max(expense.total_amount - paid_total, Decimal("0"))
+
+    balances: dict[str, Decimal] = {}
+    for participant in participants:
+        user_key = str(participant.user_id)
+        paid_amount = contributions_by_user_id.get(participant.user_id, Decimal("0"))
+        balances[user_key] = paid_amount - participant.share_amount
+
+    if surplus > 0:
+        collector_key = str(expense.collector_id)
+        balances[collector_key] = balances.get(collector_key, Decimal("0")) - surplus
+
+    return {
+        "paid_amount": paid_total,
+        "surplus_amount": surplus,
+        "missing_amount": missing,
+        "balances": balances,
+    }
+
+
+def build_expense_dashboard(*, trip_id, actor) -> dict[str, object]:
+    trip, membership = _get_member_trip(trip_id, actor)
+    expenses = (
+        Expense.objects.filter(trip=trip)
+        .select_related("collector", "created_by")
+        .prefetch_related(
+            Prefetch("participants", queryset=ExpenseParticipant.objects.select_related("user")),
+            Prefetch("contributions", queryset=ExpenseContribution.objects.select_related("user")),
+        )
+        .order_by("-created_at")
+    )
+
+    total_amount = Decimal("0")
+    paid_amount = Decimal("0")
+    surplus_amount = Decimal("0")
+    missing_amount = Decimal("0")
+    expense_rows: list[dict[str, object]] = []
+    member_balances: dict[str, dict[str, Decimal]] = {}
+
+    for expense in expenses:
+        financials = _expense_financials(expense)
+        expense_rows.append({"expense": expense, "financials": financials})
+
+        total_amount += expense.total_amount
+        paid_amount += financials["paid_amount"]
+        surplus_amount += financials["surplus_amount"]
+        missing_amount += financials["missing_amount"]
+
+        for user_key, balance in financials["balances"].items():
+            if user_key not in member_balances:
+                member_balances[user_key] = {"balance": Decimal("0")}
+            member_balances[user_key]["balance"] += balance
+
+    return {
+        "trip": trip,
+        "permissions": {"can_manage_expenses": membership.role == TripRole.CAPTAIN},
+        "summary": {
+            "total_amount": total_amount,
+            "paid_amount": paid_amount,
+            "surplus_amount": surplus_amount,
+            "missing_amount": missing_amount,
+        },
+        "expenses": expense_rows,
+        "member_balances": member_balances,
+    }
 
 
 @transaction.atomic
