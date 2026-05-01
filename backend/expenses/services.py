@@ -4,8 +4,9 @@ from collections.abc import Sequence, Sized
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
+from django.utils import timezone
 
 from expenses.models import (
     Expense,
@@ -13,6 +14,9 @@ from expenses.models import (
     ExpenseLedgerEntry,
     ExpenseLedgerEventType,
     ExpenseParticipant,
+    SettlementStatus,
+    SettlementTransfer,
+    TripSettlement,
 )
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 from trips.services import (
@@ -43,6 +47,26 @@ class ContributionUserNotParticipantError(ExpenseServiceError):
     error_code = "CONTRIBUTION_USER_NOT_PARTICIPANT"
 
 
+class SettlementAlreadyFinalizedError(ExpenseServiceError):
+    error_code = "SETTLEMENT_ALREADY_FINALIZED"
+
+
+class SettlementNotFinalizedError(ExpenseServiceError):
+    error_code = "SETTLEMENT_NOT_FINALIZED"
+
+
+class TransferNotFoundError(ExpenseServiceError):
+    error_code = "TRANSFER_NOT_FOUND"
+
+
+class NotTransferPayerError(ExpenseServiceError):
+    error_code = "NOT_TRANSFER_PAYER"
+
+
+class NotTransferRecipientError(ExpenseServiceError):
+    error_code = "NOT_TRANSFER_RECIPIENT"
+
+
 def _assert_captain(trip: Trip, actor) -> None:
     if not TripMember.objects.filter(
         trip=trip,
@@ -58,9 +82,12 @@ def _assert_trip_open_for_expenses(trip: Trip) -> None:
         raise TripTerminalError("Cancelled trips cannot accept expenses.")
 
 
-def _get_member_trip(trip_id, actor) -> tuple[Trip, TripMember]:
+def _get_member_trip(trip_id, actor, *, for_update: bool = False) -> tuple[Trip, TripMember]:
     try:
-        trip = Trip.objects.get(pk=trip_id)
+        trip_queryset = Trip.objects
+        if for_update:
+            trip_queryset = trip_queryset.select_for_update()
+        trip = trip_queryset.get(pk=trip_id)
     except Trip.DoesNotExist:
         raise TripNotFoundError("Trip not found.")
 
@@ -86,6 +113,39 @@ def _get_expense_for_update(trip: Trip, expense_id) -> Expense:
 def _assert_expense_unlocked(expense: Expense) -> None:
     if expense.locked_at is not None:
         raise ExpenseLockedError("Locked expenses cannot be changed.")
+
+
+def _active_settlement(
+    trip: Trip,
+    *,
+    for_update: bool = False,
+    prefetch_transfers: bool = False,
+) -> TripSettlement | None:
+    queryset = TripSettlement.objects.filter(trip=trip, status=SettlementStatus.FINALIZED)
+    if for_update:
+        queryset = queryset.select_for_update()
+    if prefetch_transfers:
+        queryset = queryset.prefetch_related("transfers__payer", "transfers__recipient")
+    return queryset.order_by("-created_at").first()
+
+
+def _get_active_transfer(trip: Trip, transfer_id) -> SettlementTransfer:
+    try:
+        return (
+            SettlementTransfer.objects.select_related(
+                "payer",
+                "recipient",
+                "settlement",
+            )
+            .select_for_update()
+            .get(
+                pk=transfer_id,
+                settlement__trip=trip,
+                settlement__status=SettlementStatus.FINALIZED,
+            )
+        )
+    except SettlementTransfer.DoesNotExist:
+        raise TransferNotFoundError("Transfer not found.")
 
 
 def currency_minor_unit_factor(currency_code: str) -> int:
@@ -291,7 +351,7 @@ def set_contribution(
     actor,
     amount: Decimal,
 ) -> ExpenseContribution:
-    trip, membership = _get_member_trip(trip_id, actor)
+    trip, membership = _get_member_trip(trip_id, actor, for_update=True)
     if membership.role != TripRole.CAPTAIN:
         raise TripPermissionError("Only the trip captain can perform this action.")
 
@@ -390,6 +450,7 @@ def build_expense_dashboard(*, trip_id, actor) -> dict[str, object]:
 
     return {
         "trip": trip,
+        "settlement": _active_settlement(trip, prefetch_transfers=True),
         "permissions": {"can_manage_expenses": membership.role == TripRole.CAPTAIN},
         "summary": {
             "total_amount": total_amount,
@@ -419,6 +480,8 @@ def create_expense(
 
     _assert_captain(trip, actor)
     _assert_trip_open_for_expenses(trip)
+    if _active_settlement(trip) is not None:
+        raise SettlementAlreadyFinalizedError("Finalized trips cannot accept new expenses.")
 
     active_memberships = list(
         TripMember.objects.select_related("user")
@@ -468,3 +531,138 @@ def create_expense(
     )
 
     return expense
+
+
+@transaction.atomic
+def finalize_settlement(*, trip_id, actor) -> TripSettlement:
+    trip, membership = _get_member_trip(trip_id, actor, for_update=True)
+    if membership.role != TripRole.CAPTAIN:
+        raise TripPermissionError("Only the trip captain can perform this action.")
+
+    if _active_settlement(trip) is not None:
+        raise SettlementAlreadyFinalizedError("This trip already has a finalized settlement.")
+
+    list(Expense.objects.select_for_update().filter(trip=trip).order_by("id"))
+    if _active_settlement(trip) is not None:
+        raise SettlementAlreadyFinalizedError("This trip already has a finalized settlement.")
+
+    dashboard = build_expense_dashboard(trip_id=trip.id, actor=actor)
+    balances = {
+        user_id: row["balance"]
+        for user_id, row in dashboard["member_balances"].items()
+    }
+    transfer_rows = build_settlement_transfers(balances)
+    now = timezone.now()
+
+    try:
+        settlement = TripSettlement.objects.create(
+            trip=trip,
+            status=SettlementStatus.FINALIZED,
+            finalized_by=actor,
+            finalized_at=now,
+        )
+    except IntegrityError as exc:
+        raise SettlementAlreadyFinalizedError(
+            "This trip already has a finalized settlement."
+        ) from exc
+    Expense.objects.filter(trip=trip).update(locked_at=now)
+    SettlementTransfer.objects.bulk_create(
+        [
+            SettlementTransfer(
+                settlement=settlement,
+                payer_id=transfer["payer"],
+                recipient_id=transfer["recipient"],
+                amount=transfer["amount"],
+            )
+            for transfer in transfer_rows
+        ]
+    )
+    ExpenseLedgerEntry.objects.create(
+        trip=trip,
+        actor=actor,
+        event_type=ExpenseLedgerEventType.SETTLEMENT_FINALIZED,
+        payload={
+            "settlement_id": str(settlement.id),
+            "transfer_count": len(transfer_rows),
+        },
+    )
+
+    return (
+        TripSettlement.objects.prefetch_related("transfers__payer", "transfers__recipient")
+        .get(pk=settlement.pk)
+    )
+
+
+@transaction.atomic
+def reopen_settlement(*, trip_id, actor) -> TripSettlement:
+    trip, membership = _get_member_trip(trip_id, actor, for_update=True)
+    if membership.role != TripRole.CAPTAIN:
+        raise TripPermissionError("Only the trip captain can perform this action.")
+
+    settlement = _active_settlement(trip, for_update=True)
+    if settlement is None:
+        raise SettlementNotFinalizedError("This trip does not have a finalized settlement.")
+
+    now = timezone.now()
+    settlement.status = SettlementStatus.REOPENED
+    settlement.reopened_by = actor
+    settlement.reopened_at = now
+    settlement.save(update_fields=["status", "reopened_by", "reopened_at"])
+    Expense.objects.filter(trip=trip).update(locked_at=None)
+    ExpenseLedgerEntry.objects.create(
+        trip=trip,
+        actor=actor,
+        event_type=ExpenseLedgerEventType.SETTLEMENT_REOPENED,
+        payload={"settlement_id": str(settlement.id)},
+    )
+
+    return (
+        TripSettlement.objects.prefetch_related("transfers__payer", "transfers__recipient")
+        .get(pk=settlement.pk)
+    )
+
+
+@transaction.atomic
+def mark_transfer_sent(*, trip_id, transfer_id, actor) -> SettlementTransfer:
+    trip, _membership = _get_member_trip(trip_id, actor, for_update=True)
+    transfer = _get_active_transfer(trip, transfer_id)
+
+    if transfer.payer_id != actor.id:
+        raise NotTransferPayerError("Only the transfer payer can mark it sent.")
+
+    transfer.payer_marked_sent_at = timezone.now()
+    transfer.save(update_fields=["payer_marked_sent_at"])
+    ExpenseLedgerEntry.objects.create(
+        trip=trip,
+        actor=actor,
+        event_type=ExpenseLedgerEventType.TRANSFER_MARKED_SENT,
+        payload={
+            "settlement_id": str(transfer.settlement_id),
+            "transfer_id": str(transfer.id),
+        },
+    )
+
+    return transfer
+
+
+@transaction.atomic
+def confirm_transfer_received(*, trip_id, transfer_id, actor) -> SettlementTransfer:
+    trip, _membership = _get_member_trip(trip_id, actor, for_update=True)
+    transfer = _get_active_transfer(trip, transfer_id)
+
+    if transfer.recipient_id != actor.id:
+        raise NotTransferRecipientError("Only the transfer recipient can confirm receipt.")
+
+    transfer.recipient_confirmed_at = timezone.now()
+    transfer.save(update_fields=["recipient_confirmed_at"])
+    ExpenseLedgerEntry.objects.create(
+        trip=trip,
+        actor=actor,
+        event_type=ExpenseLedgerEventType.TRANSFER_CONFIRMED_RECEIVED,
+        payload={
+            "settlement_id": str(transfer.settlement_id),
+            "transfer_id": str(transfer.id),
+        },
+    )
+
+    return transfer

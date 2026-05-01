@@ -17,8 +17,10 @@ from expenses.services import (
     ContributionUserNotParticipantError,
     ExpenseLockedError,
     ExpenseServiceError,
+    SettlementAlreadyFinalizedError,
     build_expense_dashboard,
     create_expense,
+    finalize_settlement,
     set_contribution,
 )
 from test_helpers import create_completed_user
@@ -257,6 +259,32 @@ class ExpenseCreationServiceTests(TestCase):
             )
 
         self.assertEqual(Expense.objects.count(), 0)
+
+    def test_create_expense_after_finalize_raises_settlement_already_finalized(self):
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Dinner",
+            total_amount=Decimal("600000"),
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.captain.id,
+            actor=self.captain,
+            amount=Decimal("600000"),
+        )
+        finalize_settlement(trip_id=self.trip.id, actor=self.captain)
+
+        with self.assertRaises(SettlementAlreadyFinalizedError):
+            create_expense(
+                trip_id=self.trip.id,
+                actor=self.captain,
+                title="Late Booking",
+                total_amount=Decimal("300000"),
+            )
+
+        self.assertEqual(Expense.objects.count(), 1)
 
 
 class ExpenseContributionServiceTests(TestCase):

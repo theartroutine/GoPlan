@@ -10,6 +10,8 @@ from expenses.serializers import (
     CreateExpenseSerializer,
     ExpenseResponseSerializer,
     SetContributionSerializer,
+    SettlementTransferSerializer,
+    TripSettlementSerializer,
     serialize_dashboard_response,
 )
 from expenses.services import (
@@ -17,8 +19,17 @@ from expenses.services import (
     ExpenseLockedError,
     ExpenseNotFoundError,
     ExpenseServiceError,
+    NotTransferPayerError,
+    NotTransferRecipientError,
+    SettlementAlreadyFinalizedError,
+    SettlementNotFinalizedError,
+    TransferNotFoundError,
     build_expense_dashboard,
+    confirm_transfer_received,
     create_expense,
+    finalize_settlement,
+    mark_transfer_sent,
+    reopen_settlement,
     set_contribution,
 )
 from trips.permissions import IsProfileCompleted
@@ -87,6 +98,8 @@ class ExpenseListCreateAPIView(APIView):
             return _permission_error_response(exc)
         except TripTerminalError as exc:
             return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
+        except SettlementAlreadyFinalizedError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
         except ExpenseServiceError as exc:
             return _service_error_response(exc, status_code=status.HTTP_400_BAD_REQUEST)
 
@@ -123,3 +136,81 @@ class ExpenseContributionAPIView(APIView):
             return _service_error_response(exc, status_code=status.HTTP_400_BAD_REQUEST)
 
         return Response(ContributionResponseSerializer(contribution).data)
+
+
+class SettlementFinalizeAPIView(APIView):
+    permission_classes = EXPENSE_PERMISSIONS
+    throttle_scope = "settlement_finalize"
+
+    def post(self, request, trip_id):
+        try:
+            settlement = finalize_settlement(trip_id=trip_id, actor=request.user)
+        except TripNotFoundError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except TripPermissionError as exc:
+            return _permission_error_response(exc)
+        except SettlementAlreadyFinalizedError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
+        except ExpenseServiceError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
+
+        return Response(TripSettlementSerializer(settlement).data)
+
+
+class SettlementReopenAPIView(APIView):
+    permission_classes = EXPENSE_PERMISSIONS
+    throttle_scope = "settlement_reopen"
+
+    def post(self, request, trip_id):
+        try:
+            settlement = reopen_settlement(trip_id=trip_id, actor=request.user)
+        except TripNotFoundError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except TripPermissionError as exc:
+            return _permission_error_response(exc)
+        except SettlementNotFinalizedError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
+
+        return Response(TripSettlementSerializer(settlement).data)
+
+
+class SettlementTransferSentAPIView(APIView):
+    permission_classes = EXPENSE_PERMISSIONS
+    throttle_scope = "settlement_transfer_action"
+
+    def post(self, request, trip_id, transfer_id):
+        try:
+            transfer = mark_transfer_sent(
+                trip_id=trip_id,
+                transfer_id=transfer_id,
+                actor=request.user,
+            )
+        except (TripNotFoundError, TransferNotFoundError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
+        except (NotTripMemberError, NotTransferPayerError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+
+        return Response(SettlementTransferSerializer(transfer).data)
+
+
+class SettlementTransferReceivedAPIView(APIView):
+    permission_classes = EXPENSE_PERMISSIONS
+    throttle_scope = "settlement_transfer_action"
+
+    def post(self, request, trip_id, transfer_id):
+        try:
+            transfer = confirm_transfer_received(
+                trip_id=trip_id,
+                transfer_id=transfer_id,
+                actor=request.user,
+            )
+        except (TripNotFoundError, TransferNotFoundError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
+        except (NotTripMemberError, NotTransferRecipientError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+
+        return Response(SettlementTransferSerializer(transfer).data)

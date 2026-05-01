@@ -54,6 +54,28 @@ class ContributionResponseSerializer(serializers.Serializer):
         }
 
 
+class SettlementTransferSerializer(serializers.Serializer):
+    def to_representation(self, transfer):
+        return {
+            "id": str(transfer.id),
+            "payer": serialize_user(transfer.payer),
+            "recipient": serialize_user(transfer.recipient),
+            "amount": format_decimal(transfer.amount),
+            "payer_marked_sent_at": transfer.payer_marked_sent_at,
+            "recipient_confirmed_at": transfer.recipient_confirmed_at,
+        }
+
+
+class TripSettlementSerializer(serializers.Serializer):
+    def to_representation(self, settlement):
+        return {
+            "id": str(settlement.id),
+            "status": settlement.status,
+            "finalized_at": settlement.finalized_at,
+            "transfers": SettlementTransferSerializer(settlement.transfers.all(), many=True).data,
+        }
+
+
 def _expense_status(financials: dict[str, object]) -> str:
     if financials["surplus_amount"] > 0:
         return "OVERFUNDED"
@@ -79,6 +101,11 @@ def serialize_dashboard_response(dashboard: dict[str, object], *, request_user) 
         "permissions": dashboard["permissions"],
         "my_balance": member_balances.get(request_user_key, {"balance": "0"}),
         "member_balances": member_balances,
+        "settlement": (
+            TripSettlementSerializer(dashboard["settlement"]).data
+            if dashboard.get("settlement") is not None
+            else None
+        ),
         "expenses": [
             {
                 "id": str(row["expense"].id),
