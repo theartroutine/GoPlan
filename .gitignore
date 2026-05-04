@@ -28,6 +28,9 @@ notes/
 # Reports
 report/
 
+# Local Playwright CLI artifacts
+.playwright-cli/
+
 # Superpowers brainstorm sessions
 .superpowers/
 
