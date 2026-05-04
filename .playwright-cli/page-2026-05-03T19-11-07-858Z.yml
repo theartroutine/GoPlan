@@ -1,0 +1,329 @@
+- generic [ref=e1]:
+  - generic [ref=e31]:
+    - complementary [ref=e32]:
+      - generic [ref=e34]:
+        - generic [ref=e35]: G
+        - generic [ref=e36]: GoPlan
+      - navigation [ref=e38]:
+        - link "Dashboard" [ref=e39] [cursor=pointer]:
+          - /url: /
+          - img [ref=e40]
+          - generic [ref=e45]: Dashboard
+        - link "Friends" [ref=e46] [cursor=pointer]:
+          - /url: /friends
+          - img [ref=e47]
+          - generic [ref=e52]: Friends
+        - link "Profile" [ref=e53] [cursor=pointer]:
+          - /url: /profile
+          - img [ref=e54]
+          - generic [ref=e58]: Profile
+        - link "Settings" [ref=e59] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e60]
+          - generic [ref=e63]: Settings
+      - generic [ref=e64]:
+        - generic [ref=e65]:
+          - generic [ref=e67]: QM
+          - generic [ref=e68]:
+            - paragraph [ref=e69]: Quang Minh
+            - generic [ref=e70]:
+              - paragraph [ref=e71]: minhdemo#810001
+              - button "Copy tag" [ref=e72]:
+                - img
+        - button "Log out" [ref=e74]:
+          - img
+          - generic [ref=e75]: Log out
+    - generic [ref=e76]:
+      - banner [ref=e77]:
+        - button "Collapse sidebar" [ref=e78]:
+          - img
+        - generic [ref=e132]:
+          - link "Overview" [ref=e133] [cursor=pointer]:
+            - /url: /trips/c9e35e64-e605-46df-960b-227165268ac8/overview
+          - link "Member" [ref=e134] [cursor=pointer]:
+            - /url: /trips/c9e35e64-e605-46df-960b-227165268ac8/members
+          - link "Timeline" [ref=e135] [cursor=pointer]:
+            - /url: /trips/c9e35e64-e605-46df-960b-227165268ac8/timeline
+          - link "Expenses" [active] [ref=e136] [cursor=pointer]:
+            - /url: /trips/c9e35e64-e605-46df-960b-227165268ac8/expenses
+          - link "Chat" [ref=e137] [cursor=pointer]:
+            - /url: /trips/c9e35e64-e605-46df-960b-227165268ac8/chat
+        - button "Notifications" [ref=e93]:
+          - img [ref=e94]
+          - generic [ref=e97]: "2"
+      - main [ref=e98]:
+        - generic [ref=e138]:
+          - generic [ref=e139]:
+            - generic [ref=e140]:
+              - img "Capstone Demo - Da Nang cover" [ref=e142]
+              - generic [ref=e145]: Planning
+              - generic [ref=e147]:
+                - link "Edit trip" [ref=e148] [cursor=pointer]:
+                  - /url: /trips/c9e35e64-e605-46df-960b-227165268ac8/edit
+                  - img [ref=e149]
+                  - text: Edit trip
+                - button "Cancel trip" [ref=e152] [cursor=pointer]: Cancel trip
+            - generic [ref=e154]:
+              - heading "Capstone Demo - Da Nang" [level=1] [ref=e155]
+              - paragraph [ref=e156]:
+                - img [ref=e157]
+                - generic [ref=e160]: Da Nang, Vietnam
+          - generic [ref=e345]:
+            - generic [ref=e346]:
+              - generic [ref=e347]:
+                - heading "Chi phí chuyến đi" [level=1] [ref=e348]
+                - paragraph [ref=e349]: Theo dõi tổng tiền, số đã thu và trạng thái từng khoản chi.
+              - generic [ref=e350]:
+                - img [ref=e351]
+                - text: Locked by finalized settlement. Reopen settlement to edit.
+            - region "Expense summary" [ref=e354]:
+              - generic [ref=e355]:
+                - generic [ref=e357]:
+                  - generic [ref=e358]:
+                    - paragraph [ref=e359]: Tổng chi phí
+                    - paragraph [ref=e360]: 5.100.000 ₫
+                    - paragraph [ref=e361]: VND
+                  - img [ref=e363]
+                - generic [ref=e367]:
+                  - generic [ref=e368]:
+                    - paragraph [ref=e369]: Đã thu
+                    - paragraph [ref=e370]: 5.100.000 ₫
+                    - paragraph [ref=e371]: Tổng tiền đã đóng
+                  - img [ref=e373]
+                - generic [ref=e377]:
+                  - generic [ref=e378]:
+                    - paragraph [ref=e379]: Còn thiếu
+                    - paragraph [ref=e380]: 0 ₫
+                    - paragraph [ref=e381]: Cần thu thêm
+                  - img [ref=e383]
+                - generic [ref=e387]:
+                  - generic [ref=e388]:
+                    - paragraph [ref=e389]: Đóng dư
+                    - paragraph [ref=e390]: 0 ₫
+                    - paragraph [ref=e391]: Cần đối soát
+                  - img [ref=e393]
+                - generic [ref=e397]:
+                  - generic [ref=e398]:
+                    - paragraph [ref=e399]: Số dư của tôi
+                    - paragraph [ref=e400]: Được nhận 1.300.000 ₫
+                    - paragraph [ref=e401]: Theo ledger hiện tại
+                  - img [ref=e403]
+              - generic [ref=e408]:
+                - generic [ref=e409]:
+                  - paragraph [ref=e410]: Tiến độ thu tiền
+                  - paragraph [ref=e411]: 5.100.000 ₫ / 5.100.000 ₫
+                - paragraph [ref=e412]: 100%
+            - region "Settlement checklist" [ref=e415]:
+              - generic [ref=e416]:
+                - generic [ref=e417]:
+                  - generic [ref=e418]:
+                    - img [ref=e420]
+                    - heading "Settlement checklist" [level=2] [ref=e424]
+                  - paragraph [ref=e425]: Đánh dấu từng khoản chuyển tiền. Thông báo realtime sẽ có ở bước sau.
+                - generic [ref=e426]: 2 khoản
+              - generic [ref=e427]:
+                - article [ref=e428]:
+                  - generic [ref=e429]:
+                    - generic [ref=e430]:
+                      - paragraph [ref=e431]: Payer
+                      - paragraph [ref=e432]: Bao An
+                      - paragraph [ref=e433]: andemo#810002
+                    - img [ref=e434]
+                    - generic [ref=e436]:
+                      - paragraph [ref=e437]: Recipient
+                      - paragraph [ref=e438]: Quang Minh
+                      - paragraph [ref=e439]: minhdemo#810001
+                    - paragraph [ref=e440]: 500.000 ₫
+                  - generic [ref=e441]:
+                    - generic [ref=e442]:
+                      - generic [ref=e443]:
+                        - img [ref=e444]
+                        - text: Chưa gửi
+                      - generic [ref=e447]:
+                        - img [ref=e448]
+                        - text: Chưa nhận
+                    - button "Received" [ref=e451]:
+                      - img
+                      - text: Received
+                - article [ref=e452]:
+                  - generic [ref=e453]:
+                    - generic [ref=e454]:
+                      - paragraph [ref=e455]: Payer
+                      - paragraph [ref=e456]: Ngoc Lan
+                      - paragraph [ref=e457]: landemo#810003
+                    - img [ref=e458]
+                    - generic [ref=e460]:
+                      - paragraph [ref=e461]: Recipient
+                      - paragraph [ref=e462]: Quang Minh
+                      - paragraph [ref=e463]: minhdemo#810001
+                    - paragraph [ref=e464]: 800.000 ₫
+                  - generic [ref=e465]:
+                    - generic [ref=e466]:
+                      - generic [ref=e467]:
+                        - img [ref=e468]
+                        - text: Chưa gửi
+                      - generic [ref=e471]:
+                        - img [ref=e472]
+                        - text: Chưa nhận
+                    - button "Received" [ref=e475]:
+                      - img
+                      - text: Received
+            - generic [ref=e476]:
+              - region "Expense list" [ref=e477]:
+                - button "Open Welcome dinner" [pressed] [ref=e478]:
+                  - generic [ref=e479]:
+                    - generic [ref=e480]:
+                      - generic [ref=e481]:
+                        - heading "Welcome dinner" [level=3] [ref=e482]
+                        - img "Locked" [ref=e483]
+                      - paragraph [ref=e487]: Shared first dinner near the beach.
+                      - paragraph [ref=e488]: Locked by finalized settlement. Reopen settlement to edit.
+                    - generic [ref=e489]: Đã đủ tiền
+                  - generic [ref=e490]:
+                    - generic [ref=e491]:
+                      - paragraph [ref=e492]: Tổng
+                      - paragraph [ref=e493]: 1.200.000 ₫
+                    - generic [ref=e494]:
+                      - paragraph [ref=e495]: Đã thu
+                      - paragraph [ref=e496]: 1.200.000 ₫
+                  - generic [ref=e497]:
+                    - generic [ref=e498]:
+                      - generic [ref=e499]: Funding
+                      - generic [ref=e500]: 100%
+                    - paragraph [ref=e503]: Funded exactly.
+                  - generic [ref=e504]:
+                    - img [ref=e505]
+                    - generic [ref=e508]: "Người thu: Bao An"
+                - button "Open Airport transfer" [ref=e509]:
+                  - generic [ref=e510]:
+                    - generic [ref=e511]:
+                      - generic [ref=e512]:
+                        - heading "Airport transfer" [level=3] [ref=e513]
+                        - img "Locked" [ref=e514]
+                      - paragraph [ref=e518]: Van from airport to hotel.
+                      - paragraph [ref=e519]: Locked by finalized settlement. Reopen settlement to edit.
+                    - generic [ref=e520]: Đã đủ tiền
+                  - generic [ref=e521]:
+                    - generic [ref=e522]:
+                      - paragraph [ref=e523]: Tổng
+                      - paragraph [ref=e524]: 900.000 ₫
+                    - generic [ref=e525]:
+                      - paragraph [ref=e526]: Đã thu
+                      - paragraph [ref=e527]: 900.000 ₫
+                  - generic [ref=e528]:
+                    - generic [ref=e529]:
+                      - generic [ref=e530]: Funding
+                      - generic [ref=e531]: 100%
+                    - paragraph [ref=e534]: Funded exactly.
+                  - generic [ref=e535]:
+                    - img [ref=e536]
+                    - generic [ref=e539]: "Người thu: Ngoc Lan"
+                - button "Open Hotel deposit" [ref=e540]:
+                  - generic [ref=e541]:
+                    - generic [ref=e542]:
+                      - generic [ref=e543]:
+                        - heading "Hotel deposit" [level=3] [ref=e544]
+                        - img "Locked" [ref=e545]
+                      - paragraph [ref=e549]: First payment for shared rooms.
+                      - paragraph [ref=e550]: Locked by finalized settlement. Reopen settlement to edit.
+                    - generic [ref=e551]: Đã đủ tiền
+                  - generic [ref=e552]:
+                    - generic [ref=e553]:
+                      - paragraph [ref=e554]: Tổng
+                      - paragraph [ref=e555]: 3.000.000 ₫
+                    - generic [ref=e556]:
+                      - paragraph [ref=e557]: Đã thu
+                      - paragraph [ref=e558]: 3.000.000 ₫
+                  - generic [ref=e559]:
+                    - generic [ref=e560]:
+                      - generic [ref=e561]: Funding
+                      - generic [ref=e562]: 100%
+                    - paragraph [ref=e565]: Funded exactly.
+                  - generic [ref=e566]:
+                    - img [ref=e567]
+                    - generic [ref=e570]: "Người thu: Quang Minh"
+              - complementary [ref=e571]:
+                - generic [ref=e572]:
+                  - generic [ref=e573]:
+                    - generic [ref=e574]:
+                      - img [ref=e575]
+                      - heading "Welcome dinner" [level=2] [ref=e577]
+                    - paragraph [ref=e578]: Shared first dinner near the beach.
+                  - generic [ref=e579]:
+                    - img [ref=e580]
+                    - generic [ref=e584]: Locked
+                - paragraph [ref=e585]: Locked by finalized settlement. Reopen settlement to edit.
+                - generic [ref=e586]:
+                  - generic [ref=e587]:
+                    - generic [ref=e588]: Tổng cần thu
+                    - generic [ref=e589]: 1.200.000 ₫
+                  - generic [ref=e590]:
+                    - generic [ref=e591]: Đã thu
+                    - generic [ref=e592]: 1.200.000 ₫
+                  - generic [ref=e593]:
+                    - generic [ref=e594]: Còn thiếu
+                    - generic [ref=e595]: 0 ₫
+                  - generic [ref=e596]:
+                    - generic [ref=e597]: Đóng dư
+                    - generic [ref=e598]: 0 ₫
+                - generic [ref=e600]:
+                  - generic [ref=e601]:
+                    - img [ref=e602]
+                    - generic [ref=e605]:
+                      - paragraph [ref=e606]: Bao An
+                      - paragraph [ref=e607]: andemo#810002
+                  - generic [ref=e608]: Người thu
+                - generic [ref=e610]:
+                  - generic [ref=e611]: Đã đủ tiền
+                  - generic [ref=e612]: 100%
+                - region "Contribution snapshot" [ref=e615]:
+                  - generic [ref=e616]:
+                    - heading "Đóng góp theo thành viên" [level=3] [ref=e617]
+                    - generic [ref=e618]: Chỉ xem
+                  - generic [ref=e619]:
+                    - generic [ref=e620]:
+                      - generic [ref=e622]:
+                        - paragraph [ref=e623]: Quang Minh
+                        - paragraph [ref=e624]: minhdemo#810001
+                      - generic [ref=e625]:
+                        - generic [ref=e626]:
+                          - text: Phần chia
+                          - paragraph [ref=e627]: 400.000 ₫
+                        - generic [ref=e628]:
+                          - text: Đã đóng
+                          - paragraph [ref=e629]: 0 ₫
+                        - generic [ref=e630]:
+                          - text: Số dư
+                          - paragraph [ref=e631]: "-400.000 ₫"
+                    - generic [ref=e632]:
+                      - generic [ref=e634]:
+                        - paragraph [ref=e635]: Bao An
+                        - paragraph [ref=e636]: andemo#810002
+                      - generic [ref=e637]:
+                        - generic [ref=e638]:
+                          - text: Phần chia
+                          - paragraph [ref=e639]: 400.000 ₫
+                        - generic [ref=e640]:
+                          - text: Đã đóng
+                          - paragraph [ref=e641]: 1.200.000 ₫
+                        - generic [ref=e642]:
+                          - text: Số dư
+                          - paragraph [ref=e643]: 800.000 ₫
+                    - generic [ref=e644]:
+                      - generic [ref=e646]:
+                        - paragraph [ref=e647]: Ngoc Lan
+                        - paragraph [ref=e648]: landemo#810003
+                      - generic [ref=e649]:
+                        - generic [ref=e650]:
+                          - text: Phần chia
+                          - paragraph [ref=e651]: 400.000 ₫
+                        - generic [ref=e652]:
+                          - text: Đã đóng
+                          - paragraph [ref=e653]: 0 ₫
+                        - generic [ref=e654]:
+                          - text: Số dư
+                          - paragraph [ref=e655]: "-400.000 ₫"
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e9] [cursor=pointer]:
+    - img [ref=e10]
+  - alert [ref=e30]
