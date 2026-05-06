@@ -417,6 +417,68 @@ class SettlementAPITests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["transfers"], [])
 
+    def test_mark_transfer_sent_is_idempotent(self):
+        self._finalize()
+        transfer = SettlementTransfer.objects.get(payer=self.member_a)
+
+        first_response = self.client.post(
+            self._sent_url(transfer),
+            {},
+            format="json",
+            **_auth(self.member_a),
+        )
+        transfer.refresh_from_db()
+        first_marked_at = transfer.payer_marked_sent_at
+
+        second_response = self.client.post(
+            self._sent_url(transfer),
+            {},
+            format="json",
+            **_auth(self.member_a),
+        )
+        transfer.refresh_from_db()
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(transfer.payer_marked_sent_at, first_marked_at)
+        self.assertEqual(
+            ExpenseLedgerEntry.objects.filter(
+                event_type=ExpenseLedgerEventType.TRANSFER_MARKED_SENT,
+            ).count(),
+            1,
+        )
+
+    def test_confirm_transfer_received_is_idempotent(self):
+        self._finalize()
+        transfer = SettlementTransfer.objects.get(payer=self.member_a)
+
+        first_response = self.client.post(
+            self._received_url(transfer),
+            {},
+            format="json",
+            **_auth(self.member_c),
+        )
+        transfer.refresh_from_db()
+        first_confirmed_at = transfer.recipient_confirmed_at
+
+        second_response = self.client.post(
+            self._received_url(transfer),
+            {},
+            format="json",
+            **_auth(self.member_c),
+        )
+        transfer.refresh_from_db()
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(transfer.recipient_confirmed_at, first_confirmed_at)
+        self.assertEqual(
+            ExpenseLedgerEntry.objects.filter(
+                event_type=ExpenseLedgerEventType.TRANSFER_CONFIRMED_RECEIVED,
+            ).count(),
+            1,
+        )
+
     def test_finalize_over_optimal_cap_uses_greedy_fallback(self):
         for index in range(17):
             member = create_completed_user(

@@ -826,6 +826,9 @@ def mark_transfer_sent(*, trip_id, transfer_id, actor) -> SettlementTransfer:
     if transfer.payer_id != actor.id:
         raise NotTransferPayerError("Only the transfer payer can mark it sent.")
 
+    if transfer.payer_marked_sent_at is not None:
+        return transfer
+
     transfer.payer_marked_sent_at = timezone.now()
     transfer.save(update_fields=["payer_marked_sent_at"])
     ExpenseLedgerEntry.objects.create(
@@ -849,6 +852,9 @@ def confirm_transfer_received(*, trip_id, transfer_id, actor) -> SettlementTrans
 
     if transfer.recipient_id != actor.id:
         raise NotTransferRecipientError("Only the transfer recipient can confirm receipt.")
+
+    if transfer.recipient_confirmed_at is not None:
+        return transfer
 
     transfer.recipient_confirmed_at = timezone.now()
     transfer.save(update_fields=["recipient_confirmed_at"])

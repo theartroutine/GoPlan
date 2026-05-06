@@ -272,28 +272,38 @@ export function ExpenseDetailPanel({
 }
 
 function getContributionGuidance(detail: ExpenseDetailResponse): string | null {
-  const missingParticipant = detail.participants.find((participant) => {
+  const missingParticipants = detail.participants.filter((participant) => {
     const contributedAmount = Number.parseFloat(participant.contributed_amount);
     const shareAmount = Number.parseFloat(participant.share_amount);
     return contributedAmount <= 0 && shareAmount > 0;
   });
 
-  if (missingParticipant) {
-    return `${missingParticipant.display_name} has not contributed their share of ${formatExpenseMoney(
-      missingParticipant.share_amount,
-      detail.currency_code,
-    )}.`;
+  if (missingParticipants.length > 0) {
+    const [first, ...rest] = missingParticipants;
+    if (rest.length === 0) {
+      return `${first.display_name} has not contributed their share of ${formatExpenseMoney(
+        first.share_amount,
+        detail.currency_code,
+      )}.`;
+    }
+    const others = rest.length === 1 ? "1 other" : `${rest.length} others`;
+    return `${first.display_name} and ${others} have not contributed their share yet.`;
   }
 
-  const coveringParticipant = detail.participants.find(
+  const coveringParticipants = detail.participants.filter(
     (participant) => Number.parseFloat(participant.balance) > 0,
   );
 
-  if (coveringParticipant) {
-    return `${coveringParticipant.display_name} is covering ${formatExpenseMoney(
-      coveringParticipant.balance,
-      detail.currency_code,
-    )} for this expense.`;
+  if (coveringParticipants.length > 0) {
+    const [first, ...rest] = coveringParticipants;
+    if (rest.length === 0) {
+      return `${first.display_name} is covering ${formatExpenseMoney(
+        first.balance,
+        detail.currency_code,
+      )} for this expense.`;
+    }
+    const others = rest.length === 1 ? "1 other" : `${rest.length} others`;
+    return `${first.display_name} and ${others} are covering extra for this expense.`;
   }
 
   return null;

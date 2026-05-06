@@ -76,6 +76,10 @@ export function SettlementPanel({
           "Could not update the transfer. Try again later.",
         ),
       }));
+      // Refresh dashboard so the user sees the authoritative state when the
+      // failure was caused by concurrent updates (e.g., transfer no longer
+      // exists, settlement reopened, role changed).
+      await onChanged();
     } finally {
       setPendingTransferIds((current) => {
         const next = new Set(current);

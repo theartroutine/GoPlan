@@ -1,5 +1,6 @@
 type ErrorResponse = {
   response?: {
+    status?: unknown;
     data?: unknown;
   };
 };
@@ -7,6 +8,18 @@ type ErrorResponse = {
 export function getExpenseErrorMessage(error: unknown, fallback: string): string {
   const data = (error as ErrorResponse | null)?.response?.data;
   return extractErrorMessage(data) ?? fallback;
+}
+
+export function getExpenseErrorStatus(error: unknown): number | null {
+  const status = (error as ErrorResponse | null)?.response?.status;
+  return typeof status === "number" ? status : null;
+}
+
+export function getExpenseErrorCode(error: unknown): string | null {
+  const data = (error as ErrorResponse | null)?.response?.data;
+  if (!data || typeof data !== "object") return null;
+  const code = (data as Record<string, unknown>).error_code;
+  return typeof code === "string" && code.trim() ? code : null;
 }
 
 function extractErrorMessage(data: unknown): string | null {

@@ -21,7 +21,10 @@ import type {
   ExpenseResponse,
 } from "@/features/trips/domain/expenses-types";
 import { useAuth } from "@/features/auth/application/auth-context";
-import { getExpenseErrorMessage } from "@/features/trips/domain/expenses-errors";
+import {
+  getExpenseErrorMessage,
+  getExpenseErrorStatus,
+} from "@/features/trips/domain/expenses-errors";
 import {
   deleteExpense,
   finalizeSettlement,
@@ -311,11 +314,18 @@ export function ExpensesTab() {
 
     setExpenseActionPending(true);
     setDetailError(null);
+    const targetExpenseId = expensePendingDelete.id;
     try {
-      await deleteExpense(tripId, expensePendingDelete.id);
+      try {
+        await deleteExpense(tripId, targetExpenseId);
+      } catch (err) {
+        // The expense may already have been removed by another captain. Treat
+        // 404 as an authoritative "already deleted" so the UI converges.
+        if (getExpenseErrorStatus(err) !== 404) throw err;
+      }
       const nextExpenseId = getNearestExpenseIdAfterDelete(
         expenseUrlState.visibleExpenses,
-        expensePendingDelete.id,
+        targetExpenseId,
       );
 
       updateExpenseUrlState({
