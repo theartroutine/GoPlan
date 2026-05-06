@@ -25,7 +25,7 @@ from expenses.services import (
 )
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
-from trips.services import NotTripMemberError, TripNotFoundError, TripPermissionError
+from trips.services import TripNotFoundError, TripPermissionError
 
 
 def _make_trip(created_by, **kwargs):
@@ -604,7 +604,7 @@ class ExpenseDashboardServiceTests(TestCase):
         with self.assertRaises(TripNotFoundError):
             build_expense_dashboard(trip_id=uuid.uuid4(), actor=self.captain)
 
-    def test_dashboard_non_member_raises_not_trip_member(self):
+    def test_dashboard_non_member_raises_trip_not_found(self):
         outsider = create_completed_user(
             "dashboard-outsider@example.com",
             "dashboardoutsider",
@@ -612,5 +612,5 @@ class ExpenseDashboardServiceTests(TestCase):
             display_name="Dashboard Outsider",
         )
 
-        with self.assertRaises(NotTripMemberError):
+        with self.assertRaises(TripNotFoundError):
             build_expense_dashboard(trip_id=self.trip.id, actor=outsider)

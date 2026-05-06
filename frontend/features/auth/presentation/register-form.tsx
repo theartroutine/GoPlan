@@ -37,8 +37,8 @@ export function RegisterForm() {
       setLoading(true);
 
       try {
-        const data = await bffRegister(email, password);
-        router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
+        await bffRegister(email, password);
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`);
       } catch (err) {
         if (axios.isAxiosError(err) && err.response?.data) {
           const errData = err.response.data;

@@ -101,6 +101,13 @@ def _validate_trip_serializer(serializer):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+def _trip_not_found_response():
+    return Response(
+        {"detail": "Trip not found.", "error_code": TripNotFoundError.error_code},
+        status=status.HTTP_404_NOT_FOUND,
+    )
+
+
 class TripListCreateAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
     throttle_scope = "trips_list_create"
@@ -150,8 +157,8 @@ class TripDetailUpdateAPIView(APIView):
             trip, my_membership = get_trip_detail(trip_id, request.user)
         except TripNotFoundError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_found_response()
         members = trip.memberships.filter(status=MemberStatus.ACTIVE).select_related("user")
         return Response({
             "trip": TripDetailSerializer(trip).data,
@@ -168,8 +175,8 @@ class TripDetailUpdateAPIView(APIView):
             trip, my_membership = get_trip_detail(trip_id, request.user)
         except TripNotFoundError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_found_response()
         if my_membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can edit trip info.", "error_code": "NOT_CAPTAIN"},
@@ -207,8 +214,8 @@ class TripInvitationsAPIView(APIView):
             trip, membership = get_trip_detail(trip_id, request.user)
         except TripNotFoundError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_found_response()
         if membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can view invitations.", "error_code": "NOT_CAPTAIN"},
@@ -222,8 +229,8 @@ class TripInvitationsAPIView(APIView):
             trip, membership = get_trip_detail(trip_id, request.user)
         except TripNotFoundError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_found_response()
         if membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can send invitations.", "error_code": "NOT_CAPTAIN"},
@@ -254,8 +261,8 @@ class InvitableFriendsAPIView(APIView):
             trip, membership = get_trip_detail(trip_id, request.user)
         except TripNotFoundError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_found_response()
         if membership.role != TripRole.CAPTAIN:
             return Response(
                 {"detail": "Only the captain can view invitable friends.", "error_code": "NOT_CAPTAIN"},
@@ -376,8 +383,8 @@ class TripTimelineAPIView(APIView):
             trip, my_membership = get_trip_detail(trip_id, request.user)
         except TripNotFoundError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_found_response()
 
         sections, custom_types = get_trip_timeline(trip)
         is_captain = my_membership.role == TripRole.CAPTAIN
@@ -402,8 +409,8 @@ class LeaveTripAPIView(APIView):
             leave_trip(trip_id=trip_id, actor=request.user)
         except TripNotFoundError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_found_response()
         except CaptainCannotLeaveError as exc:
             return Response({"detail": str(exc), "error_code": exc.error_code}, status=status.HTTP_400_BAD_REQUEST)
         except StatusTransitionError as exc:
@@ -422,7 +429,7 @@ def _handle_common(exc):
     if isinstance(exc, TripNotFoundError):
         return _err(str(exc), exc.error_code, status.HTTP_404_NOT_FOUND)
     if isinstance(exc, NotTripMemberError):
-        return _err(str(exc), exc.error_code, status.HTTP_403_FORBIDDEN)
+        return _err("Trip not found.", TripNotFoundError.error_code, status.HTTP_404_NOT_FOUND)
     if isinstance(exc, TripPermissionError):
         return _err(str(exc), exc.error_code, status.HTTP_403_FORBIDDEN)
     if isinstance(exc, TripTerminalError):

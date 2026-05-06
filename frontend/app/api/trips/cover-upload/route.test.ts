@@ -24,6 +24,7 @@ vi.mock("@/shared/http/config", () => ({
 import { POST } from "@/app/api/trips/cover-upload/route";
 
 describe("POST /api/trips/cover-upload", () => {
+  const maxUploadBytes = 5 * 1024 * 1024;
   const jar = {
     get: vi.fn(),
   };
@@ -43,6 +44,55 @@ describe("POST /api/trips/cover-upload", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("rejects oversized bodies before parsing multipart data", async () => {
+    const request = {
+      headers: new Headers({
+        Authorization: "Bearer access-token",
+        "Content-Length": String(maxUploadBytes + 1),
+      }),
+      formData: vi.fn().mockResolvedValue(new FormData()),
+    };
+
+    const response = await POST(request as never);
+
+    expect(response.status).toBe(413);
+    expect(request.formData).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      detail: "File too large. Maximum size is 5 MB.",
+      error_code: "FILE_TOO_LARGE",
+    });
+  });
+
+  it("rejects oversized files before forwarding upstream", async () => {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new File([new Uint8Array(maxUploadBytes + 1)], "large.png", { type: "image/png" }),
+    );
+    const request = {
+      headers: new Headers({
+        Authorization: "Bearer access-token",
+      }),
+      formData: vi.fn().mockResolvedValue(formData),
+    };
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ url: "https://cdn.example.com/large.png" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const response = await POST(request as never);
+
+    expect(response.status).toBe(413);
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      detail: "File too large. Maximum size is 5 MB.",
+      error_code: "FILE_TOO_LARGE",
+    });
   });
 
   it("refreshes and retries when the provided bearer token is stale", async () => {

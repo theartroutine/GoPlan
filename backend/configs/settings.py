@@ -108,6 +108,9 @@ STATIC_URL = 'static/'
 # -------- Media Files --------
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media_files'
+UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
+FILE_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
 
 # -------- Cross-Origin Settings --------
 CORS_ALLOWED_ORIGINS = os.environ['CORS_ALLOWED_ORIGINS'].split(',')

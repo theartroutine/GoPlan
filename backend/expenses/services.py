@@ -87,17 +87,21 @@ def _assert_trip_open_for_expenses(trip: Trip) -> None:
 
 
 def _get_member_trip(trip_id, actor, *, for_update: bool = False) -> tuple[Trip, TripMember]:
-    trip = _get_trip(trip_id, for_update=for_update)
-
+    membership_queryset = TripMember.objects.select_related("trip").filter(
+        trip_id=trip_id,
+        user=actor,
+        status=MemberStatus.ACTIVE,
+    )
+    if for_update:
+        membership_queryset = membership_queryset.select_for_update()
     try:
-        membership = TripMember.objects.get(
-            trip=trip,
-            user=actor,
-            status=MemberStatus.ACTIVE,
-        )
+        membership = membership_queryset.get()
     except TripMember.DoesNotExist:
-        raise NotTripMemberError("You are not an active member of this trip.")
+        raise TripNotFoundError("Trip not found.")
 
+    trip = membership.trip
+    if for_update:
+        trip = Trip.objects.select_for_update().get(pk=trip.pk)
     return trip, membership
 
 
@@ -563,12 +567,9 @@ def create_expense(
     collector=None,
     collector_id=None,
 ) -> Expense:
-    try:
-        trip = Trip.objects.select_for_update().get(pk=trip_id)
-    except Trip.DoesNotExist:
-        raise TripNotFoundError("Trip not found.")
-
-    _assert_captain(trip, actor)
+    trip, membership = _get_member_trip(trip_id, actor, for_update=True)
+    if membership.role != TripRole.CAPTAIN:
+        raise TripPermissionError("Only the trip captain can perform this action.")
     _assert_trip_open_for_expenses(trip)
     if _active_settlement(trip) is not None:
         raise SettlementAlreadyFinalizedError("Finalized trips cannot accept new expenses.")

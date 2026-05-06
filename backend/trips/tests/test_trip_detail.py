@@ -42,9 +42,10 @@ class TripDetailTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["my_membership"]["role"], TripRole.MEMBER)
 
-    def test_detail_403_for_non_member(self):
+    def test_detail_404_for_non_member(self):
         res = self.client.get(_detail_url(self.trip.id), **_auth(self.other))
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_detail_404_for_unknown_trip(self):
         import uuid

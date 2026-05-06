@@ -137,13 +137,13 @@ class RespondToRequestTests(APITestCase):
         self.assertIn("friendship", response.data)
         self.assertIn("friend_request_id", response.data)
 
-    def test_accept_wrong_user_403(self):
+    def test_accept_wrong_user_404(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
         response = self.client.post(
             _accept_url(fr.id), **_auth_header(self.charlie)
         )
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.data["error_code"], "NOT_REQUEST_PARTICIPANT")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "FRIEND_REQUEST_NOT_FOUND")
 
     def test_decline_200(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
@@ -225,7 +225,7 @@ class RemoveFriendTests(APITestCase):
         self.assertEqual(response.status_code, 204)
         self.assertEqual(Friendship.objects.count(), 0)
 
-    def test_unfriend_wrong_user_403(self):
+    def test_unfriend_wrong_user_404(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
         from friends.services import accept_friend_request
         friendship = accept_friend_request(fr.id, self.bob)
@@ -233,8 +233,8 @@ class RemoveFriendTests(APITestCase):
         response = self.client.delete(
             _remove_url(friendship.id), **_auth_header(self.charlie)
         )
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.data["error_code"], "NOT_FRIENDSHIP_PARTICIPANT")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "FRIENDSHIP_NOT_FOUND")
 
 
 class SearchViewTests(APITestCase):

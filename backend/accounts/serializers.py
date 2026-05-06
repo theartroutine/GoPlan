@@ -31,7 +31,6 @@ from accounts.services import (
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
-GENERIC_REGISTER_ERROR = "Unable to register. If you already have an account, try signing in."
 IDENTIFY_NAME_PATTERN = re.compile(r"^[a-z]{3,24}$")
 NAME_MAX_LENGTH = 15
 NAME_SEPARATORS = {"-", "'"}
@@ -119,8 +118,8 @@ class RegisterSerializer(serializers.Serializer):
                     email=validated_data["email"],
                     password=validated_data["password"],
                 )
-        except IntegrityError as exc:
-            raise serializers.ValidationError({"detail": GENERIC_REGISTER_ERROR}) from exc
+        except IntegrityError:
+            return User(email=validated_data["email"])
 
         try:
             send_verification_email(user)

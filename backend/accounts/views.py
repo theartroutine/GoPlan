@@ -39,6 +39,7 @@ IDENTITY_VALIDATION_CODE_BY_FIELD = {
     "identify_name": INVALID_IDENTIFY_NAME_CODE,
 }
 DEFAULT_IDENTITY_VALIDATION_CODE = "INVALID_IDENTITY_PAYLOAD"
+REGISTER_ACCEPTED_DETAIL = "If registration can continue, check your email."
 
 
 def build_identity_error(detail: str, error_code: str, *, status_code: int):
@@ -147,10 +148,10 @@ class RegisterAPIView(APIView):
     def post(self, request, *args, **kwargs):
         serializer = RegisterSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        serializer.save()
         return Response(
-            {"detail": "Account created. A verification email will be sent shortly.", "email": user.email},
-            status=status.HTTP_201_CREATED,
+            {"detail": REGISTER_ACCEPTED_DETAIL},
+            status=status.HTTP_202_ACCEPTED,
         )
 
 

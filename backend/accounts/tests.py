@@ -80,14 +80,14 @@ class AuthAPITestCase(APITestCase):
     # -------- Register --------
 
     @patch("accounts.serializers.send_verification_email")
-    def test_register_success_returns_detail_and_email(self, mock_send):
+    def test_register_success_returns_generic_detail(self, mock_send):
         payload = {"email": "owner@example.com", "password": "StrongPass#2026"}
         response = self.client.post(self.register_url, payload, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(User.objects.count(), 1)
         self.assertIn("detail", response.data)
-        self.assertEqual(response.data["email"], payload["email"])
+        self.assertNotIn("email", response.data)
         self.assertNotIn("tokens", response.data)
         self.assertNotIn("user", response.data)
 
@@ -109,26 +109,27 @@ class AuthAPITestCase(APITestCase):
         called_user = mock_send.call_args[0][0]
         self.assertEqual(called_user.email, "owner@example.com")
 
-    def test_register_rejects_duplicate_email(self):
+    @patch("accounts.serializers.send_verification_email")
+    def test_register_duplicate_email_matches_success_contract(self, mock_send):
         User.objects.create_user(email="owner@example.com", password="StrongPass#2026")
-        payload = {"email": "OWNER@EXAMPLE.COM", "password": "StrongPass#2026"}
+        duplicate_payload = {"email": "OWNER@EXAMPLE.COM", "password": "StrongPass#2026"}
+        fresh_payload = {"email": "fresh@example.com", "password": "StrongPass#2026"}
 
-        response = self.client.post(self.register_url, payload, format="json")
+        duplicate_response = self.client.post(self.register_url, duplicate_payload, format="json")
+        fresh_response = self.client.post(self.register_url, fresh_payload, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            str(response.data.get("detail", "")),
-            "Unable to register. If you already have an account, try signing in.",
-        )
-        self.assertNotIn("email", response.data)
+        self.assertEqual(duplicate_response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(fresh_response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(duplicate_response.data, fresh_response.data)
+        self.assertNotIn("email", duplicate_response.data)
 
     @patch("accounts.serializers.send_verification_email")
     def test_register_normalizes_email_to_lowercase(self, mock_send):
         payload = {"email": "Owner@Example.Com", "password": "StrongPass#2026"}
         response = self.client.post(self.register_url, payload, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["email"], "owner@example.com")
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(User.objects.get().email, "owner@example.com")
 
     def test_register_rejects_weak_password(self):
         payload = {"email": "owner@example.com", "password": "12345678"}

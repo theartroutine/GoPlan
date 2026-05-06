@@ -9,6 +9,16 @@ import {
 } from "@/app/api/auth/_lib/session-state";
 import { API_BASE_URL } from "@/shared/http/config";
 
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const FILE_TOO_LARGE_PAYLOAD = {
+  detail: "File too large. Maximum size is 5 MB.",
+  error_code: "FILE_TOO_LARGE",
+};
+
+function fileTooLargeResponse(): NextResponse {
+  return NextResponse.json(FILE_TOO_LARGE_PAYLOAD, { status: 413 });
+}
+
 async function uploadTripCover(
   file: Blob,
   bearerToken: string,
@@ -54,6 +64,14 @@ export async function POST(request: NextRequest) {
     refreshedAccessToken = refreshResult.accessToken;
   }
 
+  const contentLength = request.headers.get("Content-Length");
+  if (contentLength) {
+    const contentLengthBytes = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(contentLengthBytes) && contentLengthBytes > MAX_UPLOAD_BYTES) {
+      return fileTooLargeResponse();
+    }
+  }
+
   // Parse body before the upstream try block so a malformed or missing
   // multipart body returns 400 (bad request) rather than 503 (service unavailable).
   let formData: FormData;
@@ -66,6 +84,10 @@ export async function POST(request: NextRequest) {
 
   if (!file || !(file instanceof Blob)) {
     return NextResponse.json({ detail: "No file provided." }, { status: 400 });
+  }
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return fileTooLargeResponse();
   }
 
   try {

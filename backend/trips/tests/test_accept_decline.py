@@ -65,10 +65,11 @@ class AcceptInvitationTests(APITestCase):
             ).exists()
         )
 
-    def test_only_invitee_can_accept_403(self):
+    def test_only_invitee_can_accept_404(self):
         other = create_completed_user("other@example.com", "other", "OTH001")
         res = self.client.post(_accept_url(self.invitation.id), **_auth(other))
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_cannot_accept_non_pending_409(self):
         self.invitation.status = InvitationStatus.DECLINED
@@ -119,10 +120,11 @@ class DeclineInvitationTests(APITestCase):
             TripMember.objects.filter(trip=self.trip, user=self.invitee).exists()
         )
 
-    def test_only_invitee_can_decline_403(self):
+    def test_only_invitee_can_decline_404(self):
         other = create_completed_user("other@example.com", "other", "OTH001")
         res = self.client.post(_decline_url(self.invitation.id), **_auth(other))
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_cannot_decline_non_pending_409(self):
         self.invitation.status = InvitationStatus.ACCEPTED

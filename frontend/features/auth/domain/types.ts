@@ -19,7 +19,6 @@ export type BffAuthResponse = {
 
 export type BffRegisterResponse = {
   detail: string;
-  email: string;
 };
 
 export type FieldErrors = Record<string, string[]>;

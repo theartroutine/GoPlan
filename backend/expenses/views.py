@@ -58,6 +58,13 @@ def _permission_error_response(exc):
     )
 
 
+def _trip_not_visible_response():
+    return Response(
+        {"detail": "Trip not found.", "error_code": TripNotFoundError.error_code},
+        status=status.HTTP_404_NOT_FOUND,
+    )
+
+
 class ExpenseListCreateAPIView(APIView):
     permission_classes = EXPENSE_PERMISSIONS
     throttle_scope = "expenses_list_create"
@@ -67,8 +74,8 @@ class ExpenseListCreateAPIView(APIView):
             dashboard = build_expense_dashboard(trip_id=trip_id, actor=request.user)
         except TripNotFoundError as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_visible_response()
 
         return Response(serialize_dashboard_response(dashboard, request_user=request.user))
 
@@ -88,8 +95,8 @@ class ExpenseListCreateAPIView(APIView):
             )
         except TripNotFoundError as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
         except TripTerminalError as exc:
@@ -115,8 +122,8 @@ class ExpenseDetailAPIView(APIView):
             )
         except (TripNotFoundError, ExpenseNotFoundError) as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_visible_response()
 
         return Response(serialize_expense_detail_response(detail))
 
@@ -143,8 +150,8 @@ class ExpenseDetailAPIView(APIView):
             )
         except (TripNotFoundError, ExpenseNotFoundError) as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
         except (ExpenseLockedError, TripTerminalError) as exc:
@@ -163,8 +170,8 @@ class ExpenseDetailAPIView(APIView):
             )
         except (TripNotFoundError, ExpenseNotFoundError) as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
         except (ExpenseLockedError, TripTerminalError) as exc:
@@ -193,8 +200,8 @@ class ExpenseContributionAPIView(APIView):
             )
         except (ExpenseNotFoundError, TripNotFoundError) as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
         except ExpenseLockedError as exc:
@@ -216,8 +223,8 @@ class SettlementFinalizeAPIView(APIView):
             settlement = finalize_settlement(trip_id=trip_id, actor=request.user)
         except TripNotFoundError as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
         except SettlementAlreadyFinalizedError as exc:
@@ -239,8 +246,8 @@ class SettlementReopenAPIView(APIView):
             settlement = reopen_settlement(trip_id=trip_id, actor=request.user)
         except TripNotFoundError as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except NotTripMemberError as exc:
-            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except NotTripMemberError:
+            return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
         except SettlementNotFinalizedError as exc:
@@ -262,7 +269,9 @@ class SettlementTransferSentAPIView(APIView):
             )
         except (TripNotFoundError, TransferNotFoundError) as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except (NotTripMemberError, NotTransferPayerError) as exc:
+        except NotTripMemberError:
+            return _trip_not_visible_response()
+        except NotTransferPayerError as exc:
             return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
 
         return Response(SettlementTransferSerializer(transfer).data)
@@ -281,7 +290,9 @@ class SettlementTransferReceivedAPIView(APIView):
             )
         except (TripNotFoundError, TransferNotFoundError) as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
-        except (NotTripMemberError, NotTransferRecipientError) as exc:
+        except NotTripMemberError:
+            return _trip_not_visible_response()
+        except NotTransferRecipientError as exc:
             return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
 
         return Response(SettlementTransferSerializer(transfer).data)

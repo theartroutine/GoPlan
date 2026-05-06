@@ -8,7 +8,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-MAX_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_SIZE_BYTES = settings.UPLOAD_MAX_BYTES
 EXTENSION_MAP = {
     "image/jpeg": ".jpg",
     "image/png":  ".png",
