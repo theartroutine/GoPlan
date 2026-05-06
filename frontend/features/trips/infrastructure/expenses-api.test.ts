@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const bffMock = vi.hoisted(() => ({
+  delete: vi.fn(),
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
@@ -13,12 +14,14 @@ vi.mock("@/shared/http/bff-client", () => ({
 import {
   confirmSettlementTransferReceived,
   createExpense,
+  deleteExpense,
   finalizeSettlement,
   getExpenseDetail,
   getExpensesDashboard,
   markSettlementTransferSent,
   reopenSettlement,
   setExpenseContribution,
+  updateExpense,
 } from "@/features/trips/infrastructure/expenses-api";
 
 describe("expenses-api", () => {
@@ -114,6 +117,26 @@ describe("expenses-api", () => {
       "/api/trips/trip_1/expenses/expense_1/contributions/user_1",
       payload,
     );
+  });
+
+  it("updates and deletes an expense through the detail BFF route", async () => {
+    const detail = {
+      id: "expense_1",
+      title: "Updated hotel",
+      total_amount: "150.00",
+    };
+    const payload = { title: "Updated hotel", total_amount: "150.00" };
+    bffMock.patch.mockResolvedValueOnce({ data: detail });
+    bffMock.delete.mockResolvedValueOnce({ data: null });
+
+    await expect(updateExpense("trip_1", "expense_1", payload)).resolves.toBe(detail);
+    await expect(deleteExpense("trip_1", "expense_1")).resolves.toBeUndefined();
+
+    expect(bffMock.patch).toHaveBeenCalledWith(
+      "/api/trips/trip_1/expenses/expense_1",
+      payload,
+    );
+    expect(bffMock.delete).toHaveBeenCalledWith("/api/trips/trip_1/expenses/expense_1");
   });
 
   it("proxies settlement actions through BFF paths", async () => {

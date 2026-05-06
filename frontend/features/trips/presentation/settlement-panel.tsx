@@ -11,11 +11,23 @@ import {
   formatExpenseMoney,
   getSettlementTransferRoleState,
 } from "@/features/trips/domain/expenses-money";
+import { getExpenseErrorMessage } from "@/features/trips/domain/expenses-errors";
 import {
   confirmSettlementTransferReceived,
   markSettlementTransferSent,
 } from "@/features/trips/infrastructure/expenses-api";
 import { cn } from "@/shared/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
 
 type SettlementPanelProps = {
@@ -56,10 +68,13 @@ export function SettlementPanel({
       }
 
       await onChanged();
-    } catch {
+    } catch (err) {
       setErrors((current) => ({
         ...current,
-        [transfer.id]: "Không cập nhật được chuyển khoản. Thử lại sau.",
+        [transfer.id]: getExpenseErrorMessage(
+          err,
+          "Could not update the transfer. Try again later.",
+        ),
       }));
     } finally {
       setPendingTransferIds((current) => {
@@ -74,7 +89,7 @@ export function SettlementPanel({
     <section
       className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both rounded-xl border border-border bg-card p-4 shadow-xs motion-reduce:animate-none"
       style={{ animationDuration: "450ms", animationDelay: "80ms" }}
-      aria-label="Settlement checklist"
+      aria-label="Settlement transfer list"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -82,14 +97,14 @@ export function SettlementPanel({
             <span className="inline-flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
               <WalletCards className="size-4" />
             </span>
-            <h2 className="text-base font-semibold">Settlement checklist</h2>
+            <h2 className="text-base font-semibold">Transfer list</h2>
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            Đánh dấu từng khoản chuyển tiền. Thông báo realtime sẽ có ở bước sau.
+            Track each transfer. Realtime notifications will come in a later step.
           </p>
         </div>
         <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-          {settlement.transfers.length} khoản
+          {formatTransferCount(settlement.transfers.length)}
         </span>
       </div>
 
@@ -139,45 +154,36 @@ export function SettlementPanel({
                 <div className="flex flex-wrap items-center gap-2">
                   <TransferStatusBadge
                     completed={Boolean(transfer.payer_marked_sent_at)}
-                    pendingLabel="Chưa gửi"
-                    doneLabel="Đã gửi"
+                    pendingLabel="Not sent"
+                    doneLabel="Sent"
                   />
                   <TransferStatusBadge
                     completed={Boolean(transfer.recipient_confirmed_at)}
-                    pendingLabel="Chưa nhận"
-                    doneLabel="Đã nhận"
+                    pendingLabel="Not received"
+                    doneLabel="Received"
                   />
                 </div>
 
                 {canMarkSent && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="w-full justify-center sm:w-auto"
-                    onClick={() => void handleTransferAction(transfer, "sent")}
+                  <TransferActionDialog
+                    action="sent"
                     disabled={isPending}
-                  >
-                    <Send className="size-4" />
-                    I&apos;ve sent
-                  </Button>
+                    transfer={transfer}
+                    onConfirm={() => void handleTransferAction(transfer, "sent")}
+                  />
                 )}
 
                 {canConfirmReceived && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="w-full justify-center sm:w-auto"
-                    onClick={() => void handleTransferAction(transfer, "received")}
+                  <TransferActionDialog
+                    action="received"
                     disabled={isPending}
-                  >
-                    <CheckCircle2 className="size-4" />
-                    Received
-                  </Button>
+                    transfer={transfer}
+                    onConfirm={() => void handleTransferAction(transfer, "received")}
+                  />
                 )}
 
                 {!canMarkSent && !canConfirmReceived && (
-                  <span className="text-xs font-medium text-muted-foreground sm:text-right">Theo dõi</span>
+                  <span className="text-xs font-medium text-muted-foreground sm:text-right">Tracking</span>
                 )}
               </div>
 
@@ -201,10 +207,58 @@ function getTransferGuidance(
   if (!transfer.payer_marked_sent_at || transfer.recipient_confirmed_at) return null;
 
   if (roleState?.isRecipient) {
-    return `${transfer.payer.display_name} marked this as sent. Confirm only after money arrives.`;
+    return `${transfer.payer.display_name} marked this as sent. Confirm only after the money arrives.`;
   }
 
-  return `Waiting for ${transfer.recipient.display_name} to confirm.`;
+  return `Waiting for ${transfer.recipient.display_name} to confirm receipt.`;
+}
+
+function TransferActionDialog({
+  action,
+  disabled,
+  transfer,
+  onConfirm,
+}: {
+  action: PendingAction;
+  disabled: boolean;
+  transfer: SettlementTransfer;
+  onConfirm: () => void;
+}) {
+  const isSentAction = action === "sent";
+  const buttonLabel = isSentAction ? "I sent it" : "I received it";
+  const title = isSentAction ? "Confirm transfer sent?" : "Confirm transfer received?";
+  const description = isSentAction
+    ? `You are confirming that you sent money to ${transfer.recipient.display_name}.`
+    : `You are confirming that you received money from ${transfer.payer.display_name}.`;
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant={isSentAction ? "default" : "secondary"}
+          className="w-full justify-center sm:w-auto"
+          disabled={disabled}
+        >
+          {isSentAction ? <Send className="size-4" /> : <CheckCircle2 className="size-4" />}
+          {buttonLabel}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent size="sm">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={disabled}>Cancel</AlertDialogCancel>
+          <AlertDialogAction disabled={disabled} onClick={onConfirm}>
+            Confirm
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
 function TransferPerson({
@@ -223,6 +277,10 @@ function TransferPerson({
       {tag && <p className="truncate text-xs text-muted-foreground">{tag}</p>}
     </div>
   );
+}
+
+function formatTransferCount(count: number): string {
+  return `${count} ${count === 1 ? "transfer" : "transfers"}`;
 }
 
 function TransferStatusBadge({

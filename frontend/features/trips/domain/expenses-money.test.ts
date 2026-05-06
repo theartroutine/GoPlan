@@ -89,18 +89,18 @@ describe("expense money helpers", () => {
     expect(getExpenseFundingPercent({ paid_amount: "25", total_amount: "not-a-number" })).toBe(0);
   });
 
-  it("returns Vietnamese status labels", () => {
-    expect(getExpenseStatusLabel("UNDERFUNDED")).toBe("Chưa đủ tiền");
-    expect(getExpenseStatusLabel("FUNDED")).toBe("Đã đủ tiền");
-    expect(getExpenseStatusLabel("OVERFUNDED")).toBe("Đóng dư");
+  it("returns English status labels", () => {
+    expect(getExpenseStatusLabel("UNDERFUNDED")).toBe("Underfunded");
+    expect(getExpenseStatusLabel("FUNDED")).toBe("Funded");
+    expect(getExpenseStatusLabel("OVERFUNDED")).toBe("Overfunded");
   });
 
   it("describes the current user's balance direction", () => {
-    expect(getUserBalanceLabel("-300000", "VND")).toContain("Cần trả");
+    expect(getUserBalanceLabel("-300000", "VND")).toContain("You owe");
     expect(getUserBalanceLabel("-300000", "VND")).toMatch(/[₫đ]/i);
 
-    expect(getUserBalanceLabel("150000", "VND")).toContain("Được nhận");
-    expect(getUserBalanceLabel("0", "VND")).toBe("Đã cân bằng");
+    expect(getUserBalanceLabel("150000", "VND")).toContain("You are owed");
+    expect(getUserBalanceLabel("0", "VND")).toBe("Settled");
   });
 
   it("returns settlement role actions for payer and recipient only", () => {
@@ -111,7 +111,7 @@ describe("expense money helpers", () => {
       isReceived: false,
       canMarkSent: true,
       canConfirmReceived: false,
-      actionLabel: "I've sent",
+      actionLabel: "I sent it",
     });
 
     expect(getSettlementTransferRoleState(makeTransfer(), recipient.id)).toMatchObject({
@@ -119,7 +119,7 @@ describe("expense money helpers", () => {
       isRecipient: true,
       canMarkSent: false,
       canConfirmReceived: true,
-      actionLabel: "Đã nhận",
+      actionLabel: "I received it",
     });
 
     expect(
@@ -167,7 +167,7 @@ describe("expense money helpers", () => {
       currencyCode: "USD",
       formattedTotal: "$500.50",
       fundingPercent: 50,
-      myBalanceLabel: expect.stringContaining("Cần trả"),
+      myBalanceLabel: expect.stringContaining("You owe"),
     });
   });
 });

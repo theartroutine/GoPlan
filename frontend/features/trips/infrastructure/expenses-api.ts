@@ -7,6 +7,7 @@ import type {
   SetContributionPayload,
   SettlementTransfer,
   TripSettlement,
+  UpdateExpensePayload,
 } from "@/features/trips/domain/expenses-types";
 import { bff } from "@/shared/http/bff-client";
 
@@ -56,6 +57,22 @@ export async function setExpenseContribution(
     payload,
   );
   return res.data;
+}
+
+export async function updateExpense(
+  tripId: string,
+  expenseId: string,
+  payload: UpdateExpensePayload,
+): Promise<ExpenseDetailResponse> {
+  const res = await bff.patch<ExpenseDetailResponse>(
+    `/api/trips/${tripId}/expenses/${expenseId}`,
+    payload,
+  );
+  return res.data;
+}
+
+export async function deleteExpense(tripId: string, expenseId: string): Promise<void> {
+  await bff.delete(`/api/trips/${tripId}/expenses/${expenseId}`);
 }
 
 export async function finalizeSettlement(tripId: string): Promise<TripSettlement> {

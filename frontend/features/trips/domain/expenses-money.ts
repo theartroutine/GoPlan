@@ -4,7 +4,12 @@ import type {
   ExpenseStatus,
   SettlementTransfer,
 } from "@/features/trips/domain/expenses-types";
-import { DEFAULT_TRIP_CURRENCY, normalizeCurrencyCode } from "@/features/trips/domain/money";
+import {
+  DEFAULT_TRIP_CURRENCY,
+  getTripCurrencyOption,
+  isZeroDecimalTripCurrency,
+  normalizeCurrencyCode,
+} from "@/features/trips/domain/money";
 
 type ExpenseFundingAmounts = Pick<ExpenseMoneySummary, "paid_amount" | "total_amount">;
 
@@ -13,28 +18,9 @@ export type NormalizedExpenseMoneyInput = {
   error: string | null;
 };
 
-type CurrencyFormatOption = {
-  locale: string;
-  minimumFractionDigits: number;
-  maximumFractionDigits: number;
-};
-
-const ZERO_DECIMAL_CURRENCIES = new Set(["VND", "JPY", "KRW"]);
-
-const CURRENCY_FORMAT_OPTIONS: Record<string, CurrencyFormatOption> = {
-  VND: {
-    locale: "vi-VN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  },
-  USD: {
-    locale: "en-US",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  },
-};
-
 export type ExpenseStatusTone = "warning" | "success" | "danger";
+
+export type MyBalanceDirection = "owe" | "receive" | "balanced";
 
 export type ExpenseDashboardMoneySummary = {
   currencyCode: string;
@@ -44,6 +30,10 @@ export type ExpenseDashboardMoneySummary = {
   formattedSurplus: string;
   fundingPercent: number;
   myBalanceLabel: string;
+  myBalanceFormatted: string;
+  myBalanceDirection: MyBalanceDirection;
+  mySurplusHeld: string;
+  hasSurplusHeld: boolean;
 };
 
 export function formatExpenseMoney(
@@ -52,18 +42,16 @@ export function formatExpenseMoney(
 ): string {
   const numericAmount = parseMoneyAmount(amount);
   const normalizedCurrencyCode = normalizeCurrencyCode(currencyCode) || DEFAULT_TRIP_CURRENCY;
-  const formatOption = CURRENCY_FORMAT_OPTIONS[normalizedCurrencyCode] ?? {
-    locale: "en-US",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  };
+  const formatOption = getTripCurrencyOption(normalizedCurrencyCode);
+  const locale = formatOption?.locale ?? "en-US";
+  const maximumFractionDigits = formatOption?.maximumFractionDigits ?? 2;
 
   try {
-    return new Intl.NumberFormat(formatOption.locale, {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency: normalizedCurrencyCode,
-      minimumFractionDigits: formatOption.minimumFractionDigits,
-      maximumFractionDigits: formatOption.maximumFractionDigits,
+      minimumFractionDigits: maximumFractionDigits,
+      maximumFractionDigits,
     }).format(numericAmount);
   } catch {
     return `${new Intl.NumberFormat("en-US", {
@@ -82,7 +70,7 @@ export function normalizeExpenseMoneyInput(
 
   if (!trimmedValue) return { value: null, error: "Amount is required." };
 
-  if (ZERO_DECIMAL_CURRENCIES.has(normalizedCurrencyCode)) {
+  if (isZeroDecimalTripCurrency(normalizedCurrencyCode)) {
     return normalizeZeroDecimalMoneyInput(trimmedValue);
   }
 
@@ -113,14 +101,14 @@ export function getUserBalanceLabel(
   const numericBalance = parseMoneyAmount(balance);
 
   if (numericBalance < 0) {
-    return `Cần trả ${formatExpenseMoney(Math.abs(numericBalance), currencyCode)}`;
+    return `You owe ${formatExpenseMoney(Math.abs(numericBalance), currencyCode)}`;
   }
 
   if (numericBalance > 0) {
-    return `Được nhận ${formatExpenseMoney(numericBalance, currencyCode)}`;
+    return `You are owed ${formatExpenseMoney(numericBalance, currencyCode)}`;
   }
 
-  return "Đã cân bằng";
+  return "Settled";
 }
 
 export type SettlementTransferRoleState = {
@@ -159,6 +147,8 @@ export function summarizeExpenseDashboard(
   response: ExpenseDashboardResponse,
 ): ExpenseDashboardMoneySummary {
   const currencyCode = response.currency_code || DEFAULT_TRIP_CURRENCY;
+  const myBalanceNum = parseMoneyAmount(response.my_balance.balance);
+  const mySurplusNum = parseMoneyAmount(response.my_balance.surplus_held ?? "0");
 
   return {
     currencyCode,
@@ -168,13 +158,17 @@ export function summarizeExpenseDashboard(
     formattedSurplus: formatExpenseMoney(response.summary.surplus_amount, currencyCode),
     fundingPercent: getExpenseFundingPercent(response.summary),
     myBalanceLabel: getUserBalanceLabel(response.my_balance.balance, currencyCode),
+    myBalanceFormatted: formatExpenseMoney(Math.abs(myBalanceNum), currencyCode),
+    myBalanceDirection: myBalanceNum < 0 ? "owe" : myBalanceNum > 0 ? "receive" : "balanced",
+    mySurplusHeld: formatExpenseMoney(mySurplusNum, currencyCode),
+    hasSurplusHeld: mySurplusNum > 0,
   };
 }
 
 const EXPENSE_STATUS_LABELS: Record<ExpenseStatus, string> = {
-  UNDERFUNDED: "Chưa đủ tiền",
-  FUNDED: "Đã đủ tiền",
-  OVERFUNDED: "Đóng dư",
+  UNDERFUNDED: "Underfunded",
+  FUNDED: "Funded",
+  OVERFUNDED: "Overfunded",
 };
 
 const EXPENSE_STATUS_TONES: Record<ExpenseStatus, ExpenseStatusTone> = {
@@ -227,8 +221,8 @@ function getSettlementActionLabel({
   canMarkSent,
   canConfirmReceived,
 }: Pick<SettlementTransferRoleState, "canMarkSent" | "canConfirmReceived">): string | null {
-  if (canMarkSent) return "I've sent";
-  if (canConfirmReceived) return "Đã nhận";
+  if (canMarkSent) return "I sent it";
+  if (canConfirmReceived) return "I received it";
 
   return null;
 }

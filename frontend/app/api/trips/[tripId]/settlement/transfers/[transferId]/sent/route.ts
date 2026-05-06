@@ -10,11 +10,9 @@ export async function POST(
   { params }: { params: Promise<{ tripId: string; transferId: string }> },
 ) {
   const { tripId, transferId } = await params;
-  const body = await request.text();
   const result = await protectedUpstreamCall({
     path: `/api/trips/${tripId}/settlement/transfers/${transferId}/sent`,
     method: "POST",
-    body,
     authorization: request.headers.get("Authorization"),
   });
   if (!result.ok) return result.response;

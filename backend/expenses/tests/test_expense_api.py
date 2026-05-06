@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
-from expenses.models import Expense, ExpenseContribution
+from expenses.models import Expense, ExpenseContribution, ExpenseLedgerEntry, ExpenseLedgerEventType
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
@@ -340,10 +340,126 @@ class ExpenseAPITests(APITestCase):
         dashboard_response = self.client.get(usd_expenses_url, **_auth(self.captain))
 
         self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(create_response.data["total_amount"], "10.50")
         self.assertNotIn("E", create_response.data["total_amount"].upper())
         self.assertEqual(dashboard_response.status_code, 200)
+        self.assertEqual(dashboard_response.data["summary"]["total_amount"], "10.50")
+        self.assertEqual(dashboard_response.data["summary"]["paid_amount"], "0.00")
         self.assertNotIn(
             "E",
             dashboard_response.data["expenses"][0]["total_amount"].upper(),
         )
         self.assertNotIn("E", dashboard_response.data["summary"]["total_amount"].upper())
+
+    def test_captain_updates_unlocked_expense_and_recomputes_snapshot_shares(self):
+        collector = create_completed_user(
+            "expense-new-collector@example.com",
+            "expensenewcollector",
+            "ENC001",
+            display_name="New Collector",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=collector,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        expense_response = self.client.post(
+            self.expenses_url,
+            {"title": "Dinner", "description": "Old", "total_amount": "600000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        expense_id = expense_response.data["id"]
+
+        response = self.client.patch(
+            f"{self.expenses_url}/{expense_id}",
+            {
+                "title": "Updated dinner",
+                "description": "New plan",
+                "total_amount": "900000",
+                "collector_id": str(collector.id),
+            },
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["title"], "Updated dinner")
+        self.assertEqual(response.data["description"], "New plan")
+        self.assertEqual(response.data["total_amount"], "900000")
+        self.assertEqual(response.data["collector"]["id"], str(collector.id))
+        self.assertEqual(
+            [participant["share_amount"] for participant in response.data["participants"]],
+            ["300000", "300000", "300000"],
+        )
+        self.assertTrue(
+            ExpenseLedgerEntry.objects.filter(
+                event_type=ExpenseLedgerEventType.EXPENSE_UPDATED,
+                expense_id=expense_id,
+            ).exists()
+        )
+
+    def test_update_expense_rejects_locked_expense(self):
+        expense_response = self.client.post(
+            self.expenses_url,
+            {"title": "Dinner", "total_amount": "600000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        expense = Expense.objects.get(pk=expense_response.data["id"])
+        expense.locked_at = timezone.now()
+        expense.save(update_fields=["locked_at"])
+
+        response = self.client.patch(
+            f"{self.expenses_url}/{expense.id}",
+            {"title": "Updated dinner"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "EXPENSE_LOCKED")
+
+    def test_captain_deletes_unlocked_expense(self):
+        expense_response = self.client.post(
+            self.expenses_url,
+            {"title": "Dinner", "total_amount": "600000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        expense_id = expense_response.data["id"]
+
+        response = self.client.delete(
+            f"{self.expenses_url}/{expense_id}",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Expense.objects.filter(pk=expense_id).exists())
+        self.assertTrue(
+            ExpenseLedgerEntry.objects.filter(
+                event_type=ExpenseLedgerEventType.EXPENSE_DELETED,
+                payload__expense_id=expense_id,
+            ).exists()
+        )
+
+    def test_delete_expense_rejects_locked_expense(self):
+        expense_response = self.client.post(
+            self.expenses_url,
+            {"title": "Dinner", "total_amount": "600000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        expense = Expense.objects.get(pk=expense_response.data["id"])
+        expense.locked_at = timezone.now()
+        expense.save(update_fields=["locked_at"])
+
+        response = self.client.delete(
+            f"{self.expenses_url}/{expense.id}",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "EXPENSE_LOCKED")
+        self.assertTrue(Expense.objects.filter(pk=expense.id).exists())

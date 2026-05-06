@@ -30,6 +30,7 @@ export type ExpenseParticipantContribution = {
   share_amount: string;
   contributed_amount: string;
   balance: string;
+  surplus_held?: string;
 };
 
 export type ExpenseDetailResponse = ExpenseListItem & {
@@ -59,7 +60,7 @@ export type ExpenseDashboardResponse = {
   currency_code: string;
   summary: ExpenseMoneySummary;
   permissions: { can_manage_expenses: boolean };
-  my_balance: { balance: string };
+  my_balance: { balance: string; surplus_held?: string };
   member_balances: Record<string, { balance: string }>;
   expenses: ExpenseListItem[];
   settlement: TripSettlement | null;
@@ -71,6 +72,8 @@ export type CreateExpensePayload = {
   total_amount: string;
   collector_id?: string;
 };
+
+export type UpdateExpensePayload = Partial<CreateExpensePayload>;
 
 export type SetContributionPayload = {
   amount: string;

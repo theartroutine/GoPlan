@@ -10,6 +10,7 @@ from django.db.models import Q
 class ExpenseLedgerEventType(models.TextChoices):
     EXPENSE_CREATED = "EXPENSE_CREATED", "Expense created"
     EXPENSE_UPDATED = "EXPENSE_UPDATED", "Expense updated"
+    EXPENSE_DELETED = "EXPENSE_DELETED", "Expense deleted"
     CONTRIBUTION_SET = "CONTRIBUTION_SET", "Contribution set"
     CONTRIBUTION_REMOVED = "CONTRIBUTION_REMOVED", "Contribution removed"
     SETTLEMENT_FINALIZED = "SETTLEMENT_FINALIZED", "Settlement finalized"

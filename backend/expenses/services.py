@@ -55,6 +55,10 @@ class SettlementNotFinalizedError(ExpenseServiceError):
     error_code = "SETTLEMENT_NOT_FINALIZED"
 
 
+class SettlementUnderfundedError(ExpenseServiceError):
+    error_code = "SETTLEMENT_UNDERFUNDED"
+
+
 class TransferNotFoundError(ExpenseServiceError):
     error_code = "TRANSFER_NOT_FOUND"
 
@@ -83,13 +87,7 @@ def _assert_trip_open_for_expenses(trip: Trip) -> None:
 
 
 def _get_member_trip(trip_id, actor, *, for_update: bool = False) -> tuple[Trip, TripMember]:
-    try:
-        trip_queryset = Trip.objects
-        if for_update:
-            trip_queryset = trip_queryset.select_for_update()
-        trip = trip_queryset.get(pk=trip_id)
-    except Trip.DoesNotExist:
-        raise TripNotFoundError("Trip not found.")
+    trip = _get_trip(trip_id, for_update=for_update)
 
     try:
         membership = TripMember.objects.get(
@@ -103,6 +101,35 @@ def _get_member_trip(trip_id, actor, *, for_update: bool = False) -> tuple[Trip,
     return trip, membership
 
 
+def _get_trip(trip_id, *, for_update: bool = False) -> Trip:
+    try:
+        trip_queryset = Trip.objects
+        if for_update:
+            trip_queryset = trip_queryset.select_for_update()
+        return trip_queryset.get(pk=trip_id)
+    except Trip.DoesNotExist:
+        raise TripNotFoundError("Trip not found.")
+
+
+def _assert_active_member_or_transfer_party(
+    *,
+    trip: Trip,
+    transfer: SettlementTransfer,
+    actor,
+) -> None:
+    if actor.id in {transfer.payer_id, transfer.recipient_id}:
+        return
+
+    if TripMember.objects.filter(
+        trip=trip,
+        user=actor,
+        status=MemberStatus.ACTIVE,
+    ).exists():
+        return
+
+    raise NotTripMemberError("You are not an active member of this trip.")
+
+
 def _get_expense_for_update(trip: Trip, expense_id) -> Expense:
     try:
         return Expense.objects.select_for_update().get(pk=expense_id, trip=trip)
@@ -113,6 +140,17 @@ def _get_expense_for_update(trip: Trip, expense_id) -> Expense:
 def _assert_expense_unlocked(expense: Expense) -> None:
     if expense.locked_at is not None:
         raise ExpenseLockedError("Locked expenses cannot be changed.")
+
+
+def _get_active_member_user(trip: Trip, user_id):
+    try:
+        return TripMember.objects.select_related("user").get(
+            trip=trip,
+            user_id=user_id,
+            status=MemberStatus.ACTIVE,
+        ).user
+    except TripMember.DoesNotExist:
+        raise ExpenseServiceError("Collector must be an active trip member.")
 
 
 def _active_settlement(
@@ -397,21 +435,25 @@ def _expense_financials(expense: Expense) -> dict[str, object]:
     surplus = max(paid_total - expense.total_amount, Decimal("0"))
     missing = max(expense.total_amount - paid_total, Decimal("0"))
 
-    balances: dict[str, Decimal] = {}
+    personal_balances: dict[str, Decimal] = {}
+    net_balances: dict[str, Decimal] = {}
     for participant in participants:
         user_key = str(participant.user_id)
         paid_amount = contributions_by_user_id.get(participant.user_id, Decimal("0"))
-        balances[user_key] = paid_amount - participant.share_amount
+        personal_balance = paid_amount - participant.share_amount
+        personal_balances[user_key] = personal_balance
+        net_balances[user_key] = personal_balance
 
     if surplus > 0:
         collector_key = str(expense.collector_id)
-        balances[collector_key] = balances.get(collector_key, Decimal("0")) - surplus
+        net_balances[collector_key] = net_balances.get(collector_key, Decimal("0")) - surplus
 
     return {
         "paid_amount": paid_total,
         "surplus_amount": surplus,
         "missing_amount": missing,
-        "balances": balances,
+        "balances": net_balances,
+        "personal_balances": personal_balances,
     }
 
 
@@ -444,9 +486,23 @@ def build_expense_dashboard(*, trip_id, actor) -> dict[str, object]:
         missing_amount += financials["missing_amount"]
 
         for user_key, balance in financials["balances"].items():
-            if user_key not in member_balances:
-                member_balances[user_key] = {"balance": Decimal("0")}
-            member_balances[user_key]["balance"] += balance
+            entry = member_balances.setdefault(
+                user_key, {"balance": Decimal("0"), "personal_balance": Decimal("0"), "surplus_held": Decimal("0")}
+            )
+            entry["balance"] += balance
+
+        for user_key, personal_balance in financials["personal_balances"].items():
+            entry = member_balances.setdefault(
+                user_key, {"balance": Decimal("0"), "personal_balance": Decimal("0"), "surplus_held": Decimal("0")}
+            )
+            entry["personal_balance"] += personal_balance
+
+        if financials["surplus_amount"] > 0:
+            collector_key = str(expense.collector_id)
+            entry = member_balances.setdefault(
+                collector_key, {"balance": Decimal("0"), "personal_balance": Decimal("0"), "surplus_held": Decimal("0")}
+            )
+            entry["surplus_held"] += financials["surplus_amount"]
 
     return {
         "trip": trip,
@@ -505,6 +561,7 @@ def create_expense(
     total_amount: Decimal,
     description: str = "",
     collector=None,
+    collector_id=None,
 ) -> Expense:
     try:
         trip = Trip.objects.select_for_update().get(pk=trip_id)
@@ -523,7 +580,10 @@ def create_expense(
     )
     normalized_total_amount = normalize_currency_amount(total_amount, trip.currency_code)
     shares = split_amount_evenly(normalized_total_amount, len(active_memberships), trip.currency_code)
-    collector = collector or actor
+    if collector_id is not None:
+        collector = _get_active_member_user(trip, collector_id)
+    else:
+        collector = collector or actor
     active_member_ids = {membership.user_id for membership in active_memberships}
     if collector.id not in active_member_ids:
         raise ExpenseServiceError("Collector must be an active trip member.")
@@ -567,6 +627,103 @@ def create_expense(
 
 
 @transaction.atomic
+def update_expense(
+    *,
+    trip_id,
+    expense_id,
+    actor,
+    title: str | None = None,
+    description: str | None = None,
+    total_amount: Decimal | None = None,
+    collector_id=None,
+    update_collector: bool = False,
+) -> Expense:
+    trip, membership = _get_member_trip(trip_id, actor, for_update=True)
+    if membership.role != TripRole.CAPTAIN:
+        raise TripPermissionError("Only the trip captain can perform this action.")
+
+    _assert_trip_open_for_expenses(trip)
+    expense = _get_expense_for_update(trip, expense_id)
+    _assert_expense_unlocked(expense)
+
+    changed_fields: list[str] = []
+    ledger_payload: dict[str, object] = {"expense_id": str(expense.id)}
+
+    if title is not None and title != expense.title:
+        expense.title = title
+        changed_fields.append("title")
+        ledger_payload["title"] = title
+
+    if description is not None and description != expense.description:
+        expense.description = description
+        changed_fields.append("description")
+        ledger_payload["description"] = description
+
+    if total_amount is not None:
+        normalized_total_amount = normalize_currency_amount(total_amount, expense.currency_code)
+        if normalized_total_amount != expense.total_amount:
+            participants = list(expense.participants.select_for_update().order_by("created_at", "id"))
+            if not participants:
+                raise ExpenseServiceError("Expense must have at least one participant.")
+
+            shares = split_amount_evenly(
+                normalized_total_amount,
+                len(participants),
+                expense.currency_code,
+            )
+            for participant, share_amount in zip(participants, shares, strict=True):
+                participant.share_amount = share_amount
+            ExpenseParticipant.objects.bulk_update(participants, ["share_amount"])
+
+            expense.total_amount = normalized_total_amount
+            changed_fields.append("total_amount")
+            ledger_payload["total_amount"] = str(normalized_total_amount)
+
+    if update_collector:
+        collector = _get_active_member_user(trip, collector_id)
+        if collector.id != expense.collector_id:
+            expense.collector = collector
+            changed_fields.append("collector")
+            ledger_payload["collector_id"] = str(collector.id)
+
+    if changed_fields:
+        expense.save(update_fields=[*changed_fields, "updated_at"])
+        ExpenseLedgerEntry.objects.create(
+            trip=trip,
+            expense=expense,
+            actor=actor,
+            event_type=ExpenseLedgerEventType.EXPENSE_UPDATED,
+            payload=ledger_payload,
+        )
+
+    return expense
+
+
+@transaction.atomic
+def delete_expense(*, trip_id, expense_id, actor) -> None:
+    trip, membership = _get_member_trip(trip_id, actor, for_update=True)
+    if membership.role != TripRole.CAPTAIN:
+        raise TripPermissionError("Only the trip captain can perform this action.")
+
+    _assert_trip_open_for_expenses(trip)
+    expense = _get_expense_for_update(trip, expense_id)
+    _assert_expense_unlocked(expense)
+
+    ExpenseLedgerEntry.objects.create(
+        trip=trip,
+        actor=actor,
+        event_type=ExpenseLedgerEventType.EXPENSE_DELETED,
+        payload={
+            "expense_id": str(expense.id),
+            "title": expense.title,
+            "total_amount": str(expense.total_amount),
+            "currency_code": expense.currency_code,
+        },
+    )
+    expense.delete()
+
+
+@transaction.atomic
 def finalize_settlement(*, trip_id, actor) -> TripSettlement:
     trip, membership = _get_member_trip(trip_id, actor, for_update=True)
     if membership.role != TripRole.CAPTAIN:
@@ -580,6 +737,11 @@ def finalize_settlement(*, trip_id, actor) -> TripSettlement:
         raise SettlementAlreadyFinalizedError("This trip already has a finalized settlement.")
 
     dashboard = build_expense_dashboard(trip_id=trip.id, actor=actor)
+    missing_amount = dashboard["summary"]["missing_amount"]
+    if missing_amount > 0:
+        raise SettlementUnderfundedError(
+            f"Cannot finalize settlement while {missing_amount} {trip.currency_code} is still missing."
+        )
     balances = {
         user_id: row["balance"]
         for user_id, row in dashboard["member_balances"].items()
@@ -657,8 +819,9 @@ def reopen_settlement(*, trip_id, actor) -> TripSettlement:
 
 @transaction.atomic
 def mark_transfer_sent(*, trip_id, transfer_id, actor) -> SettlementTransfer:
-    trip, _membership = _get_member_trip(trip_id, actor, for_update=True)
+    trip = _get_trip(trip_id, for_update=True)
     transfer = _get_active_transfer(trip, transfer_id)
+    _assert_active_member_or_transfer_party(trip=trip, transfer=transfer, actor=actor)
 
     if transfer.payer_id != actor.id:
         raise NotTransferPayerError("Only the transfer payer can mark it sent.")
@@ -680,8 +843,9 @@ def mark_transfer_sent(*, trip_id, transfer_id, actor) -> SettlementTransfer:
 
 @transaction.atomic
 def confirm_transfer_received(*, trip_id, transfer_id, actor) -> SettlementTransfer:
-    trip, _membership = _get_member_trip(trip_id, actor, for_update=True)
+    trip = _get_trip(trip_id, for_update=True)
     transfer = _get_active_transfer(trip, transfer_id)
+    _assert_active_member_or_transfer_party(trip=trip, transfer=transfer, actor=actor)
 
     if transfer.recipient_id != actor.id:
         raise NotTransferRecipientError("Only the transfer recipient can confirm receipt.")

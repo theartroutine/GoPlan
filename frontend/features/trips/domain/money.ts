@@ -41,12 +41,20 @@ export function getTripCurrencyOptions(currentCode?: string): TripCurrencyOption
   ];
 }
 
+export function getTripCurrencyOption(currencyCode: string): TripCurrencyOption | null {
+  return CURRENCY_OPTIONS_BY_CODE.get(normalizeCurrencyCode(currencyCode)) ?? null;
+}
+
 export function normalizeCurrencyCode(value: string | null | undefined): string {
   return (value ?? "").trim().toUpperCase();
 }
 
 export function isVndCurrency(currencyCode: string): boolean {
   return normalizeCurrencyCode(currencyCode) === "VND";
+}
+
+export function isZeroDecimalTripCurrency(currencyCode: string): boolean {
+  return getTripCurrencyOption(currencyCode)?.maximumFractionDigits === 0;
 }
 
 export function apiBudgetToInputValue(
@@ -56,7 +64,7 @@ export function apiBudgetToInputValue(
   const trimmedValue = (value ?? "").trim();
   if (!trimmedValue) return "";
 
-  if (isVndCurrency(currencyCode)) {
+  if (isZeroDecimalTripCurrency(currencyCode)) {
     return trimmedValue.split(".")[0].replace(/\D/g, "");
   }
 
@@ -64,7 +72,7 @@ export function apiBudgetToInputValue(
 }
 
 export function normalizeBudgetInput(value: string, currencyCode: string): string {
-  if (isVndCurrency(currencyCode)) {
+  if (isZeroDecimalTripCurrency(currencyCode)) {
     return value.replace(/\D/g, "");
   }
 
@@ -75,7 +83,7 @@ export function normalizeBudgetInputForCurrencyChange(
   value: string,
   nextCurrencyCode: string,
 ): string {
-  if (isVndCurrency(nextCurrencyCode)) {
+  if (isZeroDecimalTripCurrency(nextCurrencyCode)) {
     return value.split(".")[0].replace(/\D/g, "");
   }
 
@@ -86,7 +94,7 @@ export function budgetInputToPayload(value: string, currencyCode: string): strin
   const normalizedValue = normalizeBudgetInput(value, currencyCode);
   if (!normalizedValue) return "";
 
-  if (isVndCurrency(currencyCode)) {
+  if (isZeroDecimalTripCurrency(currencyCode)) {
     return normalizedValue;
   }
 
@@ -96,7 +104,7 @@ export function budgetInputToPayload(value: string, currencyCode: string): strin
 }
 
 export function formatBudgetInputValue(value: string, currencyCode: string): string {
-  if (!isVndCurrency(currencyCode)) {
+  if (!isZeroDecimalTripCurrency(currencyCode)) {
     return value;
   }
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from django.contrib.auth import get_user_model
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +11,7 @@ from expenses.serializers import (
     SetContributionSerializer,
     SettlementTransferSerializer,
     TripSettlementSerializer,
+    UpdateExpenseSerializer,
     serialize_dashboard_response,
     serialize_expense_detail_response,
 )
@@ -24,20 +24,22 @@ from expenses.services import (
     NotTransferRecipientError,
     SettlementAlreadyFinalizedError,
     SettlementNotFinalizedError,
+    SettlementUnderfundedError,
     TransferNotFoundError,
     build_expense_dashboard,
     build_expense_detail,
     confirm_transfer_received,
     create_expense,
+    delete_expense,
     finalize_settlement,
     mark_transfer_sent,
     reopen_settlement,
     set_contribution,
+    update_expense,
 )
 from trips.permissions import IsProfileCompleted
 from trips.services import NotTripMemberError, TripNotFoundError, TripPermissionError, TripTerminalError
 
-User = get_user_model()
 EXPENSE_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 
 
@@ -75,14 +77,6 @@ class ExpenseListCreateAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        collector = None
-        if "collector_id" in data:
-            try:
-                collector = User.objects.get(pk=data["collector_id"])
-            except User.DoesNotExist:
-                error = ExpenseServiceError("Collector must be an active trip member.")
-                return _service_error_response(error, status_code=status.HTTP_400_BAD_REQUEST)
-
         try:
             expense = create_expense(
                 trip_id=trip_id,
@@ -90,7 +84,7 @@ class ExpenseListCreateAPIView(APIView):
                 title=data["title"],
                 description=data.get("description", ""),
                 total_amount=data["total_amount"],
-                collector=collector,
+                collector_id=data.get("collector_id"),
             )
         except TripNotFoundError as exc:
             return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
@@ -125,6 +119,60 @@ class ExpenseDetailAPIView(APIView):
             return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
 
         return Response(serialize_expense_detail_response(detail))
+
+    def patch(self, request, trip_id, expense_id):
+        serializer = UpdateExpenseSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            update_expense(
+                trip_id=trip_id,
+                expense_id=expense_id,
+                actor=request.user,
+                title=data.get("title"),
+                description=data.get("description"),
+                total_amount=data.get("total_amount"),
+                collector_id=data.get("collector_id"),
+                update_collector="collector_id" in data,
+            )
+            detail = build_expense_detail(
+                trip_id=trip_id,
+                expense_id=expense_id,
+                actor=request.user,
+            )
+        except (TripNotFoundError, ExpenseNotFoundError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except TripPermissionError as exc:
+            return _permission_error_response(exc)
+        except (ExpenseLockedError, TripTerminalError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
+        except ExpenseServiceError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_400_BAD_REQUEST)
+
+        return Response(serialize_expense_detail_response(detail))
+
+    def delete(self, request, trip_id, expense_id):
+        try:
+            delete_expense(
+                trip_id=trip_id,
+                expense_id=expense_id,
+                actor=request.user,
+            )
+        except (TripNotFoundError, ExpenseNotFoundError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_404_NOT_FOUND)
+        except NotTripMemberError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except TripPermissionError as exc:
+            return _permission_error_response(exc)
+        except (ExpenseLockedError, TripTerminalError) as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
+        except ExpenseServiceError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_400_BAD_REQUEST)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ExpenseContributionAPIView(APIView):
@@ -173,6 +221,8 @@ class SettlementFinalizeAPIView(APIView):
         except TripPermissionError as exc:
             return _permission_error_response(exc)
         except SettlementAlreadyFinalizedError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
+        except SettlementUnderfundedError as exc:
             return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
         except ExpenseServiceError as exc:
             return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)

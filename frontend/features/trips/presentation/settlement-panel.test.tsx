@@ -37,8 +37,9 @@ describe("SettlementPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "I've sent" }));
-    expect(screen.queryByRole("button", { name: "Received" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "I sent it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(screen.queryByRole("button", { name: "I received it" })).toBeNull();
 
     await waitFor(() => {
       expect(expensesApiMock.markSettlementTransferSent).toHaveBeenCalledWith("trip-1", "transfer-1");
@@ -62,8 +63,9 @@ describe("SettlementPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Received" }));
-    expect(screen.queryByRole("button", { name: "I've sent" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "I received it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(screen.queryByRole("button", { name: "I sent it" })).toBeNull();
 
     await waitFor(() => {
       expect(expensesApiMock.confirmSettlementTransferReceived).toHaveBeenCalledWith(
@@ -85,9 +87,9 @@ describe("SettlementPanel", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "I've sent" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Received" })).toBeNull();
-    expect(screen.getByText("Theo dõi")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "I sent it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "I received it" })).toBeNull();
+    expect(screen.getByText("Tracking")).not.toBeNull();
   });
 
   it("renders completed sent and received states without actions", () => {
@@ -108,12 +110,12 @@ describe("SettlementPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Đã gửi")).not.toBeNull();
-    expect(screen.getByText("Đã nhận")).not.toBeNull();
+    expect(screen.getByText("Sent")).not.toBeNull();
+    expect(screen.getByText("Received")).not.toBeNull();
     const completedRow = screen.getByText("Payer User").closest("article");
     expect(completedRow?.getAttribute("data-confirmed")).toBe("true");
-    expect(screen.queryByRole("button", { name: "I've sent" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Received" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "I sent it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "I received it" })).toBeNull();
   });
 
   it("shows exact sent and recipient-ready guidance for in-progress transfers", () => {
@@ -136,7 +138,7 @@ describe("SettlementPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Waiting for Recipient User to confirm.")).not.toBeNull();
+    expect(screen.getByText("Waiting for Recipient User to confirm receipt.")).not.toBeNull();
 
     rerender(
       <SettlementPanel
@@ -149,9 +151,9 @@ describe("SettlementPanel", () => {
     );
 
     expect(
-      screen.getByText("Payer User marked this as sent. Confirm only after money arrives."),
+      screen.getByText("Payer User marked this as sent. Confirm only after the money arrives."),
     ).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Received" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "I received it" })).not.toBeNull();
   });
 
   it("renders an inline error when a settlement action fails", async () => {
@@ -167,9 +169,10 @@ describe("SettlementPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "I've sent" }));
+    fireEvent.click(screen.getByRole("button", { name: "I sent it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
-    expect(await screen.findByText("Không cập nhật được chuyển khoản. Thử lại sau.")).not.toBeNull();
+    expect(await screen.findByText("Could not update the transfer. Try again later.")).not.toBeNull();
   });
 
   it("keeps each in-flight transfer action disabled while other transfers are submitted", () => {
@@ -200,11 +203,13 @@ describe("SettlementPanel", () => {
     );
 
     const [transferAButton, transferBButton] = screen.getAllByRole("button", {
-      name: "I've sent",
+      name: "I sent it",
     });
 
     fireEvent.click(transferAButton);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     fireEvent.click(transferBButton);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(transferAButton.hasAttribute("disabled")).toBe(true);
 

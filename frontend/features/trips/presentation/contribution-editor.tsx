@@ -7,6 +7,7 @@ import type {
   ExpenseDetailResponse,
   ExpenseParticipantContribution,
 } from "@/features/trips/domain/expenses-types";
+import { getExpenseErrorMessage } from "@/features/trips/domain/expenses-errors";
 import {
   formatExpenseMoney,
   normalizeExpenseMoneyInput,
@@ -15,13 +16,14 @@ import { setExpenseContribution } from "@/features/trips/infrastructure/expenses
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
+import { cn } from "@/shared/lib/utils";
 
 type ContributionEditorProps = {
   detail: ExpenseDetailResponse;
   tripId: string;
   canManageExpenses: boolean;
   settlementFinalized: boolean;
-  onChanged: () => void | Promise<void>;
+  onChanged: (expenseId: string) => void | Promise<void>;
 };
 
 export function ContributionEditor({
@@ -50,7 +52,7 @@ export function ContributionEditor({
       Number(normalizedAmount.value) < 0 ||
       Number.isNaN(Number(normalizedAmount.value))
     ) {
-      setError("Nhập số tiền đóng góp hợp lệ.");
+      setError("Enter a valid contribution amount.");
       return;
     }
 
@@ -61,46 +63,57 @@ export function ContributionEditor({
         amount: normalizedAmount.value,
       });
       setEditingUserId(null);
-      await onChanged();
-    } catch {
-      setError(`Không lưu được đóng góp của ${participant.display_name}.`);
+      await onChanged(detail.id);
+    } catch (err) {
+      setError(
+        getExpenseErrorMessage(
+          err,
+          `Could not save ${participant.display_name}'s contribution.`,
+        ),
+      );
     } finally {
       setPendingUserId(null);
     }
   }
 
   return (
-    <section className="mt-5 space-y-3" aria-label="Contribution snapshot">
+    <div className="px-4 py-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">Đóng góp theo thành viên</h3>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Contributions
+        </p>
         {readOnly && (
-          <span className="rounded-full border border-border bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-            Chỉ xem
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+            View only
           </span>
         )}
       </div>
 
       {error && (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="mt-2 rounded border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive">
           {error}
         </p>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-border">
+      <div className="mt-2 divide-y divide-border">
         {detail.participants.map((participant) => {
           const isEditing = editingUserId === participant.user_id;
           const isPending = pendingUserId === participant.user_id;
+          const balance = parseFloat(participant.balance);
+          const isPositive = balance > 0;
+          const isNegative = balance < 0;
+          const surplusHeld = parseFloat(participant.surplus_held ?? "0");
 
           return (
-            <div
-              key={participant.user_id}
-              className="grid gap-3 border-b border-border p-3 last:border-b-0"
-            >
-              <div className="flex min-w-0 items-start justify-between gap-3">
+            <div key={participant.user_id} className="py-2.5">
+              {/* Name row */}
+              <div className="flex min-w-0 items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{participant.display_name}</p>
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {participant.display_name}
+                  </p>
                   {participant.identify_tag && (
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="truncate text-[11px] text-muted-foreground">
                       {participant.identify_tag}
                     </p>
                   )}
@@ -108,64 +121,112 @@ export function ContributionEditor({
                 {!readOnly && !isEditing && (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                     onClick={() => startEditing(participant)}
-                    aria-label={`Sửa đóng góp của ${participant.display_name}`}
+                    aria-label={`Edit contribution for ${participant.display_name}`}
                   >
-                    <Pencil className="size-4" />
-                    Sửa
+                    <Pencil className="size-3" />
+                    Edit
                   </Button>
                 )}
               </div>
 
-              <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-                <MoneyCell
-                  label="Phần chia"
-                  value={formatExpenseMoney(participant.share_amount, detail.currency_code)}
-                />
-                <MoneyCell
-                  label="Đã đóng"
-                  value={formatExpenseMoney(participant.contributed_amount, detail.currency_code)}
-                />
-                <MoneyCell
-                  label="Số dư"
-                  value={formatExpenseMoney(participant.balance, detail.currency_code)}
-                />
+              {/* Amounts row */}
+              <div className="mt-1.5 grid grid-cols-3 gap-x-2 text-[11px]">
+                <div>
+                  <span className="text-muted-foreground/70">Share</span>
+                  <p className="mt-0.5 font-semibold tabular-nums text-foreground">
+                    {formatExpenseMoney(participant.share_amount, detail.currency_code)}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground/70">Contributed</span>
+                  <p className="mt-0.5 font-semibold tabular-nums text-foreground">
+                    {formatExpenseMoney(participant.contributed_amount, detail.currency_code)}
+                  </p>
+                </div>
+                <div>
+                  <span
+                    className={cn(
+                      "font-medium",
+                      isPositive && "text-emerald-600 dark:text-emerald-400",
+                      isNegative && "text-rose-600 dark:text-rose-400",
+                      !isPositive && !isNegative && "text-muted-foreground/70",
+                    )}
+                  >
+                    {isPositive ? "Overpaid" : isNegative ? "Still owes" : "Settled"}
+                  </span>
+                  <p
+                    className={cn(
+                      "mt-0.5 font-semibold tabular-nums",
+                      isPositive && "text-emerald-700 dark:text-emerald-300",
+                      isNegative && "text-rose-700 dark:text-rose-300",
+                      !isPositive && !isNegative && "text-foreground",
+                    )}
+                  >
+                    {isPositive
+                      ? `+${formatExpenseMoney(balance, detail.currency_code)}`
+                      : formatExpenseMoney(Math.abs(balance), detail.currency_code)}
+                  </p>
+                </div>
               </div>
 
+              {/* Surplus held indicator */}
+              {surplusHeld > 0 && (
+                <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                  Holding{" "}
+                  <span className="font-semibold tabular-nums">
+                    {formatExpenseMoney(surplusHeld, detail.currency_code)}
+                  </span>{" "}
+                  surplus
+                </p>
+              )}
+
+              {/* Edit form */}
               {isEditing && (
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="min-w-48 flex-1 space-y-1">
-                    <Label htmlFor={`contribution-${participant.user_id}`}>
-                      Số tiền {participant.display_name} đã đóng
+                <div className="mt-2.5 flex flex-wrap items-end gap-2">
+                  <div className="min-w-40 flex-1 space-y-1">
+                    <Label
+                      htmlFor={`contribution-${participant.user_id}`}
+                      className="text-xs"
+                    >
+                      Amount {participant.display_name} contributed
                     </Label>
                     <Input
                       id={`contribution-${participant.user_id}`}
                       value={draftAmount}
-                      onChange={(event) => setDraftAmount(event.target.value)}
+                      onChange={(e) => setDraftAmount(e.target.value)}
                       inputMode="decimal"
                       disabled={isPending}
+                      className="h-8 text-sm"
                     />
                   </div>
                   <Button
                     type="button"
                     size="sm"
+                    className="h-8"
                     disabled={isPending}
                     onClick={() => void saveContribution(participant)}
-                    aria-label={`Lưu đóng góp của ${participant.display_name}`}
+                    aria-label={`Save contribution for ${participant.display_name}`}
                   >
-                    {isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                    Lưu
+                    {isPending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Check className="size-3.5" />
+                    )}
+                    Save
                   </Button>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
+                    className="h-8"
                     disabled={isPending}
                     onClick={() => setEditingUserId(null)}
                   >
-                    Hủy
+                    Cancel
                   </Button>
                 </div>
               )}
@@ -173,15 +234,6 @@ export function ContributionEditor({
           );
         })}
       </div>
-    </section>
-  );
-}
-
-function MoneyCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-muted/50 px-2 py-1.5">
-      <span>{label}</span>
-      <p className="mt-0.5 font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
 }
