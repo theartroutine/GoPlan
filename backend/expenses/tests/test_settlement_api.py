@@ -479,6 +479,35 @@ class SettlementAPITests(APITestCase):
             1,
         )
 
+    def test_reopen_payload_snapshots_in_flight_transfers(self):
+        self._finalize()
+        transfer = SettlementTransfer.objects.get(payer=self.member_a)
+        self.client.post(
+            self._sent_url(transfer),
+            {},
+            format="json",
+            **_auth(self.member_a),
+        )
+
+        reopen_response = self.client.post(
+            self._reopen_url(),
+            {},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(reopen_response.status_code, 200)
+        ledger = ExpenseLedgerEntry.objects.filter(
+            event_type=ExpenseLedgerEventType.SETTLEMENT_REOPENED,
+        ).latest("created_at")
+        snapshot = ledger.payload.get("in_flight_transfers")
+        self.assertIsInstance(snapshot, list)
+        self.assertEqual(len(snapshot), 1)
+        self.assertEqual(snapshot[0]["transfer_id"], str(transfer.id))
+        self.assertEqual(snapshot[0]["payer_id"], str(self.member_a.id))
+        self.assertIsNotNone(snapshot[0]["payer_marked_sent_at"])
+        self.assertIsNone(snapshot[0]["recipient_confirmed_at"])
+
     def test_finalize_over_optimal_cap_uses_greedy_fallback(self):
         for index in range(17):
             member = create_completed_user(

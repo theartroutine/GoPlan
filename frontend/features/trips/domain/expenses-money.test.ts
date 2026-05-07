@@ -103,6 +103,12 @@ describe("expense money helpers", () => {
     expect(getUserBalanceLabel("0", "VND")).toBe("Settled");
   });
 
+  it("formats zero-decimal currency balances without a decimal portion", () => {
+    expect(getUserBalanceLabel("-300000", "VND")).not.toMatch(/[.,]\d{2}\b/);
+    expect(formatExpenseMoney("12500", "JPY")).not.toMatch(/[.,]\d{2}\b/);
+    expect(formatExpenseMoney("12500", "JPY")).toMatch(/12[.,]?500/);
+  });
+
   it("returns settlement role actions for payer and recipient only", () => {
     expect(getSettlementTransferRoleState(makeTransfer(), payer.id)).toMatchObject({
       isPayer: true,

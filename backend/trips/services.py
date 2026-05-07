@@ -93,6 +93,10 @@ class TripTerminalError(StatusTransitionError):
     error_code = "TRIP_TERMINAL"
 
 
+class TripCurrencyLockedError(TripServiceError):
+    error_code = "TRIP_CURRENCY_LOCKED"
+
+
 # Timeline-specific errors
 class TimelineSectionNotFoundError(TripServiceError):
     error_code = "SECTION_NOT_FOUND"
@@ -323,7 +327,17 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
         if start_date is not _UNSET:                 trip.start_date = start_date
         if end_date is not _UNSET:                   trip.end_date = end_date
         if description is not _UNSET:                trip.description = description
-        if currency_code is not _UNSET:              trip.currency_code = currency_code
+        if currency_code is not _UNSET:
+            if currency_code != trip.currency_code:
+                # Currency code is the unit of every expense, contribution and
+                # settlement transfer. Once the trip has any expense, changing
+                # currency would silently mismatch existing rows against new ones.
+                from expenses.models import Expense
+                if Expense.objects.filter(trip=trip).exists():
+                    raise TripCurrencyLockedError(
+                        "Cannot change trip currency once expenses exist."
+                    )
+            trip.currency_code = currency_code
         if timezone is not _UNSET:                   trip.timezone = timezone
         if budget_estimate is not _UNSET:            trip.budget_estimate = budget_estimate
 

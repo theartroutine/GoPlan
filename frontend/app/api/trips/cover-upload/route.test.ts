@@ -95,6 +95,29 @@ describe("POST /api/trips/cover-upload", () => {
     });
   });
 
+  it("rejects unsupported image types before forwarding upstream", async () => {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new File(["<svg/>"], "evil.svg", { type: "image/svg+xml" }),
+    );
+    const request = {
+      headers: new Headers({
+        Authorization: "Bearer access-token",
+      }),
+      formData: vi.fn().mockResolvedValue(formData),
+    };
+
+    const response = await POST(request as never);
+
+    expect(response.status).toBe(415);
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      detail: "Unsupported image type. Use JPEG, PNG, or WebP.",
+      error_code: "UNSUPPORTED_MEDIA_TYPE",
+    });
+  });
+
   it("refreshes and retries when the provided bearer token is stale", async () => {
     refreshMock.refreshWithSingleFlight.mockResolvedValue({
       kind: "success",

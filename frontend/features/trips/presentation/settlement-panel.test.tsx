@@ -175,6 +175,33 @@ describe("SettlementPanel", () => {
     expect(await screen.findByText("Could not update the transfer. Try again later.")).not.toBeNull();
   });
 
+  it("reloads the dashboard on action failure so concurrent updates surface", async () => {
+    const onChanged = vi.fn();
+    expensesApiMock.markSettlementTransferSent.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { detail: "Transfer not found.", error_code: "TRANSFER_NOT_FOUND" },
+      },
+    });
+
+    render(
+      <SettlementPanel
+        tripId="trip-1"
+        settlement={buildTripSettlement()}
+        currentUserId="user-payer"
+        currencyCode="VND"
+        onChanged={onChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "I sent it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    await waitFor(() => {
+      expect(onChanged).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("keeps each in-flight transfer action disabled while other transfers are submitted", () => {
     expensesApiMock.markSettlementTransferSent.mockImplementation(
       () => new Promise(() => {}),

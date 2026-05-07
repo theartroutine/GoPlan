@@ -44,6 +44,7 @@ from trips.services import (
     TimelineSectionDateConflictError,
     TimelineSectionNotEmptyError,
     TimelineSectionNotFoundError,
+    TripCurrencyLockedError,
     TripNotFoundError,
     TripPermissionError,
     TripTerminalError,
@@ -198,6 +199,11 @@ class TripDetailUpdateAPIView(APIView):
                 **{k: v for k, v in d.items()},
             )
         except TimelineSectionDateConflictError as exc:
+            return Response(
+                {"detail": str(exc), "error_code": exc.error_code},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except TripCurrencyLockedError as exc:
             return Response(
                 {"detail": str(exc), "error_code": exc.error_code},
                 status=status.HTTP_409_CONFLICT,

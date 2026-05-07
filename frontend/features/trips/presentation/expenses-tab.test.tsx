@@ -1060,6 +1060,45 @@ describe("ExpensesTab", () => {
     });
   });
 
+  it("treats a 404 from delete as authoritative success without surfacing an error", async () => {
+    expensesApiMock.getExpensesDashboard
+      .mockResolvedValueOnce(
+        buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
+      )
+      .mockResolvedValueOnce(
+        buildExpenseDashboardResponse({
+          permissions: { can_manage_expenses: true },
+          expenses: [],
+        }),
+      );
+    expensesApiMock.getExpenseDetail.mockResolvedValue(
+      buildExpenseDetailResponse({ id: "expense-food" }),
+    );
+    expensesApiMock.deleteExpense.mockRejectedValueOnce({
+      response: {
+        status: 404,
+        data: { detail: "Expense not found.", error_code: "EXPENSE_NOT_FOUND" },
+      },
+    });
+
+    render(<ExpensesTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Dinner in Da Nang/i }));
+    expect(await screen.findByText("Linh Tran")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Delete expense" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+
+    await waitFor(() => {
+      expect(expensesApiMock.deleteExpense).toHaveBeenCalledWith("trip-1", "expense-food");
+    });
+    await waitFor(() => {
+      expect(expensesApiMock.getExpensesDashboard).toHaveBeenCalledTimes(2);
+    });
+    expect(
+      screen.queryByText("Could not delete the expense. Try again later."),
+    ).toBeNull();
+  });
+
   it("normalizes comma-grouped contribution input and rejects VND decimal fractions", async () => {
     expensesApiMock.getExpensesDashboard.mockResolvedValue(
       buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),

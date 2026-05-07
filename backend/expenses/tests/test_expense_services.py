@@ -14,18 +14,22 @@ from expenses.models import (
     ExpenseParticipant,
 )
 from expenses.services import (
+    CollectorNotParticipantError,
     ContributionUserNotParticipantError,
     ExpenseLockedError,
     ExpenseServiceError,
     SettlementAlreadyFinalizedError,
     build_expense_dashboard,
     create_expense,
+    delete_expense,
     finalize_settlement,
+    reopen_settlement,
     set_contribution,
+    update_expense,
 )
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
-from trips.services import TripNotFoundError, TripPermissionError
+from trips.services import TripCurrencyLockedError, TripNotFoundError, TripPermissionError, update_trip
 
 
 def _make_trip(created_by, **kwargs):
@@ -614,3 +618,279 @@ class ExpenseDashboardServiceTests(TestCase):
 
         with self.assertRaises(TripNotFoundError):
             build_expense_dashboard(trip_id=self.trip.id, actor=outsider)
+
+
+class TripCurrencyLockServiceTests(TestCase):
+    def setUp(self):
+        self.captain = create_completed_user(
+            "currency-lock-captain@example.com",
+            "currencylockcaptain",
+            "CLC001",
+            display_name="Currency Captain",
+        )
+        self.trip = _make_trip(self.captain)
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.captain,
+            role=TripRole.CAPTAIN,
+            status=MemberStatus.ACTIVE,
+        )
+
+    def test_currency_can_be_changed_when_no_expense_exists(self):
+        update_trip(self.trip, currency_code="USD")
+
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.currency_code, "USD")
+
+    def test_currency_cannot_change_after_first_expense(self):
+        create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Hotel",
+            total_amount=Decimal("600000"),
+        )
+
+        with self.assertRaises(TripCurrencyLockedError):
+            update_trip(self.trip, currency_code="USD")
+
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.currency_code, "VND")
+
+    def test_setting_same_currency_does_not_raise(self):
+        create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Hotel",
+            total_amount=Decimal("600000"),
+        )
+
+        update_trip(self.trip, currency_code="VND")
+
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.currency_code, "VND")
+
+
+class CollectorReassignServiceTests(TestCase):
+    def setUp(self):
+        self.captain = create_completed_user(
+            "collector-captain@example.com",
+            "collectorcaptain",
+            "COC001",
+            display_name="Collector Captain",
+        )
+        self.member = create_completed_user(
+            "collector-member@example.com",
+            "collectormember",
+            "COM001",
+            display_name="Collector Member",
+        )
+        self.late_joiner = create_completed_user(
+            "collector-late@example.com",
+            "collectorlate",
+            "COL001",
+            display_name="Late Joiner",
+        )
+        self.trip = _make_trip(self.captain)
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.captain,
+            role=TripRole.CAPTAIN,
+            status=MemberStatus.ACTIVE,
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        self.expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Hotel",
+            total_amount=Decimal("600000"),
+        )
+        # late_joiner becomes an active member only AFTER the expense was created,
+        # so they are not in the participant snapshot of self.expense.
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.late_joiner,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+
+    def test_reassigning_collector_to_non_participant_is_rejected(self):
+        with self.assertRaises(CollectorNotParticipantError):
+            update_expense(
+                trip_id=self.trip.id,
+                expense_id=self.expense.id,
+                actor=self.captain,
+                collector_id=self.late_joiner.id,
+                update_collector=True,
+            )
+
+        self.expense.refresh_from_db()
+        self.assertEqual(self.expense.collector_id, self.captain.id)
+
+    def test_reassigning_collector_to_participant_succeeds(self):
+        update_expense(
+            trip_id=self.trip.id,
+            expense_id=self.expense.id,
+            actor=self.captain,
+            collector_id=self.member.id,
+            update_collector=True,
+        )
+
+        self.expense.refresh_from_db()
+        self.assertEqual(self.expense.collector_id, self.member.id)
+
+
+class ExpenseDeleteAuditServiceTests(TestCase):
+    def setUp(self):
+        self.captain = create_completed_user(
+            "delete-captain@example.com",
+            "deletecaptain",
+            "DEC001",
+            display_name="Delete Captain",
+        )
+        self.member = create_completed_user(
+            "delete-member@example.com",
+            "deletemember",
+            "DEM001",
+            display_name="Delete Member",
+        )
+        self.trip = _make_trip(self.captain)
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.captain,
+            role=TripRole.CAPTAIN,
+            status=MemberStatus.ACTIVE,
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+
+    def test_delete_expense_ledger_includes_contribution_snapshot(self):
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Hotel",
+            total_amount=Decimal("600000"),
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.member.id,
+            actor=self.captain,
+            amount=Decimal("250000"),
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.captain.id,
+            actor=self.captain,
+            amount=Decimal("350000"),
+        )
+        ExpenseLedgerEntry.objects.filter(
+            event_type=ExpenseLedgerEventType.EXPENSE_DELETED
+        ).delete()
+
+        delete_expense(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            actor=self.captain,
+        )
+
+        ledger = ExpenseLedgerEntry.objects.get(
+            event_type=ExpenseLedgerEventType.EXPENSE_DELETED,
+        )
+        contributions = ledger.payload.get("contributions")
+        self.assertIsInstance(contributions, list)
+        self.assertEqual(len(contributions), 2)
+        amounts_by_user = {item["user_id"]: item["amount"] for item in contributions}
+        self.assertEqual(amounts_by_user[str(self.member.id)], "250000")
+        self.assertEqual(amounts_by_user[str(self.captain.id)], "350000")
+
+
+class ReopenSettlementAuditServiceTests(TestCase):
+    def setUp(self):
+        self.captain = create_completed_user(
+            "reopen-captain@example.com",
+            "reopencaptain",
+            "REC001",
+            display_name="Reopen Captain",
+        )
+        self.member_a = create_completed_user(
+            "reopen-member-a@example.com",
+            "reopenmembera",
+            "REA001",
+            display_name="Reopen A",
+        )
+        self.member_b = create_completed_user(
+            "reopen-member-b@example.com",
+            "reopenmemberb",
+            "REB001",
+            display_name="Reopen B",
+        )
+        self.trip = _make_trip(self.captain)
+        for user, role in (
+            (self.captain, TripRole.CAPTAIN),
+            (self.member_a, TripRole.MEMBER),
+            (self.member_b, TripRole.MEMBER),
+        ):
+            TripMember.objects.create(
+                trip=self.trip,
+                user=user,
+                role=role,
+                status=MemberStatus.ACTIVE,
+            )
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Group Hotel",
+            total_amount=Decimal("900000"),
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.captain.id,
+            actor=self.captain,
+            amount=Decimal("900000"),
+        )
+        finalize_settlement(trip_id=self.trip.id, actor=self.captain)
+
+    def test_reopen_payload_snapshots_in_flight_transfers(self):
+        from expenses.services import mark_transfer_sent
+
+        from expenses.models import SettlementTransfer
+
+        sent_transfer = SettlementTransfer.objects.filter(
+            payer=self.member_a
+        ).first()
+        mark_transfer_sent(
+            trip_id=self.trip.id,
+            transfer_id=sent_transfer.id,
+            actor=self.member_a,
+        )
+
+        reopen_settlement(trip_id=self.trip.id, actor=self.captain)
+
+        ledger = ExpenseLedgerEntry.objects.filter(
+            event_type=ExpenseLedgerEventType.SETTLEMENT_REOPENED,
+        ).latest("created_at")
+        snapshot = ledger.payload.get("in_flight_transfers")
+        self.assertIsInstance(snapshot, list)
+        self.assertEqual(len(snapshot), 1)
+        self.assertEqual(snapshot[0]["transfer_id"], str(sent_transfer.id))
+        self.assertIsNotNone(snapshot[0]["payer_marked_sent_at"])
+        self.assertIsNone(snapshot[0]["recipient_confirmed_at"])
+
+    def test_reopen_payload_is_empty_list_when_no_transfers_were_in_flight(self):
+        reopen_settlement(trip_id=self.trip.id, actor=self.captain)
+
+        ledger = ExpenseLedgerEntry.objects.filter(
+            event_type=ExpenseLedgerEventType.SETTLEMENT_REOPENED,
+        ).latest("created_at")
+        self.assertEqual(ledger.payload.get("in_flight_transfers"), [])

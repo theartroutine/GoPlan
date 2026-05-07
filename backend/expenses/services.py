@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 
 from expenses.models import (
@@ -45,6 +45,10 @@ class ExpenseNotFoundError(ExpenseServiceError):
 
 class ContributionUserNotParticipantError(ExpenseServiceError):
     error_code = "CONTRIBUTION_USER_NOT_PARTICIPANT"
+
+
+class CollectorNotParticipantError(ExpenseServiceError):
+    error_code = "COLLECTOR_NOT_PARTICIPANT"
 
 
 class SettlementAlreadyFinalizedError(ExpenseServiceError):
@@ -683,6 +687,15 @@ def update_expense(
     if update_collector:
         collector = _get_active_member_user(trip, collector_id)
         if collector.id != expense.collector_id:
+            # Collector must remain inside the participant snapshot so balances
+            # stay mathematically consistent — otherwise surplus would be
+            # debited against a member who never received any cash.
+            if not ExpenseParticipant.objects.filter(
+                expense=expense, user_id=collector.id
+            ).exists():
+                raise CollectorNotParticipantError(
+                    "Collector must be a participant of this expense."
+                )
             expense.collector = collector
             changed_fields.append("collector")
             ledger_payload["collector_id"] = str(collector.id)
@@ -710,6 +723,18 @@ def delete_expense(*, trip_id, expense_id, actor) -> None:
     expense = _get_expense_for_update(trip, expense_id)
     _assert_expense_unlocked(expense)
 
+    # Snapshot contributions so the audit trail survives the cascade delete.
+    quantum = currency_amount_quantum(expense.currency_code)
+    contributions_snapshot = [
+        {
+            "user_id": str(user_id),
+            "amount": str(amount.quantize(quantum)),
+        }
+        for user_id, amount in ExpenseContribution.objects.filter(expense=expense)
+        .order_by("id")
+        .values_list("user_id", "amount")
+    ]
+
     ExpenseLedgerEntry.objects.create(
         trip=trip,
         actor=actor,
@@ -719,6 +744,7 @@ def delete_expense(*, trip_id, expense_id, actor) -> None:
             "title": expense.title,
             "total_amount": str(expense.total_amount),
             "currency_code": expense.currency_code,
+            "contributions": contributions_snapshot,
         },
     )
     expense.delete()
@@ -799,6 +825,36 @@ def reopen_settlement(*, trip_id, actor) -> TripSettlement:
     if settlement is None:
         raise SettlementNotFinalizedError("This trip does not have a finalized settlement.")
 
+    # Snapshot any in-flight transfer state so reopening preserves the audit
+    # trail of money movements that may have already happened out-of-band.
+    in_flight_transfers = (
+        SettlementTransfer.objects.filter(settlement=settlement)
+        .filter(
+            Q(payer_marked_sent_at__isnull=False)
+            | Q(recipient_confirmed_at__isnull=False)
+        )
+        .order_by("created_at", "id")
+    )
+    confirmed_transfers_snapshot = [
+        {
+            "transfer_id": str(transfer.id),
+            "payer_id": str(transfer.payer_id),
+            "recipient_id": str(transfer.recipient_id),
+            "amount": str(transfer.amount),
+            "payer_marked_sent_at": (
+                transfer.payer_marked_sent_at.isoformat()
+                if transfer.payer_marked_sent_at
+                else None
+            ),
+            "recipient_confirmed_at": (
+                transfer.recipient_confirmed_at.isoformat()
+                if transfer.recipient_confirmed_at
+                else None
+            ),
+        }
+        for transfer in in_flight_transfers
+    ]
+
     now = timezone.now()
     settlement.status = SettlementStatus.REOPENED
     settlement.reopened_by = actor
@@ -809,7 +865,10 @@ def reopen_settlement(*, trip_id, actor) -> TripSettlement:
         trip=trip,
         actor=actor,
         event_type=ExpenseLedgerEventType.SETTLEMENT_REOPENED,
-        payload={"settlement_id": str(settlement.id)},
+        payload={
+            "settlement_id": str(settlement.id),
+            "in_flight_transfers": confirmed_transfers_snapshot,
+        },
     )
 
     return (

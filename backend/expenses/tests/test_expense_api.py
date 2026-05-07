@@ -463,3 +463,110 @@ class ExpenseAPITests(APITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["error_code"], "EXPENSE_LOCKED")
         self.assertTrue(Expense.objects.filter(pk=expense.id).exists())
+
+    def test_cross_trip_expense_detail_returns_not_found(self):
+        # Captain belongs to trip A, attempts to read expense of trip B.
+        other_trip = _make_trip(self.captain, name="Foreign Trip")
+        TripMember.objects.create(
+            trip=other_trip,
+            user=self.captain,
+            role=TripRole.CAPTAIN,
+            status=MemberStatus.ACTIVE,
+        )
+        other_expense_response = self.client.post(
+            f"/api/trips/{other_trip.id}/expenses",
+            {"title": "Foreign", "total_amount": "100000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        foreign_expense_id = other_expense_response.data["id"]
+
+        # Now ask for that expense via THIS trip's URL — must not leak.
+        detail_response = self.client.get(
+            f"{self.expenses_url}/{foreign_expense_id}",
+            **_auth(self.captain),
+        )
+        update_response = self.client.patch(
+            f"{self.expenses_url}/{foreign_expense_id}",
+            {"title": "Hijack"},
+            format="json",
+            **_auth(self.captain),
+        )
+        delete_response = self.client.delete(
+            f"{self.expenses_url}/{foreign_expense_id}",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(detail_response.status_code, 404)
+        self.assertEqual(detail_response.data["error_code"], "EXPENSE_NOT_FOUND")
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(update_response.data["error_code"], "EXPENSE_NOT_FOUND")
+        self.assertEqual(delete_response.status_code, 404)
+        self.assertEqual(delete_response.data["error_code"], "EXPENSE_NOT_FOUND")
+        # Foreign expense remains untouched.
+        self.assertTrue(Expense.objects.filter(pk=foreign_expense_id).exists())
+        self.assertEqual(
+            Expense.objects.get(pk=foreign_expense_id).title, "Foreign"
+        )
+
+    def test_update_expense_rejects_collector_outside_participant_snapshot(self):
+        late_joiner = create_completed_user(
+            "expense-late-joiner@example.com",
+            "expenselatejoiner",
+            "ELJ001",
+            display_name="Late Joiner",
+        )
+        expense_response = self.client.post(
+            self.expenses_url,
+            {"title": "Dinner", "total_amount": "600000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        expense_id = expense_response.data["id"]
+        # Late joiner becomes active AFTER the participant snapshot was frozen.
+        TripMember.objects.create(
+            trip=self.trip,
+            user=late_joiner,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+
+        response = self.client.patch(
+            f"{self.expenses_url}/{expense_id}",
+            {"collector_id": str(late_joiner.id)},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "COLLECTOR_NOT_PARTICIPANT")
+        # Original collector preserved.
+        expense = Expense.objects.get(pk=expense_id)
+        self.assertEqual(expense.collector_id, self.captain.id)
+
+    def test_usd_expense_rejects_too_many_decimals_on_create(self):
+        usd_trip = _make_trip(
+            self.captain, name="USD Decimal Trip", currency_code="USD"
+        )
+        TripMember.objects.create(
+            trip=usd_trip,
+            user=self.captain,
+            role=TripRole.CAPTAIN,
+            status=MemberStatus.ACTIVE,
+        )
+        TripMember.objects.create(
+            trip=usd_trip,
+            user=self.member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+
+        response = self.client.post(
+            f"/api/trips/{usd_trip.id}/expenses",
+            {"title": "Coffee", "total_amount": "10.555"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Expense.objects.filter(trip=usd_trip).exists())

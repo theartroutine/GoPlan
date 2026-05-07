@@ -16,6 +16,7 @@ from expenses.serializers import (
     serialize_expense_detail_response,
 )
 from expenses.services import (
+    CollectorNotParticipantError,
     ContributionUserNotParticipantError,
     ExpenseLockedError,
     ExpenseNotFoundError,
@@ -154,7 +155,7 @@ class ExpenseDetailAPIView(APIView):
             return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
-        except (ExpenseLockedError, TripTerminalError) as exc:
+        except (ExpenseLockedError, TripTerminalError, CollectorNotParticipantError) as exc:
             return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
         except ExpenseServiceError as exc:
             return _service_error_response(exc, status_code=status.HTTP_400_BAD_REQUEST)
@@ -273,6 +274,8 @@ class SettlementTransferSentAPIView(APIView):
             return _trip_not_visible_response()
         except NotTransferPayerError as exc:
             return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except ExpenseServiceError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
 
         return Response(SettlementTransferSerializer(transfer).data)
 
@@ -294,5 +297,7 @@ class SettlementTransferReceivedAPIView(APIView):
             return _trip_not_visible_response()
         except NotTransferRecipientError as exc:
             return _service_error_response(exc, status_code=status.HTTP_403_FORBIDDEN)
+        except ExpenseServiceError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
 
         return Response(SettlementTransferSerializer(transfer).data)
