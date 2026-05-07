@@ -209,6 +209,31 @@ class SettlementAPITests(APITestCase):
         self.assertEqual(second_response.status_code, 409)
         self.assertEqual(second_response.data["error_code"], "SETTLEMENT_ALREADY_FINALIZED")
 
+    def test_completed_trip_blocks_settlement_finalize(self):
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        response = self._finalize()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
+
+    def test_completed_trip_blocks_settlement_reopen(self):
+        finalize_response = self._finalize()
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        response = self.client.post(
+            self._reopen_url(),
+            {},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(finalize_response.status_code, 200)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
+
     def test_create_expense_after_finalize_returns_conflict_without_creating_expense(self):
         self._finalize()
 

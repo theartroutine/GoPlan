@@ -19,7 +19,7 @@ type ExpenseDetailDrawerProps = {
   detailLoading: boolean;
   detailError: string | null;
   tripId: string;
-  settlementFinalized: boolean;
+  mutationLockReason: "settlement" | "terminal" | null;
   onContributionChanged: (expenseId: string) => void | Promise<void>;
   onEditExpense: (expense: ExpenseListItem | ExpenseDetailResponse) => void;
   onDeleteExpense: (expense: ExpenseListItem | ExpenseDetailResponse) => void;
@@ -33,7 +33,7 @@ export function ExpenseDetailDrawer({
   detailLoading,
   detailError,
   tripId,
-  settlementFinalized,
+  mutationLockReason,
   onContributionChanged,
   onEditExpense,
   onDeleteExpense,
@@ -77,7 +77,7 @@ export function ExpenseDetailDrawer({
               detailLoading={detailLoading}
               detailError={detailError}
               tripId={tripId}
-              settlementFinalized={settlementFinalized}
+              mutationLockReason={mutationLockReason}
               onContributionChanged={onContributionChanged}
               onEditExpense={onEditExpense}
               onDeleteExpense={onDeleteExpense}

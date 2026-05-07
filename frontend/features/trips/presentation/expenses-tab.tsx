@@ -291,7 +291,14 @@ export function ExpensesTab() {
   const canManageExpenses = dashboard.permissions.can_manage_expenses;
   const dashboardCurrencyCode = dashboard.currency_code;
   const settlementFinalized = dashboard.settlement?.status === "FINALIZED";
-  const canCreateExpense = canManageExpenses && !settlementFinalized;
+  const tripStatus = tripData?.trip.status;
+  const tripTerminal = tripStatus === "COMPLETED" || tripStatus === "CANCELLED";
+  const expenseMutationLockReason = tripTerminal
+    ? "terminal"
+    : settlementFinalized
+      ? "settlement"
+      : null;
+  const canCreateExpense = canManageExpenses && expenseMutationLockReason === null;
   const settlementActionCopy = getSettlementActionCopy(settlementAction);
 
   async function handleExpenseCreated(expense: ExpenseResponse) {
@@ -426,7 +433,7 @@ export function ExpensesTab() {
               Add expense
             </Button>
           </>
-        ) : canManageExpenses && settlementFinalized ? (
+        ) : canManageExpenses && expenseMutationLockReason === "settlement" ? (
           <>
             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
               <ShieldCheck className="size-3.5" />
@@ -437,6 +444,13 @@ export function ExpensesTab() {
               Reopen settlement
             </Button>
           </>
+        ) : canManageExpenses && expenseMutationLockReason === "terminal" ? (
+          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            <ShieldCheck className="size-3.5" />
+            {tripStatus === "CANCELLED"
+              ? "Trip cancelled. Expenses are locked."
+              : "Trip completed. Expenses are locked."}
+          </span>
         ) : (
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground">
             <ShieldCheck className="size-3.5" />
@@ -558,7 +572,7 @@ export function ExpensesTab() {
         detailLoading={detailLoading}
         detailError={detailError}
         tripId={tripId}
-        settlementFinalized={settlementFinalized}
+        mutationLockReason={expenseMutationLockReason}
         onContributionChanged={handleContributionChanged}
         onEditExpense={(expense) => {
           setExpenseForEdit(expense);

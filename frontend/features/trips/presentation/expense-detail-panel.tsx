@@ -23,7 +23,7 @@ type ExpenseDetailPanelProps = {
   detailLoading: boolean;
   detailError: string | null;
   tripId: string;
-  settlementFinalized: boolean;
+  mutationLockReason: "settlement" | "terminal" | null;
   onContributionChanged: (expenseId: string) => void | Promise<void>;
   onEditExpense: (expense: ExpenseListItem | ExpenseDetailResponse) => void;
   onDeleteExpense: (expense: ExpenseListItem | ExpenseDetailResponse) => void;
@@ -36,7 +36,7 @@ export function ExpenseDetailPanel({
   detailLoading,
   detailError,
   tripId,
-  settlementFinalized,
+  mutationLockReason,
   onContributionChanged,
   onEditExpense,
   onDeleteExpense,
@@ -59,7 +59,7 @@ export function ExpenseDetailPanel({
   const displayExpense = matchedDetail ?? expense;
   const fundingPercent = getExpenseFundingPercent(displayExpense);
   const statusTone = getExpenseStatusTone(displayExpense.status);
-  const isLocked = displayExpense.locked || settlementFinalized;
+  const isLocked = displayExpense.locked || mutationLockReason !== null;
   const canManageExpense = matchedDetail?.permissions.can_manage_expenses ?? false;
   const canMutateExpense = canManageExpense && !isLocked;
   const missingAmt = Number.parseFloat(displayExpense.missing_amount);
@@ -133,7 +133,7 @@ export function ExpenseDetailPanel({
         {isLocked && (
           <div className="border-t border-border bg-muted/30 px-5 py-2">
             <p className="text-[11px] text-muted-foreground">
-              Settlement is finalized. Reopen it before editing expenses or contributions.
+              {getMutationLockNotice(mutationLockReason)}
             </p>
           </div>
         )}
@@ -255,7 +255,7 @@ export function ExpenseDetailPanel({
                 detail={matchedDetail}
                 tripId={tripId}
                 canManageExpenses={matchedDetail.permissions.can_manage_expenses}
-                settlementFinalized={settlementFinalized}
+                mutationLocked={mutationLockReason !== null}
                 onChanged={onContributionChanged}
               />
             ) : detailError ? (
@@ -269,6 +269,18 @@ export function ExpenseDetailPanel({
       </div>
     </aside>
   );
+}
+
+function getMutationLockNotice(reason: "settlement" | "terminal" | null): string {
+  if (reason === "terminal") {
+    return "This trip is completed or cancelled. Expenses can no longer be changed.";
+  }
+
+  if (reason === "settlement") {
+    return "Settlement is finalized. Reopen it before editing expenses or contributions.";
+  }
+
+  return "This expense is locked and cannot be changed.";
 }
 
 function getContributionGuidance(detail: ExpenseDetailResponse): string | null {

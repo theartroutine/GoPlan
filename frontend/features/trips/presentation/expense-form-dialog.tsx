@@ -109,7 +109,9 @@ export function ExpenseFormDialog({
           description: cleanDescription,
           total_amount: normalizedAmount.value,
         };
-        if (collectorId) payload.collector_id = collectorId;
+        if (collectorId && collectorId !== expense.collector.id) {
+          payload.collector_id = collectorId;
+        }
 
         const updatedExpense = await updateExpense(tripId, expense.id, payload);
         await onUpdated?.(updatedExpense);
@@ -160,6 +162,10 @@ export function ExpenseFormDialog({
   const collectorIdField = isEditMode ? "edit-expense-collector" : "expense-collector";
   const dialogTitle = isEditMode ? "Edit expense" : "Add expense";
   const submitLabel = isEditMode ? "Save expense" : "Create expense";
+  const showCurrentCollectorOption =
+    isEditMode &&
+    Boolean(collectorId) &&
+    !members.some((member) => member.user.id === collectorId);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -229,6 +235,11 @@ export function ExpenseFormDialog({
                   className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
                 >
                   {!isEditMode && <option value="">Expense creator</option>}
+                  {showCurrentCollectorOption && (
+                    <option value={collectorId}>
+                      {expense?.collector.display_name ?? "Current collector"} (left trip)
+                    </option>
+                  )}
                   {members.map((member) => (
                     <option key={member.user.id} value={member.user.id}>
                       {member.user.display_name}

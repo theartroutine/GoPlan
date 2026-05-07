@@ -22,7 +22,7 @@ type ContributionEditorProps = {
   detail: ExpenseDetailResponse;
   tripId: string;
   canManageExpenses: boolean;
-  settlementFinalized: boolean;
+  mutationLocked: boolean;
   onChanged: (expenseId: string) => void | Promise<void>;
 };
 
@@ -30,14 +30,14 @@ export function ContributionEditor({
   detail,
   tripId,
   canManageExpenses,
-  settlementFinalized,
+  mutationLocked,
   onChanged,
 }: ContributionEditorProps) {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [draftAmount, setDraftAmount] = useState("");
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const readOnly = !canManageExpenses || detail.locked || settlementFinalized;
+  const readOnly = !canManageExpenses || detail.locked || mutationLocked;
 
   function startEditing(participant: ExpenseParticipantContribution) {
     setEditingUserId(participant.user_id);

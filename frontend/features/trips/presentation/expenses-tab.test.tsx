@@ -7,6 +7,7 @@ import {
   buildExpenseListItem,
   buildTripSettlement,
 } from "@/features/trips/presentation/expenses-test-helpers";
+import type { TripStatus } from "@/features/trips/domain/types";
 
 const expensesApiMock = vi.hoisted(() => ({
   confirmSettlementTransferReceived: vi.fn(),
@@ -31,6 +32,10 @@ const navigationMock = vi.hoisted(() => ({
       navigationMock.currentSearchParams = query;
     }
   }),
+}));
+
+const tripContextMock = vi.hoisted(() => ({
+  status: "PLANNING" as TripStatus,
 }));
 
 function mockExpenseSearchParams(value: string) {
@@ -58,6 +63,9 @@ vi.mock("@/features/trips/presentation/trip-context", () => ({
   useTripContext: () => ({
     tripId: "trip-1",
     data: {
+      trip: {
+        status: tripContextMock.status,
+      },
       members: [
         {
           membership_id: "membership-captain",
@@ -95,6 +103,7 @@ describe("ExpensesTab", () => {
     navigationMock.currentSearchParams = "";
     navigationMock.syncReplaceSearchParams = true;
     navigationMock.replace.mockClear();
+    tripContextMock.status = "PLANNING";
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: undefined,
@@ -810,6 +819,31 @@ describe("ExpensesTab", () => {
     expect(screen.queryByRole("button", { name: /Edit contribution/ })).toBeNull();
   });
 
+  it("hides expense management controls for terminal trips", async () => {
+    tripContextMock.status = "COMPLETED";
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
+      buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
+    );
+    expensesApiMock.getExpenseDetail.mockResolvedValue(
+      buildExpenseDetailResponse({ locked: false }),
+    );
+
+    render(<ExpensesTab />);
+
+    expect(await screen.findByText("Trip completed. Expenses are locked.")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Finalize settlement" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add expense" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Dinner in Da Nang/i }));
+
+    expect(
+      screen.getByText("This trip is completed or cancelled. Expenses can no longer be changed."),
+    ).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit expense" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete expense" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Edit contribution/ })).toBeNull();
+  });
+
   it("lets captain edit participant contribution and reloads detail and dashboard", async () => {
     expensesApiMock.getExpensesDashboard.mockResolvedValue(
       buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
@@ -1026,6 +1060,62 @@ describe("ExpensesTab", () => {
     });
     await waitFor(() => {
       expect(expensesApiMock.getExpensesDashboard).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("omits a departed unchanged collector when editing an expense", async () => {
+    const departedCollector = {
+      id: "user-departed",
+      display_name: "Departed Collector",
+      identify_tag: "@departed",
+    };
+    expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
+      buildExpenseDashboardResponse({
+        permissions: { can_manage_expenses: true },
+        expenses: [
+          buildExpenseListItem({
+            id: "expense-food",
+            collector: departedCollector,
+          }),
+        ],
+      }),
+    ).mockResolvedValueOnce(
+      buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
+    );
+    expensesApiMock.getExpenseDetail.mockResolvedValue(
+      buildExpenseDetailResponse({
+        id: "expense-food",
+        collector: departedCollector,
+      }),
+    );
+    expensesApiMock.updateExpense.mockResolvedValueOnce(
+      buildExpenseDetailResponse({
+        id: "expense-food",
+        title: "Updated dinner",
+        collector: departedCollector,
+      }),
+    );
+
+    render(<ExpensesTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Dinner in Da Nang/i }));
+    await waitFor(() => {
+      expect(screen.getAllByText("Departed Collector").length).toBeGreaterThan(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit expense" }));
+    fireEvent.change(screen.getByLabelText("Expense name"), {
+      target: { value: "Updated dinner" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save expense" }));
+
+    await waitFor(() => {
+      const payload = expensesApiMock.updateExpense.mock.calls[0]?.[2];
+      expect(payload).toEqual({
+        title: "Updated dinner",
+        description: "Seafood dinner for the group",
+        total_amount: "1200000",
+      });
+      expect(payload).not.toHaveProperty("collector_id");
     });
   });
 

@@ -205,7 +205,7 @@ class ExpenseContributionAPIView(APIView):
             return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
-        except ExpenseLockedError as exc:
+        except (ExpenseLockedError, TripTerminalError) as exc:
             return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
         except ContributionUserNotParticipantError as exc:
             return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
@@ -228,6 +228,8 @@ class SettlementFinalizeAPIView(APIView):
             return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
+        except TripTerminalError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
         except SettlementAlreadyFinalizedError as exc:
             return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
         except SettlementUnderfundedError as exc:
@@ -251,6 +253,8 @@ class SettlementReopenAPIView(APIView):
             return _trip_not_visible_response()
         except TripPermissionError as exc:
             return _permission_error_response(exc)
+        except TripTerminalError as exc:
+            return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
         except SettlementNotFinalizedError as exc:
             return _service_error_response(exc, status_code=status.HTTP_409_CONFLICT)
 

@@ -86,8 +86,8 @@ def _assert_captain(trip: Trip, actor) -> None:
 
 
 def _assert_trip_open_for_expenses(trip: Trip) -> None:
-    if trip.status == TripStatus.CANCELLED:
-        raise TripTerminalError("Cancelled trips cannot accept expenses.")
+    if trip.status in {TripStatus.CANCELLED, TripStatus.COMPLETED}:
+        raise TripTerminalError("Completed or cancelled trips cannot change expenses.")
 
 
 def _get_member_trip(trip_id, actor, *, for_update: bool = False) -> tuple[Trip, TripMember]:
@@ -400,6 +400,7 @@ def set_contribution(
     trip, membership = _get_member_trip(trip_id, actor, for_update=True)
     if membership.role != TripRole.CAPTAIN:
         raise TripPermissionError("Only the trip captain can perform this action.")
+    _assert_trip_open_for_expenses(trip)
 
     expense = _get_expense_for_update(trip, expense_id)
     _assert_expense_unlocked(expense)
@@ -755,6 +756,7 @@ def finalize_settlement(*, trip_id, actor) -> TripSettlement:
     trip, membership = _get_member_trip(trip_id, actor, for_update=True)
     if membership.role != TripRole.CAPTAIN:
         raise TripPermissionError("Only the trip captain can perform this action.")
+    _assert_trip_open_for_expenses(trip)
 
     if _active_settlement(trip) is not None:
         raise SettlementAlreadyFinalizedError("This trip already has a finalized settlement.")
@@ -820,6 +822,7 @@ def reopen_settlement(*, trip_id, actor) -> TripSettlement:
     trip, membership = _get_member_trip(trip_id, actor, for_update=True)
     if membership.role != TripRole.CAPTAIN:
         raise TripPermissionError("Only the trip captain can perform this action.")
+    _assert_trip_open_for_expenses(trip)
 
     settlement = _active_settlement(trip, for_update=True)
     if settlement is None:

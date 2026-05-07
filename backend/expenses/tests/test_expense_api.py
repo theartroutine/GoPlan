@@ -269,6 +269,51 @@ class ExpenseAPITests(APITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
 
+    def test_completed_trip_blocks_expense_mutations(self):
+        expense_response = self.client.post(
+            self.expenses_url,
+            {"title": "Dinner", "total_amount": "600000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        expense_id = expense_response.data["id"]
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        create_response = self.client.post(
+            self.expenses_url,
+            {"title": "Late dinner", "total_amount": "300000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        update_response = self.client.patch(
+            f"{self.expenses_url}/{expense_id}",
+            {"title": "Updated dinner"},
+            format="json",
+            **_auth(self.captain),
+        )
+        contribution_response = self.client.patch(
+            f"{self.expenses_url}/{expense_id}/contributions/{self.member.id}",
+            {"amount": "300000"},
+            format="json",
+            **_auth(self.captain),
+        )
+        delete_response = self.client.delete(
+            f"{self.expenses_url}/{expense_id}",
+            **_auth(self.captain),
+        )
+
+        for response in [
+            create_response,
+            update_response,
+            contribution_response,
+            delete_response,
+        ]:
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
+        self.assertEqual(Expense.objects.count(), 1)
+        self.assertFalse(ExpenseContribution.objects.exists())
+
     def test_locked_expense_contribution_returns_conflict(self):
         expense_response = self.client.post(
             self.expenses_url,
