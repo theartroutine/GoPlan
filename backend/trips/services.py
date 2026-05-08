@@ -93,6 +93,10 @@ class TripTerminalError(StatusTransitionError):
     error_code = "TRIP_TERMINAL"
 
 
+class TripCurrencyLockedError(TripServiceError):
+    error_code = "TRIP_CURRENCY_LOCKED"
+
+
 # Timeline-specific errors
 class TimelineSectionNotFoundError(TripServiceError):
     error_code = "SECTION_NOT_FOUND"
@@ -293,16 +297,7 @@ def get_user_trips(user):
 
 def get_trip_detail(trip_id, requesting_user):
     """Return (trip, my_membership) or raise 404/403."""
-    try:
-        trip = Trip.objects.get(pk=trip_id)
-    except Trip.DoesNotExist:
-        raise TripNotFoundError("Trip not found.")
-    membership = TripMember.objects.filter(
-        trip=trip, user=requesting_user, status=MemberStatus.ACTIVE
-    ).first()
-    if not membership:
-        raise NotTripMemberError("You are not a member of this trip.")
-    return trip, membership
+    return _get_visible_trip_membership(trip_id, requesting_user)
 
 
 _UNSET = object()
@@ -332,7 +327,17 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
         if start_date is not _UNSET:                 trip.start_date = start_date
         if end_date is not _UNSET:                   trip.end_date = end_date
         if description is not _UNSET:                trip.description = description
-        if currency_code is not _UNSET:              trip.currency_code = currency_code
+        if currency_code is not _UNSET:
+            if currency_code != trip.currency_code:
+                # Currency code is the unit of every expense, contribution and
+                # settlement transfer. Once the trip has any expense, changing
+                # currency would silently mismatch existing rows against new ones.
+                from expenses.models import Expense
+                if Expense.objects.filter(trip=trip).exists():
+                    raise TripCurrencyLockedError(
+                        "Cannot change trip currency once expenses exist."
+                    )
+            trip.currency_code = currency_code
         if timezone is not _UNSET:                   trip.timezone = timezone
         if budget_estimate is not _UNSET:            trip.budget_estimate = budget_estimate
 
@@ -474,7 +479,7 @@ def accept_invitation(invitation_id, actor) -> TripMember:
                 TripInvitation.objects
                 .select_related("trip", "inviter")
                 .select_for_update()
-                .get(pk=invitation_id)
+                .get(pk=invitation_id, invitee=actor)
             )
         except TripInvitation.DoesNotExist:
             raise TripNotFoundError("Invitation not found.")
@@ -484,9 +489,6 @@ def accept_invitation(invitation_id, actor) -> TripMember:
             trip = Trip.objects.select_for_update().get(pk=trip.pk)
         except Trip.DoesNotExist:
             raise TripNotFoundError("Trip not found.")
-
-        if invitation.invitee != actor:
-            raise TripPermissionError("Only the invitee can accept this invitation.")
 
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationError("This invitation is no longer pending.")
@@ -523,12 +525,14 @@ def decline_invitation(invitation_id, actor) -> TripInvitation:
     """Decline a PENDING invitation."""
     with transaction.atomic():
         try:
-            invitation = TripInvitation.objects.select_for_update().get(pk=invitation_id)
+            invitation = (
+                TripInvitation.objects
+                .select_related("inviter")
+                .select_for_update()
+                .get(pk=invitation_id, invitee=actor)
+            )
         except TripInvitation.DoesNotExist:
             raise TripNotFoundError("Invitation not found.")
-
-        if invitation.invitee != actor:
-            raise TripPermissionError("Only the invitee can decline this invitation.")
 
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationError("This invitation is no longer pending.")
@@ -555,7 +559,14 @@ def decline_invitation(invitation_id, actor) -> TripInvitation:
 
 def _assert_captain(trip, actor):
     """Raise TripPermissionError if actor is not ACTIVE captain of trip."""
-    if not TripMember.objects.filter(trip=trip, user=actor, role=TripRole.CAPTAIN, status=MemberStatus.ACTIVE).exists():
+    membership = TripMember.objects.filter(
+        trip=trip,
+        user=actor,
+        status=MemberStatus.ACTIVE,
+    ).first()
+    if membership is None:
+        raise TripNotFoundError("Trip not found.")
+    if membership.role != TripRole.CAPTAIN:
         raise TripPermissionError("Only the trip captain can perform this action.")
 
 
@@ -709,18 +720,11 @@ def leave_trip(trip_id, actor) -> TripMember:
     Actor must be an ACTIVE member.
     """
     with transaction.atomic():
-        try:
-            trip = Trip.objects.select_for_update().get(pk=trip_id)
-        except Trip.DoesNotExist:
-            raise TripNotFoundError("Trip not found.")
-
-        # Check actor is an active member of this trip
-        try:
-            membership = TripMember.objects.select_for_update().get(
-                trip=trip, user=actor, status=MemberStatus.ACTIVE
-            )
-        except TripMember.DoesNotExist:
-            raise NotTripMemberError("You are not an active member of this trip.")
+        trip, membership = _get_visible_trip_membership(
+            trip_id,
+            actor,
+            for_update=True,
+        )
 
         # Terminal state guard — checked first for consistent ordering with other services
         if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
@@ -743,17 +747,41 @@ def leave_trip(trip_id, actor) -> TripMember:
 
 
 def _ensure_captain_can_mutate(trip, actor):
-    if not TripMember.objects.filter(
+    membership = TripMember.objects.filter(
         trip=trip,
         user=actor,
-        role=TripRole.CAPTAIN,
         status=MemberStatus.ACTIVE,
-    ).exists():
+    ).first()
+    if membership is None:
+        raise TripNotFoundError("Trip not found.")
+    if membership.role != TripRole.CAPTAIN:
         raise NotTripCaptainError("Only the trip captain can perform this action.")
     _assert_not_terminal(trip)
 
 
-def _get_locked_trip(trip_id) -> Trip:
+def _get_visible_trip_membership(trip_id, actor, *, for_update: bool = False) -> tuple[Trip, TripMember]:
+    queryset = TripMember.objects.select_related("trip").filter(
+        trip_id=trip_id,
+        user=actor,
+        status=MemberStatus.ACTIVE,
+    )
+    if for_update:
+        queryset = queryset.select_for_update()
+    try:
+        membership = queryset.get()
+    except TripMember.DoesNotExist:
+        raise TripNotFoundError("Trip not found.")
+    return membership.trip, membership
+
+
+def _get_locked_trip(trip_id, *, actor=None) -> Trip:
+    if actor is not None:
+        trip, _membership = _get_visible_trip_membership(
+            trip_id,
+            actor,
+            for_update=True,
+        )
+        return trip
     try:
         return Trip.objects.select_for_update().get(pk=trip_id)
     except Trip.DoesNotExist:
@@ -765,7 +793,7 @@ def _get_locked_trip(trip_id) -> Trip:
 def create_timeline_day(trip_id, *, actor, section_date, label) -> tuple[Trip, TimelineSection]:
     """Create a custom timeline day. Captain only."""
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
         _ensure_section_date_available(trip, section_date)
         try:
@@ -798,7 +826,7 @@ def patch_section(
 ) -> tuple[Trip, TimelineSection]:
     """Patch a timeline day date and/or label."""
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
         try:
             section = TimelineSection.objects.select_for_update().get(pk=section_id, trip=trip)
@@ -842,7 +870,7 @@ def patch_section(
 def delete_section(trip_id, section_id, *, actor) -> None:
     """Delete an empty timeline day. Captain only."""
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
         try:
             section = TimelineSection.objects.select_for_update().get(pk=section_id, trip=trip)
@@ -1028,7 +1056,7 @@ def dispatch_due_timeline_reminders(*, now=None) -> int:
 def create_timeline_activity(trip_id, section_id, *, actor, data: dict) -> TimelineActivity:
     """Create an activity in the given section. Captain only."""
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
         try:
             section = TimelineSection.objects.select_for_update().get(pk=section_id, trip=trip)
@@ -1198,7 +1226,7 @@ def _apply_activity_patch_invariants(activity: TimelineActivity, data: dict) -> 
 def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> TimelineActivity:
     """Partial update of activity content fields. Captain only."""
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
         try:
             activity = TimelineActivity.objects.select_for_update().get(pk=activity_id, trip=trip)
@@ -1296,7 +1324,7 @@ def patch_timeline_activity(trip_id, activity_id, *, actor, data: dict) -> Timel
 
 def delete_timeline_activity(trip_id, activity_id, *, actor) -> None:
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
         try:
             activity = TimelineActivity.objects.select_for_update().get(pk=activity_id, trip=trip)
@@ -1308,7 +1336,7 @@ def delete_timeline_activity(trip_id, activity_id, *, actor) -> None:
 def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str) -> TimelineActivity:
     """Update operational activity status. Captain follows full state machine; assignee has limited transitions."""
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         try:
             membership = TripMember.objects.get(
                 trip=trip, user=actor, status=MemberStatus.ACTIVE
@@ -1356,7 +1384,7 @@ def create_custom_type(trip_id, *, actor, name, color_token="slate", icon_key="t
     from trips.serializers import normalize_custom_type_name
 
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
 
         normalized = normalize_custom_type_name(name)
@@ -1381,7 +1409,7 @@ def patch_custom_type(trip_id, type_id, *, actor, data: dict) -> TimelineCustomT
     from trips.serializers import normalize_custom_type_name
 
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
         try:
             ct = TimelineCustomType.objects.select_for_update().get(pk=type_id, trip=trip)
@@ -1409,7 +1437,7 @@ def patch_custom_type(trip_id, type_id, *, actor, data: dict) -> TimelineCustomT
 
 def delete_custom_type(trip_id, type_id, *, actor) -> None:
     with transaction.atomic():
-        trip = _get_locked_trip(trip_id)
+        trip = _get_locked_trip(trip_id, actor=actor)
         _ensure_captain_can_mutate(trip, actor)
         try:
             ct = TimelineCustomType.objects.select_for_update().get(pk=type_id, trip=trip)

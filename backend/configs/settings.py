@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'notifications',
     'friends',
     'trips',
+    'expenses',
     'media',
 
 ]
@@ -107,6 +108,9 @@ STATIC_URL = 'static/'
 # -------- Media Files --------
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media_files'
+UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
+FILE_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
 
 # -------- Cross-Origin Settings --------
 CORS_ALLOWED_ORIGINS = os.environ['CORS_ALLOWED_ORIGINS'].split(',')
@@ -184,6 +188,12 @@ REST_FRAMEWORK = {
         'trips_timeline_activity_status': '240/hour',
         'trips_timeline_custom_types': '60/hour',
         'trips_timeline_custom_type_detail': '60/hour',
+        'expenses_list_create': '120/hour',
+        'expenses_detail': '120/hour',
+        'expenses_contributions': '240/hour',
+        'settlement_finalize': '30/hour',
+        'settlement_reopen': '20/hour',
+        'settlement_transfer_action': '240/hour',
         'ws_ticket_refresh': '20/minute',
     },
 }

@@ -102,10 +102,11 @@ class LeaveTripTests(APITestCase):
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "TRIP_TERMINAL")
 
-    def test_non_member_cannot_leave_403(self):
+    def test_non_member_cannot_leave_404(self):
         stranger = create_completed_user("stranger@example.com", "stranger", "STR001")
         res = self.client.post(_leave_url(self.trip.id), **_auth(stranger))
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_trip_disappears_from_dashboard_after_leave(self):
         self.client.post(_leave_url(self.trip.id), **_auth(self.member))

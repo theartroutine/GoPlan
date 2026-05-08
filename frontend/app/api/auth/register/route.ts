@@ -38,14 +38,13 @@ export async function POST(request: NextRequest) {
 
   const payload = asObject(upstream.data);
   const detail = getString(payload, "detail");
-  const email = getString(payload, "email");
 
-  if (!detail || !email) {
+  if (!detail) {
     return NextResponse.json(
       { detail: "Invalid register response from auth service." },
       { status: 502 },
     );
   }
 
-  return NextResponse.json({ detail, email }, { status: 201 });
+  return NextResponse.json({ detail }, { status: upstream.status });
 }

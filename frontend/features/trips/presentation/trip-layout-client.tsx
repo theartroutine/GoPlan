@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { Spinner } from "@/shared/ui/spinner";
 import { TripProvider, useTripContext } from "@/features/trips/presentation/trip-context";
@@ -11,6 +12,7 @@ import { TripTabBar } from "@/features/trips/presentation/trip-tab-bar";
 function TripShell({ children }: { children: React.ReactNode }) {
   const { data, loading, error, notFound } = useTripContext();
   const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     setMounted(true); // eslint-disable-line react-hooks/set-state-in-effect
@@ -40,16 +42,30 @@ function TripShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const isOverview = pathname.endsWith("/overview");
   const portalTarget = mounted ? document.getElementById("trip-nav-portal") : null;
+
+  const TAB_TITLES: Record<string, string> = {
+    members: "Members",
+    timeline: "Timeline",
+    expenses: "Expenses",
+    chat: "Chat",
+  };
+  const tabTitle = TAB_TITLES[pathname.split("/").pop() ?? ""];
 
   return (
     <>
       {portalTarget && createPortal(<TripTabBar />, portalTarget)}
       <div>
-        <TripHeader />
-        <div className="border-t border-border/40 px-4 pb-4 pt-4 sm:px-6 sm:pb-6">
-            {children}
+        {isOverview && <TripHeader />}
+        {!isOverview && tabTitle && (
+          <div className="px-4 pt-5 pb-1 sm:px-6">
+            <h1 className="text-xl font-semibold tracking-tight">{tabTitle}</h1>
           </div>
+        )}
+        <div className={`px-4 pb-4 sm:px-6 sm:pb-6 ${isOverview ? "border-t border-border/40 pt-4" : "pt-3"}`}>
+          {children}
+        </div>
       </div>
     </>
   );

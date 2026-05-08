@@ -44,8 +44,8 @@ FRIEND_ERROR_MAP = {
     FriendRequestNotFoundError: (404, "FRIEND_REQUEST_NOT_FOUND"),
     FriendshipNotFoundError: (404, "FRIENDSHIP_NOT_FOUND"),
     InvalidRequestStateError: (409, "INVALID_REQUEST_STATE"),
-    NotRequestParticipantError: (403, "NOT_REQUEST_PARTICIPANT"),
-    NotFriendshipParticipantError: (403, "NOT_FRIENDSHIP_PARTICIPANT"),
+    NotRequestParticipantError: (404, "FRIEND_REQUEST_NOT_FOUND"),
+    NotFriendshipParticipantError: (404, "FRIENDSHIP_NOT_FOUND"),
 }
 
 

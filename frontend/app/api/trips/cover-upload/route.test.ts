@@ -24,6 +24,7 @@ vi.mock("@/shared/http/config", () => ({
 import { POST } from "@/app/api/trips/cover-upload/route";
 
 describe("POST /api/trips/cover-upload", () => {
+  const maxUploadBytes = 5 * 1024 * 1024;
   const jar = {
     get: vi.fn(),
   };
@@ -43,6 +44,86 @@ describe("POST /api/trips/cover-upload", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("allows multipart body overhead when the file itself is within the limit", async () => {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new File([new Uint8Array(maxUploadBytes)], "max.png", { type: "image/png" }),
+    );
+    const request = {
+      headers: new Headers({
+        Authorization: "Bearer access-token",
+        "Content-Length": String(maxUploadBytes + 1024),
+      }),
+      formData: vi.fn().mockResolvedValue(formData),
+    };
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ url: "https://cdn.example.com/max.png" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const response = await POST(request as never);
+
+    expect(response.status).toBe(200);
+    expect(request.formData).toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await expect(response.json()).resolves.toEqual({ url: "https://cdn.example.com/max.png" });
+  });
+
+  it("rejects oversized files before forwarding upstream", async () => {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new File([new Uint8Array(maxUploadBytes + 1)], "large.png", { type: "image/png" }),
+    );
+    const request = {
+      headers: new Headers({
+        Authorization: "Bearer access-token",
+      }),
+      formData: vi.fn().mockResolvedValue(formData),
+    };
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ url: "https://cdn.example.com/large.png" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const response = await POST(request as never);
+
+    expect(response.status).toBe(413);
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      detail: "File too large. Maximum size is 5 MB.",
+      error_code: "FILE_TOO_LARGE",
+    });
+  });
+
+  it("rejects unsupported image types before forwarding upstream", async () => {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new File(["<svg/>"], "evil.svg", { type: "image/svg+xml" }),
+    );
+    const request = {
+      headers: new Headers({
+        Authorization: "Bearer access-token",
+      }),
+      formData: vi.fn().mockResolvedValue(formData),
+    };
+
+    const response = await POST(request as never);
+
+    expect(response.status).toBe(415);
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      detail: "Unsupported image type. Use JPEG, PNG, or WebP.",
+      error_code: "UNSUPPORTED_MEDIA_TYPE",
+    });
   });
 
   it("refreshes and retries when the provided bearer token is stale", async () => {

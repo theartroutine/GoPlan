@@ -192,8 +192,8 @@ class TimelineStatusTests(APITestCase):
             **_auth(self.outsider),
         )
 
-        self.assertEqual(res.status_code, 403)
-        self.assertEqual(res.data["error_code"], "NOT_TRIP_MEMBER")
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_non_member_is_rejected_before_activity_lookup(self):
         res = self.client.post(
@@ -203,8 +203,8 @@ class TimelineStatusTests(APITestCase):
             **_auth(self.outsider),
         )
 
-        self.assertEqual(res.status_code, 403)
-        self.assertEqual(res.data["error_code"], "NOT_TRIP_MEMBER")
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_non_member_status_update_returns_permission_error(self):
         activity = make_timeline_activity(
@@ -221,8 +221,8 @@ class TimelineStatusTests(APITestCase):
             **_auth(self.outsider),
         )
 
-        self.assertEqual(res.status_code, 403)
-        self.assertEqual(res.data["error_code"], "NOT_TRIP_MEMBER")
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_timeline_includes_capabilities_and_location_open_urls(self):
         manual = make_timeline_activity(

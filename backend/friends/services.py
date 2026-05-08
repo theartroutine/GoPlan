@@ -187,15 +187,11 @@ def accept_friend_request(friend_request_id, actor):
     with transaction.atomic():
         try:
             fr = FriendRequest.objects.select_for_update().get(
-                pk=friend_request_id
+                pk=friend_request_id,
+                receiver=actor,
             )
         except FriendRequest.DoesNotExist:
             raise FriendRequestNotFoundError("Friend request not found.")
-
-        if actor != fr.receiver:
-            raise NotRequestParticipantError(
-                "Only the receiver can accept this request."
-            )
 
         if fr.status != FriendRequestStatus.PENDING:
             raise InvalidRequestStateError(
@@ -237,15 +233,11 @@ def decline_friend_request(friend_request_id, actor):
     with transaction.atomic():
         try:
             fr = FriendRequest.objects.select_for_update().get(
-                pk=friend_request_id
+                pk=friend_request_id,
+                receiver=actor,
             )
         except FriendRequest.DoesNotExist:
             raise FriendRequestNotFoundError("Friend request not found.")
-
-        if actor != fr.receiver:
-            raise NotRequestParticipantError(
-                "Only the receiver can decline this request."
-            )
 
         if fr.status != FriendRequestStatus.PENDING:
             raise InvalidRequestStateError(
@@ -264,15 +256,11 @@ def cancel_friend_request(friend_request_id, actor):
     with transaction.atomic():
         try:
             fr = FriendRequest.objects.select_for_update().get(
-                pk=friend_request_id
+                pk=friend_request_id,
+                sender=actor,
             )
         except FriendRequest.DoesNotExist:
             raise FriendRequestNotFoundError("Friend request not found.")
-
-        if actor != fr.sender:
-            raise NotRequestParticipantError(
-                "Only the sender can cancel this request."
-            )
 
         if fr.status != FriendRequestStatus.PENDING:
             raise InvalidRequestStateError(
@@ -291,14 +279,10 @@ def remove_friendship(friendship_id, actor):
     with transaction.atomic():
         try:
             friendship = Friendship.objects.select_for_update().get(
-                pk=friendship_id
+                Q(user_low=actor) | Q(user_high=actor),
+                pk=friendship_id,
             )
         except Friendship.DoesNotExist:
             raise FriendshipNotFoundError("Friendship not found.")
-
-        if actor != friendship.user_low and actor != friendship.user_high:
-            raise NotFriendshipParticipantError(
-                "You are not part of this friendship."
-            )
 
         friendship.delete()

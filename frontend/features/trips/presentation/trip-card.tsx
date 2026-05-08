@@ -7,7 +7,13 @@ import type { TripListItem } from "@/features/trips/domain/types";
 import { TripCoverImage } from "@/features/trips/presentation/trip-cover-image";
 import { TripStatusBadge } from "@/features/trips/presentation/trip-status-badge";
 
-export function TripCard({ trip }: { trip: TripListItem }) {
+export function TripCard({
+  trip,
+  eagerImage = false,
+}: {
+  trip: TripListItem;
+  eagerImage?: boolean;
+}) {
   const dateRange = `${formatDateOnly(trip.start_date, {
     month: "short",
     day: "numeric",
@@ -33,6 +39,8 @@ export function TripCard({ trip }: { trip: TripListItem }) {
           coverUrl={trip.cover_image_url}
           alt={`${trip.name} cover`}
           fill
+          loading={eagerImage ? "eager" : undefined}
+          fetchPriority={eagerImage ? "high" : undefined}
           className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
           unoptimized
         />

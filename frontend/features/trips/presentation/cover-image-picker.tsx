@@ -44,6 +44,8 @@ export function CoverImagePicker({ coverUrl, onChange }: Props) {
           coverUrl={coverUrl}
           alt="Trip cover preview"
           fill
+          loading="eager"
+          fetchPriority="high"
           className="object-cover"
           unoptimized
         />

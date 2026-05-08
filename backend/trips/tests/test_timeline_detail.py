@@ -60,10 +60,10 @@ class TimelineDetailTests(APITestCase):
         self.assertFalse(res.data["permissions"]["can_edit_timeline"])
         self.assertFalse(res.data["permissions"]["can_manage_custom_types"])
 
-    def test_non_member_gets_403(self):
+    def test_non_member_gets_404(self):
         res = self.client.get(self._url(), **_auth(self.outsider))
-        self.assertEqual(res.status_code, 403)
-        self.assertEqual(res.data["error_code"], "NOT_TRIP_MEMBER")
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_unknown_trip_returns_404(self):
         res = self.client.get(self._url(trip_id="00000000-0000-0000-0000-000000000000"), **_auth(self.captain))

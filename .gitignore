@@ -15,6 +15,7 @@ backend/media_files/
 node_modules/
 .next/
 next-env.d.ts
+*.tsbuildinfo
 
 # IDE
 .vscode/
@@ -27,6 +28,9 @@ notes/
 
 # Reports
 report/
+
+# Local Playwright CLI artifacts
+.playwright-cli/
 
 # Superpowers brainstorm sessions
 .superpowers/

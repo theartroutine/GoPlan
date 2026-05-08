@@ -9,6 +9,29 @@ import {
 } from "@/app/api/auth/_lib/session-state";
 import { API_BASE_URL } from "@/shared/http/config";
 
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const ALLOWED_COVER_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+const FILE_TOO_LARGE_PAYLOAD = {
+  detail: "File too large. Maximum size is 5 MB.",
+  error_code: "FILE_TOO_LARGE",
+};
+const UNSUPPORTED_MEDIA_PAYLOAD = {
+  detail: "Unsupported image type. Use JPEG, PNG, or WebP.",
+  error_code: "UNSUPPORTED_MEDIA_TYPE",
+};
+
+function fileTooLargeResponse(): NextResponse {
+  return NextResponse.json(FILE_TOO_LARGE_PAYLOAD, { status: 413 });
+}
+
+function unsupportedMediaResponse(): NextResponse {
+  return NextResponse.json(UNSUPPORTED_MEDIA_PAYLOAD, { status: 415 });
+}
+
 async function uploadTripCover(
   file: Blob,
   bearerToken: string,
@@ -66,6 +89,14 @@ export async function POST(request: NextRequest) {
 
   if (!file || !(file instanceof Blob)) {
     return NextResponse.json({ detail: "No file provided." }, { status: 400 });
+  }
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return fileTooLargeResponse();
+  }
+
+  if (!ALLOWED_COVER_MIME_TYPES.has(file.type)) {
+    return unsupportedMediaResponse();
   }
 
   try {

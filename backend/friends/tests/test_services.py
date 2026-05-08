@@ -12,8 +12,8 @@ from friends.services import (
     AlreadyFriendsError,
     DuplicatePendingRequestError,
     FriendLimitReachedError,
+    FriendRequestNotFoundError,
     InvalidRequestStateError,
-    NotRequestParticipantError,
     SelfRequestError,
     UserNotFoundError,
     accept_friend_request,
@@ -155,17 +155,17 @@ class FriendRequestPermissionTests(APITestCase):
 
     def test_accept_by_non_receiver_raises(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
-        with self.assertRaises(NotRequestParticipantError):
+        with self.assertRaises(FriendRequestNotFoundError):
             accept_friend_request(fr.id, self.charlie)
 
     def test_decline_by_non_receiver_raises(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
-        with self.assertRaises(NotRequestParticipantError):
+        with self.assertRaises(FriendRequestNotFoundError):
             decline_friend_request(fr.id, self.charlie)
 
     def test_cancel_by_non_sender_raises(self):
         fr = send_friend_request(self.alice, "bob#DEF456")
-        with self.assertRaises(NotRequestParticipantError):
+        with self.assertRaises(FriendRequestNotFoundError):
             cancel_friend_request(fr.id, self.bob)
 
     def test_accept_already_accepted_raises(self):
