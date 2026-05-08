@@ -400,7 +400,11 @@ export function ExpensesTab() {
       }
 
       setSettlementAction(null);
-      await loadDashboard();
+      const selectedExpenseId = selectedExpenseIdRef.current;
+      await Promise.all([
+        loadDashboard(),
+        selectedExpenseId ? loadSelectedExpenseDetail(selectedExpenseId) : Promise.resolve(),
+      ]);
     } catch (err) {
       setSettlementActionError(
         getExpenseErrorMessage(

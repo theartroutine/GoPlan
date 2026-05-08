@@ -358,7 +358,7 @@ export class WebSocketManager {
       this.ws.readyState === WebSocket.OPEN ||
       this.ws.readyState === WebSocket.CONNECTING
     ) {
-      this.ws.close(1001, "Page unloading");
+      this.ws.close(1000, "Page unloading");
     }
 
     this.ws = null;

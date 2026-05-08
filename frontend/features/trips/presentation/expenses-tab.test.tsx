@@ -680,6 +680,82 @@ describe("ExpensesTab", () => {
     });
   });
 
+  it("refreshes the selected expense detail after reopening settlement", async () => {
+    const selectedExpense = buildExpenseListItem({
+      id: "expense-hotel",
+      title: "Hotel deposit",
+      locked: true,
+      status: "FUNDED",
+      paid_amount: "1200000",
+      missing_amount: "0",
+    });
+
+    expensesApiMock.getExpensesDashboard
+      .mockResolvedValueOnce(
+        buildExpenseDashboardResponse({
+          permissions: { can_manage_expenses: true },
+          settlement: buildTripSettlement(),
+          expenses: [selectedExpense],
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildExpenseDashboardResponse({
+          permissions: { can_manage_expenses: true },
+          settlement: null,
+          expenses: [{ ...selectedExpense, locked: false }],
+        }),
+      );
+    expensesApiMock.getExpenseDetail
+      .mockResolvedValueOnce(
+        buildExpenseDetailResponse({
+          id: "expense-hotel",
+          title: "Hotel deposit",
+          locked: true,
+          locked_at: "2026-05-01T12:00:00Z",
+        }),
+      )
+      .mockResolvedValueOnce(
+        buildExpenseDetailResponse({
+          id: "expense-hotel",
+          title: "Hotel deposit",
+          locked: false,
+          locked_at: null,
+        }),
+      );
+    expensesApiMock.reopenSettlement.mockResolvedValueOnce(
+      buildTripSettlement({ status: "REOPENED" }),
+    );
+
+    render(<ExpensesTab />);
+
+    await waitFor(() => {
+      expect(expensesApiMock.getExpenseDetail).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Open Hotel deposit" }));
+
+    expect(
+      await screen.findByText("Settlement is finalized. Reopen it before editing expenses or contributions."),
+    ).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reopen settlement" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
+
+    await waitFor(() => {
+      expect(expensesApiMock.getExpenseDetail).toHaveBeenCalledTimes(2);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open Hotel deposit" }));
+    expect(await screen.findByRole("dialog", { name: "Details for Hotel deposit" })).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        screen.queryByText("This expense is locked and cannot be changed."),
+      ).toBeNull();
+    });
+    expect(
+      screen.queryByText("Settlement is finalized. Reopen it before editing expenses or contributions."),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit expense" })).not.toBeNull();
+  });
+
   it("normalizes comma-grouped VND create input and rejects VND decimal fractions", async () => {
     expensesApiMock.getExpensesDashboard.mockResolvedValue(
       buildExpenseDashboardResponse({ permissions: { can_manage_expenses: true } }),
