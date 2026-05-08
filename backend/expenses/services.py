@@ -198,6 +198,28 @@ def _get_active_transfer(trip: Trip, transfer_id) -> SettlementTransfer:
         raise TransferNotFoundError("Transfer not found.")
 
 
+def _get_transfer_action_context(trip_id, transfer_id, actor) -> tuple[Trip, SettlementTransfer]:
+    try:
+        trip, _membership = _get_member_trip(trip_id, actor, for_update=True)
+    except TripNotFoundError:
+        is_transfer_party = (
+            SettlementTransfer.objects.filter(
+                pk=transfer_id,
+                settlement__trip_id=trip_id,
+                settlement__status=SettlementStatus.FINALIZED,
+            )
+            .filter(Q(payer=actor) | Q(recipient=actor))
+            .exists()
+        )
+        if not is_transfer_party:
+            raise TripNotFoundError("Trip not found.")
+        trip = _get_trip(trip_id, for_update=True)
+
+    transfer = _get_active_transfer(trip, transfer_id)
+    _assert_active_member_or_transfer_party(trip=trip, transfer=transfer, actor=actor)
+    return trip, transfer
+
+
 def currency_minor_unit_factor(currency_code: str) -> int:
     normalized_code = currency_code.upper()
     if normalized_code in ZERO_DECIMAL_CURRENCIES:
@@ -886,9 +908,7 @@ def reopen_settlement(*, trip_id, actor) -> TripSettlement:
 
 @transaction.atomic
 def mark_transfer_sent(*, trip_id, transfer_id, actor) -> SettlementTransfer:
-    trip = _get_trip(trip_id, for_update=True)
-    transfer = _get_active_transfer(trip, transfer_id)
-    _assert_active_member_or_transfer_party(trip=trip, transfer=transfer, actor=actor)
+    trip, transfer = _get_transfer_action_context(trip_id, transfer_id, actor)
 
     if transfer.payer_id != actor.id:
         raise NotTransferPayerError("Only the transfer payer can mark it sent.")
@@ -913,9 +933,7 @@ def mark_transfer_sent(*, trip_id, transfer_id, actor) -> SettlementTransfer:
 
 @transaction.atomic
 def confirm_transfer_received(*, trip_id, transfer_id, actor) -> SettlementTransfer:
-    trip = _get_trip(trip_id, for_update=True)
-    transfer = _get_active_transfer(trip, transfer_id)
-    _assert_active_member_or_transfer_party(trip=trip, transfer=transfer, actor=actor)
+    trip, transfer = _get_transfer_action_context(trip_id, transfer_id, actor)
 
     if transfer.recipient_id != actor.id:
         raise NotTransferRecipientError("Only the transfer recipient can confirm receipt.")

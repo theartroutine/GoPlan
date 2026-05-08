@@ -59,8 +59,8 @@ export function DashboardContent() {
 
       {!loading && !error && visibleTrips.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 md:gap-5 xl:grid-cols-3">
-          {visibleTrips.map((trip) => (
-            <TripCard key={trip.id} trip={trip} />
+          {visibleTrips.map((trip, index) => (
+            <TripCard key={trip.id} trip={trip} eagerImage={index === 0} />
           ))}
         </div>
       )}

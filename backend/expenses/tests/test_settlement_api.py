@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from uuid import uuid4
 
 from rest_framework.test import APITestCase
 
@@ -207,6 +208,32 @@ class SettlementAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data["error_code"], "NOT_TRANSFER_PAYER")
+
+    def test_outsider_cannot_probe_trip_with_unknown_transfer_actions(self):
+        self._finalize()
+        outsider = create_completed_user(
+            "settlement-outsider@example.com",
+            "settlementoutsider",
+            "SOU001",
+            display_name="Outsider",
+        )
+        unknown_transfer_id = uuid4()
+        transfer_action_urls = [
+            f"/api/trips/{self.trip.id}/settlement/transfers/{unknown_transfer_id}/sent",
+            f"/api/trips/{self.trip.id}/settlement/transfers/{unknown_transfer_id}/received",
+        ]
+
+        for url in transfer_action_urls:
+            with self.subTest(url=url):
+                response = self.client.post(
+                    url,
+                    {},
+                    format="json",
+                    **_auth(outsider),
+                )
+
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_captain_cannot_confirm_someone_elses_receipt(self):
         self._finalize()

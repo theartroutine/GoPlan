@@ -60,6 +60,8 @@ export function TripHeader() {
             coverUrl={trip.cover_image_url}
             alt={`${trip.name} cover`}
             fill
+            loading="eager"
+            fetchPriority="high"
             className="object-cover"
             unoptimized
           />
