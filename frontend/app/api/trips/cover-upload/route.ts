@@ -77,14 +77,6 @@ export async function POST(request: NextRequest) {
     refreshedAccessToken = refreshResult.accessToken;
   }
 
-  const contentLength = request.headers.get("Content-Length");
-  if (contentLength) {
-    const contentLengthBytes = Number.parseInt(contentLength, 10);
-    if (Number.isFinite(contentLengthBytes) && contentLengthBytes > MAX_UPLOAD_BYTES) {
-      return fileTooLargeResponse();
-    }
-  }
-
   // Parse body before the upstream try block so a malformed or missing
   // multipart body returns 400 (bad request) rather than 503 (service unavailable).
   let formData: FormData;

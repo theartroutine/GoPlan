@@ -46,24 +46,32 @@ describe("POST /api/trips/cover-upload", () => {
     vi.unstubAllGlobals();
   });
 
-  it("rejects oversized bodies before parsing multipart data", async () => {
+  it("allows multipart body overhead when the file itself is within the limit", async () => {
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new File([new Uint8Array(maxUploadBytes)], "max.png", { type: "image/png" }),
+    );
     const request = {
       headers: new Headers({
         Authorization: "Bearer access-token",
-        "Content-Length": String(maxUploadBytes + 1),
+        "Content-Length": String(maxUploadBytes + 1024),
       }),
-      formData: vi.fn().mockResolvedValue(new FormData()),
+      formData: vi.fn().mockResolvedValue(formData),
     };
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ url: "https://cdn.example.com/max.png" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
 
     const response = await POST(request as never);
 
-    expect(response.status).toBe(413);
-    expect(request.formData).not.toHaveBeenCalled();
-    expect(fetch).not.toHaveBeenCalled();
-    await expect(response.json()).resolves.toEqual({
-      detail: "File too large. Maximum size is 5 MB.",
-      error_code: "FILE_TOO_LARGE",
-    });
+    expect(response.status).toBe(200);
+    expect(request.formData).toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await expect(response.json()).resolves.toEqual({ url: "https://cdn.example.com/max.png" });
   });
 
   it("rejects oversized files before forwarding upstream", async () => {
