@@ -75,6 +75,10 @@ class NotTransferRecipientError(ExpenseServiceError):
     error_code = "NOT_TRANSFER_RECIPIENT"
 
 
+class TransferNotSentError(ExpenseServiceError):
+    error_code = "TRANSFER_NOT_SENT"
+
+
 def _assert_captain(trip: Trip, actor) -> None:
     if not TripMember.objects.filter(
         trip=trip,
@@ -918,6 +922,9 @@ def confirm_transfer_received(*, trip_id, transfer_id, actor) -> SettlementTrans
 
     if transfer.recipient_confirmed_at is not None:
         return transfer
+
+    if transfer.payer_marked_sent_at is None:
+        raise TransferNotSentError("Transfer must be marked sent before receipt can be confirmed.")
 
     transfer.recipient_confirmed_at = timezone.now()
     transfer.save(update_fields=["recipient_confirmed_at"])

@@ -56,7 +56,13 @@ describe("SettlementPanel", () => {
     render(
       <SettlementPanel
         tripId="trip-1"
-        settlement={buildTripSettlement()}
+        settlement={buildTripSettlement({
+          transfers: [
+            buildSettlementTransfer({
+              payer_marked_sent_at: "2026-05-01T12:30:00Z",
+            }),
+          ],
+        })}
         currentUserId="user-recipient"
         currencyCode="VND"
         onChanged={onChanged}
@@ -74,6 +80,21 @@ describe("SettlementPanel", () => {
       );
       expect(onChanged).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("does not let the recipient confirm receipt before the payer marks the transfer sent", () => {
+    render(
+      <SettlementPanel
+        tripId="trip-1"
+        settlement={buildTripSettlement()}
+        currentUserId="user-recipient"
+        currencyCode="VND"
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "I received it" })).toBeNull();
+    expect(screen.getByText("Tracking")).not.toBeNull();
   });
 
   it("does not show transfer actions to non-parties", () => {

@@ -130,7 +130,7 @@ export function getSettlementTransferRoleState(
   const isSent = Boolean(transfer.payer_marked_sent_at);
   const isReceived = Boolean(transfer.recipient_confirmed_at);
   const canMarkSent = isPayer && !isSent;
-  const canConfirmReceived = isRecipient && !isReceived;
+  const canConfirmReceived = isRecipient && isSent && !isReceived;
 
   return {
     isPayer,

@@ -159,6 +159,27 @@ class SettlementAPITests(APITestCase):
             ).exists()
         )
 
+    def test_recipient_cannot_confirm_received_before_payer_marks_sent(self):
+        self._finalize()
+        transfer = SettlementTransfer.objects.get(payer=self.member_a)
+
+        response = self.client.post(
+            self._received_url(transfer),
+            {},
+            format="json",
+            **_auth(self.member_c),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "TRANSFER_NOT_SENT")
+        transfer.refresh_from_db()
+        self.assertIsNone(transfer.recipient_confirmed_at)
+        self.assertFalse(
+            ExpenseLedgerEntry.objects.filter(
+                event_type=ExpenseLedgerEventType.TRANSFER_CONFIRMED_RECEIVED,
+            ).exists()
+        )
+
     def test_non_recipient_cannot_confirm_received(self):
         self._finalize()
         transfer = SettlementTransfer.objects.get(payer=self.member_a)
@@ -358,6 +379,12 @@ class SettlementAPITests(APITestCase):
     def test_departed_recipient_can_confirm_finalized_transfer_received(self):
         self._finalize()
         transfer = SettlementTransfer.objects.get(payer=self.member_a)
+        self.client.post(
+            self._sent_url(transfer),
+            {},
+            format="json",
+            **_auth(self.member_a),
+        )
         TripMember.objects.filter(trip=self.trip, user=self.member_c).update(
             status=MemberStatus.LEFT,
         )
@@ -476,6 +503,12 @@ class SettlementAPITests(APITestCase):
     def test_confirm_transfer_received_is_idempotent(self):
         self._finalize()
         transfer = SettlementTransfer.objects.get(payer=self.member_a)
+        self.client.post(
+            self._sent_url(transfer),
+            {},
+            format="json",
+            **_auth(self.member_a),
+        )
 
         first_response = self.client.post(
             self._received_url(transfer),

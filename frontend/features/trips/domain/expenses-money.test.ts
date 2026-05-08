@@ -124,6 +124,20 @@ describe("expense money helpers", () => {
       isPayer: false,
       isRecipient: true,
       canMarkSent: false,
+      canConfirmReceived: false,
+      actionLabel: null,
+    });
+
+    expect(
+      getSettlementTransferRoleState(
+        makeTransfer({ payer_marked_sent_at: "2026-05-01T09:00:00Z" }),
+        recipient.id,
+      ),
+    ).toMatchObject({
+      isPayer: false,
+      isRecipient: true,
+      isSent: true,
+      canMarkSent: false,
       canConfirmReceived: true,
       actionLabel: "I received it",
     });
