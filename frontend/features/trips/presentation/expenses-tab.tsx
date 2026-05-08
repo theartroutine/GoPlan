@@ -299,6 +299,7 @@ export function ExpensesTab() {
       ? "settlement"
       : null;
   const canCreateExpense = canManageExpenses && expenseMutationLockReason === null;
+  const canFinalizeSettlement = canCreateExpense && dashboard.expenses.length > 0;
   const settlementActionCopy = getSettlementActionCopy(settlementAction);
 
   async function handleExpenseCreated(expense: ExpenseResponse) {
@@ -424,14 +425,16 @@ export function ExpensesTab() {
       <div className="flex flex-wrap items-center justify-end gap-2">
         {canCreateExpense ? (
           <>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setSettlementAction("finalize")}
-            >
-              <CheckCircle2 className="size-4" />
-              Finalize settlement
-            </Button>
+            {canFinalizeSettlement && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setSettlementAction("finalize")}
+              >
+                <CheckCircle2 className="size-4" />
+                Finalize settlement
+              </Button>
+            )}
             <Button type="button" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="size-4" />
               Add expense

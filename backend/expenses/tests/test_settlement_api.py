@@ -385,6 +385,32 @@ class SettlementAPITests(APITestCase):
         self.assertEqual(response.data["error_code"], "SETTLEMENT_UNDERFUNDED")
         self.assertIn("900000", response.data["detail"])
 
+    def test_finalize_empty_trip_returns_specific_conflict(self):
+        empty_captain = create_completed_user(
+            "settlement-empty-captain@example.com",
+            "settlementempty",
+            "SEM001",
+            display_name="Empty Captain",
+        )
+        empty_trip = _make_trip(empty_captain, name="Empty Settlement Trip")
+        TripMember.objects.create(
+            trip=empty_trip,
+            user=empty_captain,
+            role=TripRole.CAPTAIN,
+            status=MemberStatus.ACTIVE,
+        )
+
+        response = self.client.post(
+            f"/api/trips/{empty_trip.id}/settlement/finalize",
+            {},
+            format="json",
+            **_auth(empty_captain),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "SETTLEMENT_EMPTY")
+        self.assertFalse(SettlementTransfer.objects.filter(settlement__trip=empty_trip).exists())
+
     def test_departed_payer_can_mark_finalized_transfer_sent(self):
         self._finalize()
         transfer = SettlementTransfer.objects.get(payer=self.member_a)

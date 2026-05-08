@@ -63,6 +63,10 @@ class SettlementUnderfundedError(ExpenseServiceError):
     error_code = "SETTLEMENT_UNDERFUNDED"
 
 
+class SettlementEmptyError(ExpenseServiceError):
+    error_code = "SETTLEMENT_EMPTY"
+
+
 class TransferNotFoundError(ExpenseServiceError):
     error_code = "TRANSFER_NOT_FOUND"
 
@@ -787,7 +791,9 @@ def finalize_settlement(*, trip_id, actor) -> TripSettlement:
     if _active_settlement(trip) is not None:
         raise SettlementAlreadyFinalizedError("This trip already has a finalized settlement.")
 
-    list(Expense.objects.select_for_update().filter(trip=trip).order_by("id"))
+    locked_expenses = list(Expense.objects.select_for_update().filter(trip=trip).order_by("id"))
+    if not locked_expenses:
+        raise SettlementEmptyError("Add at least one expense before finalizing settlement.")
     if _active_settlement(trip) is not None:
         raise SettlementAlreadyFinalizedError("This trip already has a finalized settlement.")
 

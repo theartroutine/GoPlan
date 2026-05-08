@@ -418,13 +418,17 @@ describe("ExpensesTab", () => {
 
   it("renders an empty state when the dashboard has no expenses", async () => {
     expensesApiMock.getExpensesDashboard.mockResolvedValueOnce(
-      buildExpenseDashboardResponse({ expenses: [] }),
+      buildExpenseDashboardResponse({
+        permissions: { can_manage_expenses: true },
+        expenses: [],
+      }),
     );
 
     render(<ExpensesTab />);
 
     expect(await screen.findByText("No expenses yet")).not.toBeNull();
     expect(screen.getByText("The dashboard will show totals and contribution progress after the first expense is added.")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Finalize settlement" })).toBeNull();
   });
 
   it("renders an error state with a retry affordance", async () => {
