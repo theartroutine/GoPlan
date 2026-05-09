@@ -24,6 +24,7 @@ const wsBridgeMock = vi.hoisted(() => {
           onMessage?: (e: unknown) => void;
           onKicked?: (e: unknown) => void;
           onError?: (e: unknown) => void;
+          onSubscribed?: (e: unknown) => void;
         },
       ) => {
         listenersRef.current = listeners as never;
@@ -33,20 +34,9 @@ const wsBridgeMock = vi.hoisted(() => {
   };
 });
 
-const wsContextMock = vi.hoisted(() => ({
-  status: "connected" as
-    | "connected"
-    | "connecting"
-    | "reconnecting"
-    | "disconnected",
-}));
-
 vi.mock("@/features/chat/infrastructure/chat-api", () => chatApiMock);
 vi.mock("@/features/chat/infrastructure/chat-ws-bridge", () => ({
   joinChatRoom: wsBridgeMock.joinChatRoom,
-}));
-vi.mock("@/features/realtime/application/ws-context", () => ({
-  useWebSocket: () => ({ status: wsContextMock.status }),
 }));
 
 import { useTripChat } from "@/features/chat/application/use-trip-chat";
@@ -76,7 +66,6 @@ describe("useTripChat", () => {
     chatApiMock.bffListChatHistory.mockReset();
     chatApiMock.bffGapFillChatMessages.mockReset();
     chatApiMock.bffSendChatMessage.mockReset();
-    wsContextMock.status = "connected";
     wsBridgeMock.listenersRef.current = null;
   });
 
@@ -153,7 +142,55 @@ describe("useTripChat", () => {
     ]);
   });
 
-  it("loads latest history on reconnect when there is no gap-fill anchor yet", async () => {
+  it("gap-fills after subscribe ack to close the initial history race", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [
+        makeMessage({
+          id: "history-latest",
+          created_at: "2026-05-08T10:00:00Z",
+        }),
+      ],
+      next_cursor: null,
+    });
+    chatApiMock.bffGapFillChatMessages.mockResolvedValueOnce({
+      results: [
+        makeMessage({
+          id: "missed-between-history-and-subscribe",
+          content: "missed window",
+          created_at: "2026-05-08T10:01:00Z",
+        }),
+      ],
+      has_more: false,
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onSubscribed: (e: unknown) => void;
+      };
+      listeners.onSubscribed({ type: "chat.subscribed", trip_id: TRIP_ID });
+    });
+
+    await waitFor(() => {
+      expect(chatApiMock.bffGapFillChatMessages).toHaveBeenCalledWith(
+        TRIP_ID,
+        { since: "history-latest", limit: 100 },
+      );
+    });
+    await waitFor(() => {
+      expect(result.current.messages.map((m) => m.id)).toEqual([
+        "history-latest",
+        "missed-between-history-and-subscribe",
+      ]);
+    });
+  });
+
+  it("loads latest history on subscribe ack when there is no gap-fill anchor yet", async () => {
     chatApiMock.bffListChatHistory
       .mockResolvedValueOnce({
         results: [],
@@ -162,7 +199,7 @@ describe("useTripChat", () => {
       .mockResolvedValueOnce({
         results: [
           makeMessage({
-            id: "first-after-reconnect",
+            id: "first-after-subscribe",
             content: "first missed message",
             created_at: "2026-05-08T10:03:00Z",
           }),
@@ -170,27 +207,27 @@ describe("useTripChat", () => {
         next_cursor: null,
       });
 
-    const { result, rerender } = renderHook(() => useTripChat(TRIP_ID, ME));
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
 
     await waitFor(() => {
       expect(result.current.status).toBe("ready");
     });
 
     act(() => {
-      wsContextMock.status = "reconnecting";
-      rerender();
-    });
-    act(() => {
-      wsContextMock.status = "connected";
-      rerender();
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onSubscribed: (e: unknown) => void;
+      };
+      listeners.onSubscribed({ type: "chat.subscribed", trip_id: TRIP_ID });
     });
 
     await waitFor(() => {
       expect(chatApiMock.bffListChatHistory).toHaveBeenCalledTimes(2);
     });
-    expect(result.current.messages.map((m) => m.id)).toEqual([
-      "first-after-reconnect",
-    ]);
+    await waitFor(() => {
+      expect(result.current.messages.map((m) => m.id)).toEqual([
+        "first-after-subscribe",
+      ]);
+    });
   });
 
   it("does not label generic HTTP 400 history errors as invalid message content", async () => {
@@ -382,6 +419,35 @@ describe("useTripChat", () => {
 
     expect(outcome).toBe("failed");
     expect(result.current.status).toBe("kicked");
+  });
+
+  it("locks sending and removes the optimistic message when backend marks the trip terminal", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [],
+      next_cursor: null,
+    });
+    chatApiMock.bffSendChatMessage.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: { detail: "Trip is read-only.", error_code: "TRIP_TERMINAL" },
+      },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    let outcome: string = "";
+    await act(async () => {
+      outcome = await result.current.sendMessage("too late");
+    });
+
+    expect(outcome).toBe("failed");
+    expect(result.current.sendLockReason).toBe("terminal");
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.failedClientIds.size).toBe(0);
   });
 
   it("marks failed sends so the UI can offer retry", async () => {

@@ -21,6 +21,7 @@ type Props = {
 export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
   const { status: wsStatus } = useWebSocket();
   const chat = useTripChat(tripId, currentUser);
+  const isChatClosed = isTerminal || chat.sendLockReason === "terminal";
 
   if (chat.status === "loading") {
     return (
@@ -66,7 +67,7 @@ export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
         onLoadOlder={chat.loadOlder}
         onRetry={chat.retryPending}
       />
-      {isTerminal ? (
+      {isChatClosed ? (
         <div className="border-t border-border bg-muted/40 px-3 py-3 text-center text-xs text-muted-foreground">
           This trip is closed — sending new messages is disabled.
         </div>

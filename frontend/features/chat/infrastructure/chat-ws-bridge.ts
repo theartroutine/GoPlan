@@ -55,8 +55,8 @@ function ensureLifecycle(): void {
     const event = data as unknown as WsChatKicked;
     const room = rooms.get(event.trip_id);
     if (!room) return;
+    rooms.delete(event.trip_id);
     room.listeners.onKicked?.(event);
-    room.sentSubscribe = false;
   });
 
   wsManager.on(CHAT_WS_MESSAGE_TYPES.ERROR, (data: WsMessage) => {

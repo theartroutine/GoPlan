@@ -11,7 +11,6 @@ import {
   bffSendChatMessage,
 } from "@/features/chat/infrastructure/chat-api";
 import { joinChatRoom } from "@/features/chat/infrastructure/chat-ws-bridge";
-import { useWebSocket } from "@/features/realtime/application/ws-context";
 
 import type {
   ChatMessage,
@@ -25,6 +24,7 @@ const GAP_FILL_MAX_PAGES = 50; // hard upper bound to avoid infinite loops
 const ROOM_ACCESS_LOST_ERROR_CODES = new Set(["TRIP_NOT_FOUND", "FORBIDDEN"]);
 
 export type ChatRoomStatus = "loading" | "ready" | "error" | "kicked";
+type SendLockReason = "terminal";
 
 type SendOutcome = "ok" | "duplicate" | "failed";
 
@@ -37,6 +37,7 @@ export type UseTripChatResult = {
   pendingClientIds: Set<string>;
   /** Set of client_message_ids whose POST resolved with an error. */
   failedClientIds: Set<string>;
+  sendLockReason: SendLockReason | null;
   hasMoreOlder: boolean;
   isLoadingOlder: boolean;
   isSending: boolean;
@@ -53,6 +54,7 @@ type ChatState = {
   /** client_message_id → optimistic ChatMessage, replaced once confirmed. */
   pending: Map<string, ChatMessage>;
   failed: Set<string>;
+  sendLockReason: SendLockReason | null;
   hasMoreOlder: boolean;
   nextOlderCursor: string | null;
   isLoadingOlder: boolean;
@@ -79,6 +81,7 @@ type ChatAction =
   | { type: "CONFIRM_PENDING"; clientMessageId: string; message: ChatMessage }
   | { type: "FAIL_PENDING"; clientMessageId: string }
   | { type: "CLEAR_FAILED"; clientMessageId: string }
+  | { type: "LOCK_SEND_TERMINAL"; clientMessageId: string }
   | { type: "SEND_START" }
   | { type: "SEND_END" }
   | { type: "KICKED" }
@@ -91,6 +94,7 @@ function initialState(): ChatState {
     confirmed: new Map(),
     pending: new Map(),
     failed: new Set(),
+    sendLockReason: null,
     hasMoreOlder: false,
     nextOlderCursor: null,
     isLoadingOlder: false,
@@ -200,6 +204,20 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, failed };
     }
 
+    case "LOCK_SEND_TERMINAL": {
+      const pending = new Map(state.pending);
+      const failed = new Set(state.failed);
+      pending.delete(action.clientMessageId);
+      failed.delete(action.clientMessageId);
+      return {
+        ...state,
+        pending,
+        failed,
+        sendLockReason: "terminal",
+        errorCode: "TRIP_TERMINAL",
+      };
+    }
+
     case "SEND_START":
       return { ...state, isSending: true };
 
@@ -304,18 +322,37 @@ export function useTripChat(
   currentUser: { id: string; display_name: string; identify_tag: string | null },
 ): UseTripChatResult {
   const [state, dispatch] = useReducer(chatReducer, undefined, initialState);
-  const { status: wsStatus } = useWebSocket();
 
   // Refs that need to survive rerenders without re-binding effects.
   const stateRef = useRef(state);
   stateRef.current = state;
   const tripIdRef = useRef(tripId);
   tripIdRef.current = tripId;
-  const lastWsStatusRef = useRef(wsStatus);
+  const subscriptionAckedRef = useRef(false);
+  const pendingPostSubscribeGapFillRef = useRef(false);
+  const gapFillInFlightRef = useRef(false);
+
+  const triggerPostSubscribeGapFill = useCallback(() => {
+    if (!subscriptionAckedRef.current) return;
+    if (!pendingPostSubscribeGapFillRef.current) return;
+    if (gapFillInFlightRef.current) return;
+    if (stateRef.current.status !== "ready") return;
+
+    pendingPostSubscribeGapFillRef.current = false;
+    gapFillInFlightRef.current = true;
+    void runGapFill(tripIdRef.current, stateRef, dispatch).finally(() => {
+      gapFillInFlightRef.current = false;
+    });
+  }, []);
 
   // -------- Initial load --------
   useEffect(() => {
     let cancelled = false;
+    const freshState = initialState();
+    stateRef.current = freshState;
+    subscriptionAckedRef.current = false;
+    pendingPostSubscribeGapFillRef.current = false;
+    gapFillInFlightRef.current = false;
     dispatch({ type: "INIT_START" });
 
     bffListChatHistory(tripId, { limit: HISTORY_PAGE_SIZE })
@@ -341,6 +378,10 @@ export function useTripChat(
     };
   }, [tripId]);
 
+  useEffect(() => {
+    triggerPostSubscribeGapFill();
+  }, [state.status, triggerPostSubscribeGapFill]);
+
   // -------- WebSocket room subscription --------
   useEffect(() => {
     const handle = joinChatRoom(tripId, {
@@ -350,6 +391,11 @@ export function useTripChat(
       onKicked: () => {
         dispatch({ type: "KICKED" });
       },
+      onSubscribed: () => {
+        subscriptionAckedRef.current = true;
+        pendingPostSubscribeGapFillRef.current = true;
+        triggerPostSubscribeGapFill();
+      },
       onError: (event: WsChatError) => {
         dispatchRecoverableOrAccessLostError(dispatch, event.error_code);
       },
@@ -358,19 +404,7 @@ export function useTripChat(
     return () => {
       handle.leave();
     };
-  }, [tripId]);
-
-  // -------- Reconnect gap-fill --------
-  useEffect(() => {
-    const previous = lastWsStatusRef.current;
-    lastWsStatusRef.current = wsStatus;
-
-    if (wsStatus !== "connected" || previous === "connected") return;
-    if (stateRef.current.status === "loading") return; // initial load handles it
-    if (stateRef.current.status === "kicked") return;
-
-    void runGapFill(tripIdRef.current, stateRef, dispatch);
-  }, [wsStatus]);
+  }, [tripId, triggerPostSubscribeGapFill]);
 
   // -------- Public actions --------
   const loadOlder = useCallback(async () => {
@@ -409,6 +443,10 @@ export function useTripChat(
       clientMessageId: string,
       isRetry: boolean,
     ): Promise<SendOutcome> => {
+      if (stateRef.current.sendLockReason === "terminal") {
+        return "failed";
+      }
+
       if (!isRetry) {
         const optimistic: ChatMessage = {
           id: makeOptimisticId(clientMessageId),
@@ -441,6 +479,10 @@ export function useTripChat(
         return result.status === 200 ? "duplicate" : "ok";
       } catch (error) {
         const errorCode = extractErrorCode(error, "SEND_FAILED");
+        if (errorCode === "TRIP_TERMINAL") {
+          dispatch({ type: "LOCK_SEND_TERMINAL", clientMessageId });
+          return "failed";
+        }
         dispatch({ type: "FAIL_PENDING", clientMessageId });
         // Surface a coarse error code on the room, or close it if access is gone.
         dispatchRecoverableOrAccessLostError(dispatch, errorCode);
@@ -476,6 +518,7 @@ export function useTripChat(
     messages: selectVisibleMessages(state),
     pendingClientIds: new Set(state.pending.keys()),
     failedClientIds: new Set(state.failed),
+    sendLockReason: state.sendLockReason,
     hasMoreOlder: state.hasMoreOlder,
     isLoadingOlder: state.isLoadingOlder,
     isSending: state.isSending,

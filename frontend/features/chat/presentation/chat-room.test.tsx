@@ -10,6 +10,7 @@ const chatMock = vi.hoisted(() => ({
     messages: [],
     pendingClientIds: new Set<string>(),
     failedClientIds: new Set<string>(),
+    sendLockReason: null as "terminal" | null,
     hasMoreOlder: false,
     isLoadingOlder: false,
     isSending: false,
@@ -44,6 +45,9 @@ const CURRENT_USER = {
 describe("ChatRoom", () => {
   beforeEach(() => {
     wsContextMock.status = "connected";
+    chatMock.state.status = "ready";
+    chatMock.state.errorCode = null;
+    chatMock.state.sendLockReason = null;
     chatMock.state.isSending = false;
   });
 
@@ -60,5 +64,22 @@ describe("ChatRoom", () => {
 
     const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
     expect(textarea.disabled).toBe(false);
+  });
+
+  it("locks composer when the chat hook discovers a terminal trip", () => {
+    chatMock.state.sendLockReason = "terminal";
+
+    render(
+      <ChatRoom
+        tripId="trip-1"
+        isTerminal={false}
+        currentUser={CURRENT_USER}
+      />,
+    );
+
+    expect(
+      screen.getByText("This trip is closed — sending new messages is disabled."),
+    ).toBeDefined();
+    expect(screen.queryByLabelText("Message")).toBeNull();
   });
 });
