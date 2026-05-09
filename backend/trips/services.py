@@ -692,6 +692,12 @@ def remove_member(trip_id, target_user_id, actor) -> TripMember:
         membership.status = MemberStatus.REMOVED
         membership.left_at = timezone.now()
         membership.save(update_fields=["status", "left_at"])
+        from chat.services import notify_trip_chat_member_removed
+
+        notify_trip_chat_member_removed(
+            trip_id=trip.id,
+            user_id=target_user_id,
+        )
         _clear_activity_assignees_for_user(
             trip=trip,
             user_id=target_user_id,
@@ -737,6 +743,12 @@ def leave_trip(trip_id, actor) -> TripMember:
         membership.status = MemberStatus.LEFT
         membership.left_at = timezone.now()
         membership.save(update_fields=["status", "left_at"])
+        from chat.services import notify_trip_chat_member_removed
+
+        notify_trip_chat_member_removed(
+            trip_id=trip.id,
+            user_id=actor.id,
+        )
         _clear_activity_assignees_for_user(
             trip=trip,
             user_id=actor.id,

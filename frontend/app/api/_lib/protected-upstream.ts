@@ -27,6 +27,7 @@ type ProtectedCallOptions = {
 type ProtectedCallSuccess = {
   ok: true;
   data: unknown;
+  status: number;
   refreshedAccessToken?: string;
 };
 
@@ -66,7 +67,7 @@ export async function protectedUpstreamCall(
 
     if (upstream.kind !== "network_error" && upstream.ok) {
       clearRefreshAuthErrorMarker(jar);
-      return { ok: true, data: upstream.data };
+      return { ok: true, data: upstream.data, status: upstream.status };
     }
 
     if (upstream.kind === "network_error") {
@@ -170,6 +171,7 @@ export async function protectedUpstreamCall(
   return {
     ok: true,
     data: retryUpstream.data,
+    status: retryUpstream.status,
     refreshedAccessToken: refreshResult.accessToken,
   };
 }

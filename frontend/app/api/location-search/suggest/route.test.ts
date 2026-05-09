@@ -65,6 +65,7 @@ describe("GET /api/location-search/suggest", () => {
     protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
       ok: true,
       data: { user: { id: "user-1" } },
+      status: 200,
       refreshedAccessToken: "fresh-access-token",
     });
 

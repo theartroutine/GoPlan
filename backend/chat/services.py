@@ -1,0 +1,292 @@
+from __future__ import annotations
+
+import base64
+import json
+import logging
+from uuid import UUID
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from django.db import IntegrityError, transaction
+from django.db.models import Q
+from django.utils.dateparse import parse_datetime
+
+from chat.models import ChatMessage
+from trips.models import MemberStatus, Trip, TripMember, TripStatus
+from trips.services import TripNotFoundError, TripTerminalError
+
+logger = logging.getLogger(__name__)
+
+HISTORY_DEFAULT_LIMIT = 30
+HISTORY_MAX_LIMIT = 100
+GAP_FILL_DEFAULT_LIMIT = 100
+GAP_FILL_MAX_LIMIT = 200
+CHAT_MESSAGE_MAX_LENGTH = 2000
+
+
+class ChatServiceError(Exception):
+    error_code: str = "CHAT_ERROR"
+
+
+class ChatInvalidContentError(ChatServiceError):
+    error_code = "INVALID_CONTENT"
+
+
+class ChatInvalidCursorError(ChatServiceError):
+    error_code = "INVALID_CURSOR"
+
+
+def _chat_group_name(trip_id) -> str:
+    return f"trip_chat_{trip_id}"
+
+
+def _normalize_content(content: str) -> str:
+    if not isinstance(content, str):
+        raise ChatInvalidContentError("Message content is required.")
+    normalized = content.strip()
+    if not normalized:
+        raise ChatInvalidContentError("Message content cannot be empty.")
+    if len(normalized) > CHAT_MESSAGE_MAX_LENGTH:
+        raise ChatInvalidContentError("Message content is too long.")
+    return normalized
+
+
+def _get_active_chat_trip(trip_id, user, *, for_update: bool = False) -> Trip:
+    try:
+        normalized_trip_id = UUID(str(trip_id))
+    except (TypeError, ValueError) as exc:
+        raise TripNotFoundError("Trip not found.") from exc
+
+    if for_update:
+        # Keep lock order aligned with trip membership mutations
+        # (Trip -> TripMember) to avoid deadlocks during send/remove races.
+        try:
+            trip = Trip.objects.select_for_update().get(pk=normalized_trip_id)
+        except Trip.DoesNotExist as exc:
+            raise TripNotFoundError("Trip not found.") from exc
+
+        try:
+            TripMember.objects.select_for_update().get(
+                trip=trip,
+                user=user,
+                status=MemberStatus.ACTIVE,
+            )
+        except TripMember.DoesNotExist as exc:
+            raise TripNotFoundError("Trip not found.") from exc
+        return trip
+
+    membership_queryset = TripMember.objects.filter(
+        trip_id=normalized_trip_id,
+        user=user,
+        status=MemberStatus.ACTIVE,
+    )
+
+    try:
+        membership = membership_queryset.get()
+    except TripMember.DoesNotExist as exc:
+        raise TripNotFoundError("Trip not found.") from exc
+
+    try:
+        return Trip.objects.get(pk=membership.trip_id)
+    except Trip.DoesNotExist as exc:
+        raise TripNotFoundError("Trip not found.") from exc
+
+
+def ensure_user_can_access_trip_chat(user, trip_id) -> None:
+    _get_active_chat_trip(trip_id, user)
+
+
+def build_chat_message_payload(message: ChatMessage) -> dict:
+    return {
+        "id": str(message.id),
+        "trip_id": str(message.trip_id),
+        "sender": {
+            "id": str(message.sender_id) if message.sender_id else None,
+            "display_name": message.sender_display_name_snapshot,
+            "identify_tag": message.sender_identify_tag_snapshot,
+        },
+        "content": message.content,
+        "client_message_id": (
+            str(message.client_message_id) if message.client_message_id else None
+        ),
+        "created_at": message.created_at.isoformat(),
+    }
+
+
+def build_chat_message_ws_payload(message: ChatMessage) -> dict:
+    return {
+        "type": "chat.message",
+        "trip_id": str(message.trip_id),
+        "message": build_chat_message_payload(message),
+    }
+
+
+def _push_chat_message(message: ChatMessage) -> None:
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            _chat_group_name(message.trip_id),
+            {
+                "type": "chat_message_push",
+                "data": build_chat_message_ws_payload(message),
+            },
+        )
+    except Exception:
+        logger.error(
+            "Failed to push chat message %s via WebSocket",
+            message.id,
+            exc_info=True,
+        )
+
+
+def _push_chat_kicked(*, trip_id, user_id) -> None:
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            _chat_group_name(trip_id),
+            {
+                "type": "chat_kicked_push",
+                "data": {
+                    "trip_id": str(trip_id),
+                    "user_id": str(user_id),
+                },
+            },
+        )
+    except Exception:
+        logger.error(
+            "Failed to push chat kicked event for user %s in trip %s",
+            user_id,
+            trip_id,
+            exc_info=True,
+        )
+
+
+def send_chat_message(
+    *,
+    user,
+    trip_id,
+    content: str,
+    client_message_id,
+) -> tuple[ChatMessage, bool]:
+    normalized_content = _normalize_content(content)
+
+    with transaction.atomic():
+        trip = _get_active_chat_trip(trip_id, user, for_update=True)
+
+        existing_message = ChatMessage.objects.filter(
+            trip=trip,
+            sender=user,
+            client_message_id=client_message_id,
+        ).select_related("sender").first()
+        if existing_message is not None:
+            return existing_message, False
+
+        if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+            raise TripTerminalError("Completed or cancelled trips are read-only.")
+
+        try:
+            with transaction.atomic():
+                message = ChatMessage.objects.create(
+                    trip=trip,
+                    sender=user,
+                    sender_display_name_snapshot=user.display_name,
+                    sender_identify_tag_snapshot=user.identify_tag,
+                    content=normalized_content,
+                    client_message_id=client_message_id,
+                )
+        except IntegrityError:
+            existing_message = ChatMessage.objects.filter(
+                trip=trip,
+                sender=user,
+                client_message_id=client_message_id,
+            ).select_related("sender").get()
+            return existing_message, False
+
+        transaction.on_commit(lambda: _push_chat_message(message))
+        return message, True
+
+
+def _encode_cursor(message: ChatMessage) -> str:
+    raw = json.dumps(
+        {
+            "created_at": message.created_at.isoformat(),
+            "id": str(message.id),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def _decode_cursor(cursor: str):
+    try:
+        decoded = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        payload = json.loads(decoded)
+        created_at = parse_datetime(payload["created_at"])
+        message_id = UUID(str(payload["id"]))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ChatInvalidCursorError("Invalid chat cursor.") from exc
+
+    if created_at is None:
+        raise ChatInvalidCursorError("Invalid chat cursor.")
+    return created_at, message_id
+
+
+def _history_page(trip: Trip, *, cursor: str | None, limit: int) -> dict:
+    queryset = ChatMessage.objects.filter(trip=trip).select_related("sender")
+    if cursor:
+        created_at, message_id = _decode_cursor(cursor)
+        queryset = queryset.filter(
+            Q(created_at__lt=created_at)
+            | Q(created_at=created_at, id__lt=message_id)
+        )
+
+    rows = list(queryset.order_by("-created_at", "-id")[: limit + 1])
+    page = rows[:limit]
+    return {
+        "results": [build_chat_message_payload(message) for message in page],
+        "next_cursor": _encode_cursor(page[-1]) if len(rows) > limit and page else None,
+    }
+
+
+def _gap_fill_page(trip: Trip, *, since, limit: int) -> dict:
+    try:
+        anchor = ChatMessage.objects.get(pk=since, trip=trip)
+    except ChatMessage.DoesNotExist:
+        return {"results": [], "has_more": False}
+
+    rows = list(
+        ChatMessage.objects
+        .filter(trip=trip)
+        .filter(
+            Q(created_at__gt=anchor.created_at)
+            | Q(created_at=anchor.created_at, id__gt=anchor.id)
+        )
+        .select_related("sender")
+        .order_by("created_at", "id")[: limit + 1]
+    )
+    page = rows[:limit]
+    return {
+        "results": [build_chat_message_payload(message) for message in page],
+        "has_more": len(rows) > limit,
+    }
+
+
+def list_chat_messages(
+    *,
+    user,
+    trip_id,
+    cursor: str | None = None,
+    limit: int | None = None,
+    since=None,
+) -> dict:
+    trip = _get_active_chat_trip(trip_id, user)
+    if since is not None:
+        resolved_limit = min(limit or GAP_FILL_DEFAULT_LIMIT, GAP_FILL_MAX_LIMIT)
+        return _gap_fill_page(trip, since=since, limit=resolved_limit)
+
+    resolved_limit = min(limit or HISTORY_DEFAULT_LIMIT, HISTORY_MAX_LIMIT)
+    return _history_page(trip, cursor=cursor, limit=resolved_limit)
+
+
+def notify_trip_chat_member_removed(*, trip_id, user_id) -> None:
+    transaction.on_commit(lambda: _push_chat_kicked(trip_id=trip_id, user_id=user_id))

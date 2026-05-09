@@ -81,6 +81,22 @@ export class WebSocketManager {
     this.setStatus("disconnected");
   }
 
+  /**
+   * Send a JSON message to the server.
+   * Returns true if the socket was OPEN and the message was queued by the
+   * underlying WebSocket; false otherwise. Callers are expected to re-send
+   * stateful messages (e.g. room subscriptions) on `onStatusChange("connected")`.
+   */
+  send(message: WsMessage): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    try {
+      this.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   on(type: string, callback: MessageListener): () => void {
     let listeners = this.messageListeners.get(type);
     if (!listeners) {

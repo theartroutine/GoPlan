@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'friends',
     'trips',
     'expenses',
+    'chat',
     'media',
 
 ]
@@ -191,6 +192,7 @@ REST_FRAMEWORK = {
         'expenses_list_create': '120/hour',
         'expenses_detail': '120/hour',
         'expenses_contributions': '240/hour',
+        'chat_send': '60/minute',
         'settlement_finalize': '30/hour',
         'settlement_reopen': '20/hour',
         'settlement_transfer_action': '240/hour',

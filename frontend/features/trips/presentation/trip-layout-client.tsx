@@ -43,15 +43,26 @@ function TripShell({ children }: { children: React.ReactNode }) {
   }
 
   const isOverview = pathname.endsWith("/overview");
+  const isChat = pathname.endsWith("/chat");
   const portalTarget = mounted ? document.getElementById("trip-nav-portal") : null;
 
   const TAB_TITLES: Record<string, string> = {
     members: "Members",
     timeline: "Timeline",
     expenses: "Expenses",
-    chat: "Chat",
   };
   const tabTitle = TAB_TITLES[pathname.split("/").pop() ?? ""];
+
+  // Chat owns its own viewport: no page title, no horizontal padding, fills
+  // the remaining height of <main>. Other tabs keep the standard padded layout.
+  if (isChat) {
+    return (
+      <>
+        {portalTarget && createPortal(<TripTabBar />, portalTarget)}
+        <div className="flex h-full min-h-0 flex-col">{children}</div>
+      </>
+    );
+  }
 
   return (
     <>

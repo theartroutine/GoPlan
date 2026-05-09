@@ -25,8 +25,16 @@ const initialState: AuthState = {
   status: "idle",
 };
 
+const BOOTSTRAP_REQUEST_TIMEOUT_MS = 4_000;
 const BOOTSTRAP_RETRY_DELAYS_MS = [150, 400];
 const SOFT_AUTH_ERROR_CODE = "refresh_auth_soft_failed";
+
+class AuthBootstrapTimeoutError extends Error {
+  constructor() {
+    super("Auth bootstrap timed out.");
+    this.name = "AuthBootstrapTimeoutError";
+  }
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -58,6 +66,47 @@ function isRetryableBootstrapError(error: unknown): boolean {
 
 function resolveAuthStatus(user: AuthUser): "authenticated" | "pending_profile" {
   return user.requires_profile_setup ? "pending_profile" : "authenticated";
+}
+
+function bffMeWithTimeout(parentSignal: AbortSignal): Promise<Awaited<ReturnType<typeof bffMe>>> {
+  return new Promise((resolve, reject) => {
+    if (parentSignal.aborted) {
+      reject(parentSignal.reason);
+      return;
+    }
+
+    const controller = new AbortController();
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      parentSignal.removeEventListener("abort", handleParentAbort);
+    };
+
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const handleParentAbort = () => {
+      controller.abort(parentSignal.reason);
+      settle(() => reject(parentSignal.reason));
+    };
+
+    const timeoutId = setTimeout(() => {
+      const timeoutError = new AuthBootstrapTimeoutError();
+      controller.abort(timeoutError);
+      settle(() => reject(timeoutError));
+    }, BOOTSTRAP_REQUEST_TIMEOUT_MS);
+
+    parentSignal.addEventListener("abort", handleParentAbort, { once: true });
+
+    void bffMe(controller.signal)
+      .then((data) => settle(() => resolve(data)))
+      .catch((error: unknown) => settle(() => reject(error)));
+  });
 }
 
 function authReducer(state: AuthState, action: AuthAction): AuthState {
@@ -95,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       for (let attempt = 0; attempt <= BOOTSTRAP_RETRY_DELAYS_MS.length; attempt += 1) {
         try {
-          const data = await bffMe(controller.signal);
+          const data = await bffMeWithTimeout(controller.signal);
           if (controller.signal.aborted) return;
           tokenManager.set(data.access_token);
 
