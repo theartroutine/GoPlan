@@ -104,13 +104,23 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...initialState() };
 
     case "INIT_SUCCESS": {
-      const confirmed = new Map<string, ChatMessage>();
-      for (const m of action.messages) confirmed.set(m.id, m);
+      const confirmed = new Map(state.confirmed);
+      const pending = new Map(state.pending);
+      const failed = new Set(state.failed);
+      for (const m of action.messages) {
+        confirmed.set(m.id, m);
+        if (m.client_message_id) {
+          pending.delete(m.client_message_id);
+          failed.delete(m.client_message_id);
+        }
+      }
       return {
         ...state,
         status: "ready",
         errorCode: null,
         confirmed,
+        pending,
+        failed,
         nextOlderCursor: action.nextCursor,
         hasMoreOlder: action.nextCursor !== null,
       };
@@ -269,7 +279,7 @@ function extractErrorCode(error: unknown, fallback: string): string {
     if (status === 404) return "TRIP_NOT_FOUND";
     if (status === 409) return "TRIP_TERMINAL";
     if (status === 429) return "THROTTLED";
-    if (status === 400) return "INVALID_CONTENT";
+    if (status === 400) return "BAD_REQUEST";
   }
   return fallback;
 }
@@ -487,7 +497,22 @@ async function runGapFill(
   for (const m of stateRef.current.confirmed.values()) {
     if (latest === null || compareMessages(m, latest) > 0) latest = m;
   }
-  if (!latest) return;
+  if (!latest) {
+    try {
+      const res = await bffListChatHistory(tripId, { limit: HISTORY_PAGE_SIZE });
+      dispatch({
+        type: "INIT_SUCCESS",
+        messages: res.results,
+        nextCursor: res.next_cursor,
+      });
+    } catch (error) {
+      const errorCode = extractErrorCode(error, "GAP_FILL_FAILED");
+      if (isRoomAccessLostError(errorCode)) {
+        dispatch({ type: "KICKED" });
+      }
+    }
+    return;
+  }
 
   let since = latest.id;
   for (let page = 0; page < GAP_FILL_MAX_PAGES; page += 1) {

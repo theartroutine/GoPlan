@@ -63,7 +63,12 @@ class TripChatMessagesAPIView(APIView):
 
     def get(self, request, trip_id):
         serializer = ChatMessageListQuerySerializer(data=request.query_params)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return _error_response(
+                "Chat query is invalid.",
+                "INVALID_QUERY",
+                status.HTTP_400_BAD_REQUEST,
+            )
         data = serializer.validated_data
 
         try:

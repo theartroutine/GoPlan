@@ -73,6 +73,9 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
 describe("useTripChat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    chatApiMock.bffListChatHistory.mockReset();
+    chatApiMock.bffGapFillChatMessages.mockReset();
+    chatApiMock.bffSendChatMessage.mockReset();
     wsContextMock.status = "connected";
     wsBridgeMock.listenersRef.current = null;
   });
@@ -95,6 +98,116 @@ describe("useTripChat", () => {
 
     expect(result.current.messages.map((m) => m.id)).toEqual(["m-1", "m-2"]);
     expect(result.current.hasMoreOlder).toBe(false);
+  });
+
+  it("keeps websocket messages that arrive before initial history resolves", async () => {
+    let resolveHistory:
+      | ((value: { results: ChatMessage[]; next_cursor: string | null }) => void)
+      | null = null;
+    chatApiMock.bffListChatHistory.mockReturnValue(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => {
+      expect(wsBridgeMock.listenersRef.current).not.toBeNull();
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onMessage: (e: unknown) => void;
+      };
+      listeners.onMessage({
+        type: "chat.message",
+        trip_id: TRIP_ID,
+        message: makeMessage({
+          id: "ws-first",
+          content: "arrived over ws",
+          created_at: "2026-05-08T10:02:00Z",
+        }),
+      });
+    });
+
+    act(() => {
+      resolveHistory?.({
+        results: [
+          makeMessage({
+            id: "history-old",
+            content: "history",
+            created_at: "2026-05-08T10:00:00Z",
+          }),
+        ],
+        next_cursor: null,
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+    expect(result.current.messages.map((m) => m.id)).toEqual([
+      "history-old",
+      "ws-first",
+    ]);
+  });
+
+  it("loads latest history on reconnect when there is no gap-fill anchor yet", async () => {
+    chatApiMock.bffListChatHistory
+      .mockResolvedValueOnce({
+        results: [],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        results: [
+          makeMessage({
+            id: "first-after-reconnect",
+            content: "first missed message",
+            created_at: "2026-05-08T10:03:00Z",
+          }),
+        ],
+        next_cursor: null,
+      });
+
+    const { result, rerender } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      wsContextMock.status = "reconnecting";
+      rerender();
+    });
+    act(() => {
+      wsContextMock.status = "connected";
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(chatApiMock.bffListChatHistory).toHaveBeenCalledTimes(2);
+    });
+    expect(result.current.messages.map((m) => m.id)).toEqual([
+      "first-after-reconnect",
+    ]);
+  });
+
+  it("does not label generic HTTP 400 history errors as invalid message content", async () => {
+    chatApiMock.bffListChatHistory.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 400,
+        data: { detail: "Bad query." },
+      },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("error");
+    });
+    expect(result.current.errorCode).toBe("BAD_REQUEST");
   });
 
   it("optimistically renders sent message, then confirms with server message", async () => {

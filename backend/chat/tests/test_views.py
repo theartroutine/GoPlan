@@ -166,6 +166,15 @@ class TripChatMessagesAPITests(APITestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.data["error_code"], "TRIP_NOT_FOUND")
 
+    def test_get_invalid_query_returns_error_code(self):
+        response = self.client.get(
+            f"{_messages_url(self.trip.id)}?limit=0",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error_code"], "INVALID_QUERY")
+
 
 class TripChatThrottleTests(APITestCase):
 

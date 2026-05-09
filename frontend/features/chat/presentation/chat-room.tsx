@@ -53,8 +53,6 @@ export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
     );
   }
 
-  const composerDisabled = isTerminal || wsStatus === "disconnected";
-
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <ConnectionBanner status={wsStatus} />
@@ -74,7 +72,7 @@ export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
         </div>
       ) : (
         <Composer
-          disabled={composerDisabled}
+          disabled={false}
           isSending={chat.isSending}
           onSend={(content) => {
             void chat.sendMessage(content);
