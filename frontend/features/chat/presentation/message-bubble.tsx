@@ -266,6 +266,31 @@ export function MessageBubble({
     />
   ) : null;
 
+  // Hover overlay floats outside the bubble's flex flow so the bubble keeps
+  // its full max width when hover icons appear. Inner pr/pl padding bridges
+  // the visual gap to the bubble so moving the cursor across it stays within
+  // the wrapper (descendant rule of `mouseleave`), preserving hover continuity.
+  const hoverOverlayEl =
+    actionControlsEl !== null || emojiPickerEl !== null ? (
+      <div
+        className={`absolute top-0 bottom-0 flex items-center gap-1.5 ${
+          isOwn ? "right-full pr-1.5" : "left-full pl-1.5"
+        }`}
+      >
+        {isOwn ? (
+          <>
+            {actionControlsEl}
+            {emojiPickerEl}
+          </>
+        ) : (
+          <>
+            {emojiPickerEl}
+            {actionControlsEl}
+          </>
+        )}
+      </div>
+    ) : null;
+
   // onMouseLeave on the outer row acts as a safety-net: clears hover state when the
   // cursor exits the row entirely (e.g. fast mouse movement, programmatic scroll).
   const commonRowProps = {
@@ -351,11 +376,12 @@ export function MessageBubble({
           className={`flex w-full items-center justify-end gap-1 ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
         >
           <div className="flex min-w-0 max-w-[78%] flex-col items-end gap-0.5 sm:max-w-[60%]">
-            {/* Smiley trigger sits to the LEFT of the own bubble */}
-            <div {...bubbleInteractionProps} className="flex items-center gap-1.5">
-              {actionControlsEl}
-              {emojiPickerEl}
+            {/* Hover icons (Select/Trash/Emoji) float in an absolute overlay
+                to the LEFT of the own bubble so the bubble keeps its full
+                max width when icons appear on hover. */}
+            <div {...bubbleInteractionProps} className="relative flex items-center">
               {bubbleEl}
+              {hoverOverlayEl}
             </div>
             <ReactionBar
               reactions={isDeletedForEveryone ? [] : message.reactions}
@@ -410,11 +436,12 @@ export function MessageBubble({
               {senderLabel(message)}
             </span>
           )}
-          {/* Smiley trigger sits to the RIGHT of others' bubble */}
-          <div {...bubbleInteractionProps} className="flex items-center gap-1.5">
+          {/* Hover icons (Emoji/Trash/Select) float in an absolute overlay
+              to the RIGHT of others' bubble so the bubble keeps its full
+              max width when icons appear on hover. */}
+          <div {...bubbleInteractionProps} className="relative flex items-center">
             {bubbleEl}
-            {emojiPickerEl}
-            {actionControlsEl}
+            {hoverOverlayEl}
           </div>
           <ReactionBar
             reactions={isDeletedForEveryone ? [] : message.reactions}
