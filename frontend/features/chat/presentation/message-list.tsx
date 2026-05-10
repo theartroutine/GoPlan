@@ -20,6 +20,7 @@ import { Spinner } from "@/shared/ui/spinner";
 type Props = {
   messages: ChatMessage[];
   currentUserId: string;
+  captainUserId?: string | null;
   pendingClientIds: Set<string>;
   failedClientIds: Set<string>;
   hasMoreOlder: boolean;
@@ -50,6 +51,7 @@ function sameGroup(a: ChatMessage, b: ChatMessage): boolean {
 export function MessageList({
   messages,
   currentUserId,
+  captainUserId = null,
   pendingClientIds,
   failedClientIds,
   hasMoreOlder,
@@ -290,6 +292,8 @@ export function MessageList({
           const isPending = cid !== null && pendingClientIds.has(cid);
           const isFailed = cid !== null && failedClientIds.has(cid);
           const isOwn = message.sender.id === currentUserId;
+          const isCaptainSender =
+            message.sender.id !== null && message.sender.id === captainUserId;
           const prev = idx > 0 ? messages[idx - 1] : null;
           const next =
             idx < messages.length - 1 ? messages[idx + 1] : null;
@@ -302,6 +306,7 @@ export function MessageList({
               isOwn={isOwn}
               isPending={isPending}
               isFailed={isFailed}
+              isCaptainSender={isCaptainSender}
               showSenderName={!continuesPrev && !isOwn}
               showAvatar={!continuesNext && !isOwn}
               showMeta={!continuesNext}

@@ -12,11 +12,14 @@ export function ChatTab() {
 
   const isTerminal =
     data.trip.status === "COMPLETED" || data.trip.status === "CANCELLED";
+  const captainUserId =
+    data.members.find((member) => member.role === "CAPTAIN")?.user.id ?? null;
 
   return (
     <ChatRoom
       tripId={tripId}
       isTerminal={isTerminal}
+      captainUserId={captainUserId}
       currentUser={{
         id: user.id,
         display_name: user.display_name,

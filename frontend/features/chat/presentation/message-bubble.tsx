@@ -26,6 +26,7 @@ type Props = {
   isOwn: boolean;
   isPending: boolean;
   isFailed: boolean;
+  isCaptainSender: boolean;
   /** Show sender name above bubble (first message in a group from this sender). */
   showSenderName: boolean;
   /** Show avatar slot (last message in a group from a non-own sender). */
@@ -76,6 +77,7 @@ export function MessageBubble({
   isOwn,
   isPending,
   isFailed,
+  isCaptainSender,
   showSenderName,
   showAvatar,
   showMeta,
@@ -426,7 +428,13 @@ export function MessageBubble({
         {edgeCheckboxEl}
         <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
           {showSenderName && (
-            <span className="pl-10 text-[11px] font-medium text-muted-foreground">
+            <span
+              className={`pl-10 text-[11px] font-medium ${
+                isCaptainSender
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              }`}
+            >
               {senderLabel(message)}
             </span>
           )}

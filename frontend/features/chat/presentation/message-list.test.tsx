@@ -178,6 +178,33 @@ describe("MessageList", () => {
     expect(screen.queryByText("Bạn đã xóa một tin nhắn")).toBeNull();
   });
 
+  it("highlights the trip captain sender name in red", () => {
+    render(
+      <MessageList
+        messages={[
+          makeMessage({
+            sender: {
+              id: "user-captain",
+              display_name: "Captain",
+              identify_tag: null,
+            },
+          }),
+        ]}
+        currentUserId={CURRENT_USER_ID}
+        captainUserId="user-captain"
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Captain").classList.contains("text-destructive"))
+      .toBe(true);
+  });
+
   it("bulk selection only offers remove for current user", () => {
     const onHideMessagesForMe = vi.fn();
 

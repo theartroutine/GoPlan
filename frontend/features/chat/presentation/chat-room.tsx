@@ -11,6 +11,7 @@ import { useWebSocket } from "@/features/realtime/application/ws-context";
 type Props = {
   tripId: string;
   isTerminal: boolean;
+  captainUserId?: string | null;
   currentUser: {
     id: string;
     display_name: string;
@@ -48,7 +49,12 @@ function getChatWarning(errorCode: string | null): string | null {
   return null;
 }
 
-export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
+export function ChatRoom({
+  tripId,
+  isTerminal,
+  captainUserId = null,
+  currentUser,
+}: Props) {
   const { status: wsStatus } = useWebSocket();
   const chat = useTripChat(tripId, currentUser);
   const isChatClosed = isTerminal || chat.sendLockReason === "terminal";
@@ -100,6 +106,7 @@ export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
       <MessageList
         messages={chat.messages}
         currentUserId={currentUser.id}
+        captainUserId={captainUserId}
         pendingClientIds={chat.pendingClientIds}
         failedClientIds={chat.failedClientIds}
         hasMoreOlder={chat.hasMoreOlder}
