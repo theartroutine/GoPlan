@@ -7,6 +7,8 @@ const chatApiMock = vi.hoisted(() => ({
   bffListChatHistory: vi.fn(),
   bffGapFillChatMessages: vi.fn(),
   bffSendChatMessage: vi.fn(),
+  bffDeleteChatMessage: vi.fn(),
+  bffHideChatMessagesForMe: vi.fn(),
 }));
 
 const wsBridgeMock = vi.hoisted(() => {
@@ -25,6 +27,7 @@ const wsBridgeMock = vi.hoisted(() => {
           onKicked?: (e: unknown) => void;
           onError?: (e: unknown) => void;
           onSubscribed?: (e: unknown) => void;
+          onMessageDeleted?: (e: unknown) => void;
         },
       ) => {
         listenersRef.current = listeners as never;
@@ -56,6 +59,9 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
     content: "hello",
     client_message_id: null,
     created_at: "2026-05-08T10:00:00Z",
+    is_deleted_for_everyone: false,
+    deleted_for_everyone_at: null,
+    deleted_for_everyone_by_id: null,
     reactions: [],
     ...overrides,
   };
@@ -67,6 +73,8 @@ describe("useTripChat", () => {
     chatApiMock.bffListChatHistory.mockReset();
     chatApiMock.bffGapFillChatMessages.mockReset();
     chatApiMock.bffSendChatMessage.mockReset();
+    chatApiMock.bffDeleteChatMessage.mockReset();
+    chatApiMock.bffHideChatMessagesForMe.mockReset();
     wsBridgeMock.listenersRef.current = null;
   });
 
@@ -513,5 +521,101 @@ describe("useTripChat", () => {
 
     expect(outcome).toBe("failed");
     expect(result.current.failedClientIds.size).toBe(1);
+  });
+
+  it("hides a single message for the current user without deleting it globally", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "hide-me" })],
+      next_cursor: null,
+    });
+    chatApiMock.bffDeleteChatMessage.mockResolvedValueOnce({
+      hidden_message_ids: ["hide-me"],
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    await act(async () => {
+      await result.current.deleteMessage("hide-me", "for_me");
+    });
+
+    expect(chatApiMock.bffDeleteChatMessage).toHaveBeenCalledWith(
+      TRIP_ID,
+      "hide-me",
+      "for_me",
+    );
+    expect(result.current.messages).toHaveLength(0);
+  });
+
+  it("applies message_deleted websocket tombstones", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "delete-everyone", content: "secret" })],
+      next_cursor: null,
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onMessageDeleted: (e: unknown) => void;
+      };
+      listeners.onMessageDeleted({
+        type: "chat.message_deleted",
+        trip_id: TRIP_ID,
+        message: makeMessage({
+          id: "delete-everyone",
+          content: "",
+          is_deleted_for_everyone: true,
+          deleted_for_everyone_at: "2026-05-08T10:01:00Z",
+          deleted_for_everyone_by_id: ME.id,
+        }),
+      });
+    });
+
+    expect(result.current.messages[0].is_deleted_for_everyone).toBe(true);
+    expect(result.current.messages[0].content).toBe("");
+  });
+
+  it("does not resurrect a locally hidden message when a global delete event arrives later", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "hidden-before-global-delete" })],
+      next_cursor: null,
+    });
+    chatApiMock.bffHideChatMessagesForMe.mockResolvedValueOnce({
+      hidden_message_ids: ["hidden-before-global-delete"],
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    await act(async () => {
+      await result.current.hideMessagesForMe(["hidden-before-global-delete"]);
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onMessageDeleted: (e: unknown) => void;
+      };
+      listeners.onMessageDeleted({
+        type: "chat.message_deleted",
+        trip_id: TRIP_ID,
+        message: makeMessage({
+          id: "hidden-before-global-delete",
+          content: "",
+          is_deleted_for_everyone: true,
+          deleted_for_everyone_at: "2026-05-08T10:02:00Z",
+          deleted_for_everyone_by_id: ME.id,
+        }),
+      });
+    });
+
+    expect(result.current.messages).toHaveLength(0);
   });
 });

@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { ChatMessage } from "@/features/chat/domain/types";
+import type {
+  ChatMessage,
+  DeleteChatMessageMode,
+} from "@/features/chat/domain/types";
 import { MessageBubble } from "@/features/chat/presentation/message-bubble";
+import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
 type Props = {
@@ -16,6 +20,8 @@ type Props = {
   onLoadOlder: () => void;
   onRetry: (clientMessageId: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void;
+  onDeleteMessage?: (messageId: string, mode: DeleteChatMessageMode) => void;
+  onHideMessagesForMe?: (messageIds: string[]) => void;
 };
 
 const SCROLL_STICK_THRESHOLD_PX = 80;
@@ -44,8 +50,11 @@ export function MessageList({
   onLoadOlder,
   onRetry,
   onToggleReaction,
+  onDeleteMessage,
+  onHideMessagesForMe,
 }: Props) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const wasNearBottomRef = useRef(true);
   const lastMessageIdRef = useRef<string | null>(null);
   const firstMessageIdRef = useRef<string | null>(null);
@@ -57,6 +66,28 @@ export function MessageList({
   // scroller. Keeps the initial render (which can have scrollTop ≈ 0 if there
   // are few messages) from triggering a load immediately on mount.
   const userInteractedRef = useRef(false);
+  const isSelectionMode = selectedIds.size > 0;
+
+  const toggleSelected = (messageId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const hideSelectedForMe = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    onHideMessagesForMe?.(ids);
+    clearSelection();
+  };
 
   // Mark scroller as user-interacted on real input gestures.
   useEffect(() => {
@@ -156,6 +187,32 @@ export function MessageList({
           )}
         </div>
       )}
+      {isSelectionMode && (
+        <div className="sticky top-0 z-10 mb-2 flex items-center justify-between gap-2 border-b border-border bg-background/95 px-1 py-2 backdrop-blur">
+          <span className="text-xs font-medium text-foreground">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={clearSelection}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={hideSelectedForMe}
+              disabled={!onHideMessagesForMe}
+            >
+              Thu hồi với bạn
+            </Button>
+          </div>
+        </div>
+      )}
       {messages.length === 0 ? (
         <div className="flex flex-1 items-center justify-center py-12 text-center text-sm text-muted-foreground">
           No messages yet. Say hello to your trip mates.
@@ -183,8 +240,12 @@ export function MessageList({
               showMeta={!continuesNext}
               isGroupContinuation={continuesPrev}
               currentUserId={currentUserId}
+              isSelected={selectedIds.has(message.id)}
+              isSelectionMode={isSelectionMode}
               onRetry={cid ? () => onRetry(cid) : undefined}
               onToggleReaction={onToggleReaction}
+              onDeleteMessage={onDeleteMessage}
+              onToggleSelected={onHideMessagesForMe ? toggleSelected : undefined}
             />
           );
         })

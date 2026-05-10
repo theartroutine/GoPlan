@@ -1,11 +1,25 @@
 "use client";
 
+import { CheckSquare, Square, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ChatMessage } from "@/features/chat/domain/types";
+import type {
+  ChatMessage,
+  DeleteChatMessageMode,
+} from "@/features/chat/domain/types";
 import { ChatAvatar } from "@/features/chat/presentation/chat-avatar";
 import { EmojiPicker } from "@/features/chat/presentation/emoji-picker-popover";
 import { ReactionBar } from "@/features/chat/presentation/reaction-bar";
+import { Button } from "@/shared/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/dialog";
 
 type Props = {
   message: ChatMessage;
@@ -21,8 +35,12 @@ type Props = {
   /** Tighten top spacing when this bubble continues a group. */
   isGroupContinuation: boolean;
   currentUserId: string | null;
+  isSelected?: boolean;
+  isSelectionMode?: boolean;
   onRetry?: () => void;
   onToggleReaction?: (messageId: string, emoji: string) => void;
+  onDeleteMessage?: (messageId: string, mode: DeleteChatMessageMode) => void;
+  onToggleSelected?: (messageId: string) => void;
 };
 
 function formatTime(iso: string): string {
@@ -43,6 +61,14 @@ function senderLabel(message: ChatMessage): string {
 }
 
 const LONG_PRESS_MS = 400;
+const DELETE_FOR_EVERYONE_WINDOW_MS = 5 * 60 * 1000;
+
+function canDeleteForEveryone(message: ChatMessage, isOwn: boolean): boolean {
+  if (!isOwn || message.is_deleted_for_everyone) return false;
+  const createdAt = Date.parse(message.created_at);
+  if (Number.isNaN(createdAt)) return false;
+  return Date.now() - createdAt <= DELETE_FOR_EVERYONE_WINDOW_MS;
+}
 
 export function MessageBubble({
   message,
@@ -54,15 +80,26 @@ export function MessageBubble({
   showMeta,
   isGroupContinuation,
   currentUserId,
+  isSelected = false,
+  isSelectionMode = false,
   onRetry,
   onToggleReaction,
+  onDeleteMessage,
+  onToggleSelected,
 }: Props) {
   const [isHovered, setIsHovered] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteMode, setDeleteMode] = useState<DeleteChatMessageMode>("for_me");
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const time = formatTime(message.created_at);
-  const canReact = !isPending && !isFailed && onToggleReaction !== undefined;
+  const isDeletedForEveryone = message.is_deleted_for_everyone;
+  const canReact =
+    !isDeletedForEveryone && !isPending && !isFailed && onToggleReaction !== undefined;
+  const canRemove = !isPending && !isFailed && onDeleteMessage !== undefined;
+  const canSelect = !isPending && !isFailed && onToggleSelected !== undefined;
+  const canRemoveForEveryone = canDeleteForEveryone(message, isOwn);
 
   // Find the emoji the current user has already reacted with (if any).
   const currentUserEmoji: string | null =
@@ -108,16 +145,68 @@ export function MessageBubble({
     onToggleReaction?.(message.id, emoji);
   };
 
-  const bubbleEl = (
+  const openDeleteDialog = () => {
+    setDeleteMode("for_me");
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    onDeleteMessage?.(message.id, deleteMode);
+    setDeleteDialogOpen(false);
+  };
+
+  const actionControlsEl = canRemove || canSelect ? (
     <div
-      className={`min-w-0 rounded-2xl px-3 py-2 text-sm shadow-sm ${
-        isOwn
-          ? `bg-primary text-primary-foreground${isPending ? " opacity-70" : ""}`
-          : "bg-muted text-foreground"
+      className={`flex shrink-0 items-center gap-0.5 transition-opacity sm:opacity-0 ${
+        isHovered || deleteDialogOpen || isSelectionMode
+          ? "sm:opacity-100"
+          : "sm:pointer-events-none"
       }`}
     >
-      <p className="whitespace-pre-wrap break-all">{message.content}</p>
+      {canSelect && (
+        <button
+          type="button"
+          onClick={() => onToggleSelected?.(message.id)}
+          aria-label="Select message"
+          aria-pressed={isSelected}
+          className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+            isSelected
+              ? "bg-primary/10 text-primary"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
+        </button>
+      )}
+      {canRemove && !isSelectionMode && (
+        <button
+          type="button"
+          onClick={openDeleteDialog}
+          aria-label="Remove message"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+        >
+          <Trash2 size={15} />
+        </button>
+      )}
     </div>
+  ) : null;
+
+  const bubbleEl = (
+    isDeletedForEveryone ? (
+      <div className="min-w-0 px-1 py-1 text-xs italic text-muted-foreground">
+        Bạn đã xóa một tin nhắn
+      </div>
+    ) : (
+      <div
+        className={`min-w-0 rounded-2xl px-3 py-2 text-sm shadow-sm ${
+          isOwn
+            ? `bg-primary text-primary-foreground${isPending ? " opacity-70" : ""}`
+            : "bg-muted text-foreground"
+        }`}
+      >
+        <p className="whitespace-pre-wrap break-all">{message.content}</p>
+      </div>
+    )
   );
 
   const emojiPickerEl = canReact ? (
@@ -141,80 +230,147 @@ export function MessageBubble({
     onTouchCancel: handleTouchEnd,
   };
 
-  if (isOwn) {
-    return (
-      <div
-        {...commonRowProps}
-        className={`flex w-full justify-end ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
-      >
-        <div className="flex min-w-0 max-w-[78%] flex-col items-end gap-0.5 sm:max-w-[60%]">
-          {/* Smiley trigger sits to the LEFT of the own bubble */}
-          <div className="flex items-end gap-1.5">
-            {emojiPickerEl}
-            {bubbleEl}
-          </div>
-          <ReactionBar
-            reactions={message.reactions}
-            currentUserId={currentUserId}
-            onToggle={(emoji) => onToggleReaction?.(message.id, emoji)}
-          />
-          {(showMeta || isPending || isFailed) && (
-            <div className="flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
-              {isFailed ? (
-                <button
-                  type="button"
-                  onClick={onRetry}
-                  className="text-destructive underline underline-offset-2"
-                >
-                  Failed — retry
-                </button>
-              ) : isPending ? (
-                <span>Sending…</span>
-              ) : (
-                <span>{time}</span>
-              )}
-            </div>
+  const deleteDialogEl = canRemove ? (
+    <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Gỡ tin nhắn?</DialogTitle>
+          <DialogDescription>
+            Chọn cách bạn muốn thu hồi tin nhắn này.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2">
+          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 text-sm">
+            <input
+              type="radio"
+              name={`delete-mode-${message.id}`}
+              value="for_me"
+              checked={deleteMode === "for_me"}
+              onChange={() => setDeleteMode("for_me")}
+              className="mt-1"
+            />
+            <span>
+              <span className="block font-medium">Thu hồi với bạn</span>
+              <span className="block text-xs text-muted-foreground">
+                Chỉ ẩn tin nhắn khỏi khung chat của bạn.
+              </span>
+            </span>
+          </label>
+          {canRemoveForEveryone && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 text-sm">
+              <input
+                type="radio"
+                name={`delete-mode-${message.id}`}
+                value="for_everyone"
+                checked={deleteMode === "for_everyone"}
+                onChange={() => setDeleteMode("for_everyone")}
+                className="mt-1"
+              />
+              <span>
+                <span className="block font-medium">Thu hồi với mọi người</span>
+                <span className="block text-xs text-muted-foreground">
+                  Nội dung sẽ được thay bằng thông báo đã xóa.
+                </span>
+              </span>
+            </label>
           )}
         </div>
-      </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button type="button" variant="destructive" onClick={handleConfirmDelete}>
+            Gỡ
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  ) : null;
+
+  if (isOwn) {
+    return (
+      <>
+        <div
+          {...commonRowProps}
+          className={`flex w-full justify-end ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
+        >
+          <div className="flex min-w-0 max-w-[78%] flex-col items-end gap-0.5 sm:max-w-[60%]">
+            {/* Smiley trigger sits to the LEFT of the own bubble */}
+            <div className="flex items-end gap-1.5">
+              {actionControlsEl}
+              {emojiPickerEl}
+              {bubbleEl}
+            </div>
+            <ReactionBar
+              reactions={isDeletedForEveryone ? [] : message.reactions}
+              currentUserId={currentUserId}
+              onToggle={(emoji) => onToggleReaction?.(message.id, emoji)}
+            />
+            {(showMeta || isPending || isFailed) && (
+              <div className="flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
+                {isFailed ? (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="text-destructive underline underline-offset-2"
+                  >
+                    Failed — retry
+                  </button>
+                ) : isPending ? (
+                  <span>Sending…</span>
+                ) : (
+                  <span>{time}</span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        {deleteDialogEl}
+      </>
     );
   }
 
   // Other-sender layout: avatar gutter on the left, smiley trigger to the RIGHT of bubble.
   return (
-    <div
-      {...commonRowProps}
-      className={`flex w-full items-end gap-2 ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
-    >
-      <div className="w-8 shrink-0">
-        {showAvatar && (
-          <ChatAvatar
-            name={senderLabel(message)}
-            seed={message.sender.id ?? message.sender.display_name}
-            size="default"
-          />
-        )}
-      </div>
-      <div className="flex min-w-0 max-w-[78%] flex-col items-start gap-0.5 sm:max-w-[60%]">
-        {showSenderName && (
-          <span className="px-1 text-[11px] font-medium text-muted-foreground">
-            {senderLabel(message)}
-          </span>
-        )}
-        {/* Smiley trigger sits to the RIGHT of others' bubble */}
-        <div className="flex items-end gap-1.5">
-          {bubbleEl}
-          {emojiPickerEl}
+    <>
+      <div
+        {...commonRowProps}
+        className={`flex w-full items-end gap-2 ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
+      >
+        <div className="w-8 shrink-0">
+          {showAvatar && (
+            <ChatAvatar
+              name={senderLabel(message)}
+              seed={message.sender.id ?? message.sender.display_name}
+              size="default"
+            />
+          )}
         </div>
-        <ReactionBar
-          reactions={message.reactions}
-          currentUserId={currentUserId}
-          onToggle={(emoji) => onToggleReaction?.(message.id, emoji)}
-        />
-        {showMeta && (
-          <span className="px-1 text-[10px] text-muted-foreground">{time}</span>
-        )}
+        <div className="flex min-w-0 max-w-[78%] flex-col items-start gap-0.5 sm:max-w-[60%]">
+          {showSenderName && (
+            <span className="px-1 text-[11px] font-medium text-muted-foreground">
+              {senderLabel(message)}
+            </span>
+          )}
+          {/* Smiley trigger sits to the RIGHT of others' bubble */}
+          <div className="flex items-end gap-1.5">
+            {bubbleEl}
+            {emojiPickerEl}
+            {actionControlsEl}
+          </div>
+          <ReactionBar
+            reactions={isDeletedForEveryone ? [] : message.reactions}
+            currentUserId={currentUserId}
+            onToggle={(emoji) => onToggleReaction?.(message.id, emoji)}
+          />
+          {showMeta && (
+            <span className="px-1 text-[10px] text-muted-foreground">{time}</span>
+          )}
+        </div>
       </div>
-    </div>
+      {deleteDialogEl}
+    </>
   );
 }

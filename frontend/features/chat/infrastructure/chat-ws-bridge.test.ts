@@ -87,4 +87,23 @@ describe("chat-ws-bridge", () => {
 
     expect(wsManagerMock.send).not.toHaveBeenCalled();
   });
+
+  it("routes message_deleted events to the subscribed room", () => {
+    const onMessageDeleted = vi.fn();
+
+    joinChatRoom("trip-1", { onMessageDeleted });
+
+    wsManagerMock.emit(CHAT_WS_MESSAGE_TYPES.MESSAGE_DELETED, {
+      type: CHAT_WS_MESSAGE_TYPES.MESSAGE_DELETED,
+      trip_id: "trip-1",
+      message: { id: "msg-1", is_deleted_for_everyone: true },
+    });
+
+    expect(onMessageDeleted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: CHAT_WS_MESSAGE_TYPES.MESSAGE_DELETED,
+        trip_id: "trip-1",
+      }),
+    );
+  });
 });

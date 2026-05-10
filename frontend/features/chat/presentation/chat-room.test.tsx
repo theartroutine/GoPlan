@@ -18,6 +18,8 @@ const chatMock = vi.hoisted(() => ({
     sendMessage: vi.fn(),
     retryPending: vi.fn(),
     toggleReaction: vi.fn(),
+    deleteMessage: vi.fn(),
+    hideMessagesForMe: vi.fn(),
   },
 }));
 

@@ -9,10 +9,15 @@ from rest_framework.views import APIView
 
 from chat.serializers import (
     AddReactionSerializer,
+    BulkHideChatMessagesSerializer,
     ChatMessageListQuerySerializer,
+    DeleteChatMessageSerializer,
     SendChatMessageSerializer,
 )
 from chat.services import (
+    ChatDeleteForbiddenError,
+    ChatDeleteInvalidModeError,
+    ChatDeleteWindowExpiredError,
     ChatInvalidContentError,
     ChatInvalidCursorError,
     ChatReactionDuplicateError,
@@ -21,6 +26,8 @@ from chat.services import (
     ChatServiceError,
     add_reaction,
     build_chat_message_payload,
+    delete_message_for_everyone,
+    hide_messages_for_user,
     list_chat_messages,
     remove_reaction,
     send_chat_message,
@@ -47,7 +54,13 @@ def _map_service_error(exc: Exception) -> tuple[str, int] | None:
         return exc.error_code, status.HTTP_409_CONFLICT
     if isinstance(exc, ChatReactionNotFoundError):
         return exc.error_code, status.HTTP_404_NOT_FOUND
+    if isinstance(exc, ChatDeleteForbiddenError):
+        return exc.error_code, status.HTTP_403_FORBIDDEN
+    if isinstance(exc, ChatDeleteWindowExpiredError):
+        return exc.error_code, status.HTTP_409_CONFLICT
     if isinstance(exc, (ChatInvalidContentError, ChatInvalidCursorError, ChatReactionInvalidEmojiError)):
+        return exc.error_code, status.HTTP_400_BAD_REQUEST
+    if isinstance(exc, ChatDeleteInvalidModeError):
         return exc.error_code, status.HTTP_400_BAD_REQUEST
     if isinstance(exc, (TripServiceError, ChatServiceError)):
         return exc.error_code, status.HTTP_400_BAD_REQUEST
@@ -128,6 +141,88 @@ class TripChatMessagesAPIView(APIView):
         return Response(
             {"message": build_chat_message_payload(message)},
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class ChatMessageDeletionAPIView(APIView):
+    permission_classes = CHAT_PERMISSIONS
+
+    def get_throttles(self):
+        if self.request.method == "DELETE":
+            self.throttle_scope = "chat_delete"
+        return super().get_throttles()
+
+    def delete(self, request, trip_id, message_id):
+        serializer = DeleteChatMessageSerializer(data=request.data)
+        if not serializer.is_valid():
+            return _error_response(
+                "Delete request is invalid.",
+                "INVALID_DELETE_MODE",
+                status.HTTP_400_BAD_REQUEST,
+            )
+
+        mode = serializer.validated_data["mode"]
+        try:
+            if mode == "for_me":
+                hidden_ids = hide_messages_for_user(
+                    user=request.user,
+                    trip_id=trip_id,
+                    message_ids=[message_id],
+                )
+                return Response(
+                    {"hidden_message_ids": hidden_ids},
+                    status=status.HTTP_200_OK,
+                )
+
+            if mode == "for_everyone":
+                message = delete_message_for_everyone(
+                    user=request.user,
+                    trip_id=trip_id,
+                    message_id=message_id,
+                )
+                return Response(
+                    {"message": build_chat_message_payload(message)},
+                    status=status.HTTP_200_OK,
+                )
+
+            raise ChatDeleteInvalidModeError("Delete mode is invalid.")
+        except Exception as exc:
+            mapped = _map_service_error(exc)
+            if mapped is None:
+                raise
+            error_code, status_code = mapped
+            return _error_response(str(exc), error_code, status_code)
+
+
+class ChatMessagesBulkHideAPIView(APIView):
+    permission_classes = CHAT_PERMISSIONS
+    throttle_scope = "chat_delete"
+
+    def post(self, request, trip_id):
+        serializer = BulkHideChatMessagesSerializer(data=request.data)
+        if not serializer.is_valid():
+            return _error_response(
+                "Bulk hide request is invalid.",
+                "INVALID_MESSAGE_IDS",
+                status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            hidden_ids = hide_messages_for_user(
+                user=request.user,
+                trip_id=trip_id,
+                message_ids=serializer.validated_data["message_ids"],
+            )
+        except Exception as exc:
+            mapped = _map_service_error(exc)
+            if mapped is None:
+                raise
+            error_code, status_code = mapped
+            return _error_response(str(exc), error_code, status_code)
+
+        return Response(
+            {"hidden_message_ids": hidden_ids},
+            status=status.HTTP_200_OK,
         )
 
 

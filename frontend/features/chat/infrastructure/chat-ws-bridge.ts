@@ -8,6 +8,7 @@ import { wsManager } from "@/features/realtime/infrastructure/ws-manager";
 import type {
   WsChatError,
   WsChatKicked,
+  WsChatMessageDeleted,
   WsChatMessagePush,
   WsChatReactionUpdate,
   WsChatSubscribed,
@@ -16,6 +17,7 @@ import type {
 
 type ChatRoomListeners = {
   onMessage?: (event: WsChatMessagePush) => void;
+  onMessageDeleted?: (event: WsChatMessageDeleted) => void;
   onKicked?: (event: WsChatKicked) => void;
   onError?: (event: WsChatError) => void;
   onSubscribed?: (event: WsChatSubscribed) => void;
@@ -51,6 +53,11 @@ function ensureLifecycle(): void {
   wsManager.on(CHAT_WS_MESSAGE_TYPES.MESSAGE, (data: WsMessage) => {
     const event = data as unknown as WsChatMessagePush;
     rooms.get(event.trip_id)?.listeners.onMessage?.(event);
+  });
+
+  wsManager.on(CHAT_WS_MESSAGE_TYPES.MESSAGE_DELETED, (data: WsMessage) => {
+    const event = data as unknown as WsChatMessageDeleted;
+    rooms.get(event.trip_id)?.listeners.onMessageDeleted?.(event);
   });
 
   wsManager.on(CHAT_WS_MESSAGE_TYPES.KICKED, (data: WsMessage) => {

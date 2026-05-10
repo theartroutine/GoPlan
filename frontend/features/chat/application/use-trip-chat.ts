@@ -7,7 +7,9 @@ import type { AxiosError } from "axios";
 
 import {
   bffAddReaction,
+  bffDeleteChatMessage,
   bffGapFillChatMessages,
+  bffHideChatMessagesForMe,
   bffListChatHistory,
   bffRemoveReaction,
   bffSendChatMessage,
@@ -16,8 +18,10 @@ import { joinChatRoom } from "@/features/chat/infrastructure/chat-ws-bridge";
 
 import type {
   ChatMessage,
+  DeleteChatMessageMode,
   ReactionSummary,
   WsChatError,
+  WsChatMessageDeleted,
   WsChatMessagePush,
   WsChatReactionUpdate,
 } from "@/features/chat/domain/types";
@@ -49,6 +53,8 @@ export type UseTripChatResult = {
   sendMessage: (content: string) => Promise<SendOutcome>;
   retryPending: (clientMessageId: string) => Promise<SendOutcome>;
   toggleReaction: (messageId: string, emoji: string) => Promise<void>;
+  deleteMessage: (messageId: string, mode: DeleteChatMessageMode) => Promise<void>;
+  hideMessagesForMe: (messageIds: string[]) => Promise<void>;
 };
 
 type ChatState = {
@@ -58,6 +64,8 @@ type ChatState = {
   confirmed: Map<string, ChatMessage>;
   /** client_message_id → optimistic ChatMessage, replaced once confirmed. */
   pending: Map<string, ChatMessage>;
+  /** Server ids hidden in this session through "remove for me". */
+  hidden: Set<string>;
   failed: Set<string>;
   sendLockReason: SendLockReason | null;
   hasMoreOlder: boolean;
@@ -92,7 +100,8 @@ type ChatAction =
   | { type: "KICKED" }
   | { type: "WS_ERROR"; errorCode: string }
   | { type: "CLEAR_ROOM_ERROR" }
-  | { type: "UPDATE_REACTIONS"; messageId: string; reactions: ReactionSummary[] };
+  | { type: "UPDATE_REACTIONS"; messageId: string; reactions: ReactionSummary[] }
+  | { type: "HIDE_MESSAGES"; messageIds: string[] };
 
 function initialState(): ChatState {
   return {
@@ -100,6 +109,7 @@ function initialState(): ChatState {
     errorCode: null,
     confirmed: new Map(),
     pending: new Map(),
+    hidden: new Set(),
     failed: new Set(),
     sendLockReason: null,
     hasMoreOlder: false,
@@ -119,6 +129,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const pending = new Map(state.pending);
       const failed = new Set(state.failed);
       for (const m of action.messages) {
+        if (state.hidden.has(m.id)) continue;
         confirmed.set(m.id, m);
         if (m.client_message_id) {
           pending.delete(m.client_message_id);
@@ -150,6 +161,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "LOAD_OLDER_SUCCESS": {
       const confirmed = new Map(state.confirmed);
       for (const m of action.messages) {
+        if (state.hidden.has(m.id)) continue;
         if (!confirmed.has(m.id)) confirmed.set(m.id, m);
       }
       return {
@@ -169,6 +181,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const pending = new Map(state.pending);
       const failed = new Set(state.failed);
       for (const m of action.messages) {
+        if (state.hidden.has(m.id)) continue;
         confirmed.set(m.id, m);
         if (m.client_message_id) {
           pending.delete(m.client_message_id);
@@ -250,6 +263,18 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, confirmed };
     }
 
+    case "HIDE_MESSAGES": {
+      const confirmed = new Map(state.confirmed);
+      const pending = new Map(state.pending);
+      const hidden = new Set(state.hidden);
+      for (const messageId of action.messageIds) {
+        hidden.add(messageId);
+        confirmed.delete(messageId);
+        pending.delete(messageId);
+      }
+      return { ...state, confirmed, pending, hidden };
+    }
+
     default:
       return state;
   }
@@ -264,8 +289,11 @@ function compareMessages(a: ChatMessage, b: ChatMessage): number {
 
 function selectVisibleMessages(state: ChatState): ChatMessage[] {
   const all: ChatMessage[] = [];
-  for (const m of state.confirmed.values()) all.push(m);
+  for (const m of state.confirmed.values()) {
+    if (!state.hidden.has(m.id)) all.push(m);
+  }
   for (const m of state.pending.values()) {
+    if (state.hidden.has(m.id)) continue;
     // Hide pending whose confirmed twin has already arrived.
     const cid = m.client_message_id;
     if (cid) {
@@ -406,6 +434,9 @@ export function useTripChat(
       onMessage: (event: WsChatMessagePush) => {
         dispatch({ type: "UPSERT_CONFIRMED", messages: [event.message] });
       },
+      onMessageDeleted: (event: WsChatMessageDeleted) => {
+        dispatch({ type: "UPSERT_CONFIRMED", messages: [event.message] });
+      },
       onKicked: () => {
         dispatch({ type: "KICKED" });
       },
@@ -485,6 +516,9 @@ export function useTripChat(
           content,
           client_message_id: clientMessageId,
           created_at: new Date().toISOString(),
+          is_deleted_for_everyone: false,
+          deleted_for_everyone_at: null,
+          deleted_for_everyone_by_id: null,
           reactions: [],
         };
         dispatch({ type: "ADD_PENDING", message: optimistic });
@@ -563,6 +597,37 @@ export function useTripChat(
     [tripId, currentUser.id],
   );
 
+  const deleteMessage = useCallback(
+    async (messageId: string, mode: DeleteChatMessageMode) => {
+      try {
+        const result = await bffDeleteChatMessage(tripId, messageId, mode);
+        if ("hidden_message_ids" in result) {
+          dispatch({ type: "HIDE_MESSAGES", messageIds: result.hidden_message_ids });
+          return;
+        }
+        dispatch({ type: "UPSERT_CONFIRMED", messages: [result.message] });
+      } catch (error) {
+        const errorCode = extractErrorCode(error, "DELETE_FAILED");
+        dispatchRecoverableOrAccessLostError(dispatch, errorCode);
+      }
+    },
+    [tripId],
+  );
+
+  const hideMessagesForMe = useCallback(
+    async (messageIds: string[]) => {
+      if (messageIds.length === 0) return;
+      try {
+        const result = await bffHideChatMessagesForMe(tripId, messageIds);
+        dispatch({ type: "HIDE_MESSAGES", messageIds: result.hidden_message_ids });
+      } catch (error) {
+        const errorCode = extractErrorCode(error, "DELETE_FAILED");
+        dispatchRecoverableOrAccessLostError(dispatch, errorCode);
+      }
+    },
+    [tripId],
+  );
+
   return {
     status: state.status,
     errorCode: state.errorCode,
@@ -577,6 +642,8 @@ export function useTripChat(
     sendMessage,
     retryPending,
     toggleReaction,
+    deleteMessage,
+    hideMessagesForMe,
   };
 }
 

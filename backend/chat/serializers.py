@@ -22,6 +22,18 @@ class AddReactionSerializer(serializers.Serializer):
         return value
 
 
+class DeleteChatMessageSerializer(serializers.Serializer):
+    mode = serializers.ChoiceField(choices=("for_me", "for_everyone"))
+
+
+class BulkHideChatMessagesSerializer(serializers.Serializer):
+    message_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=False,
+        max_length=100,
+    )
+
+
 class ChatMessageListQuerySerializer(serializers.Serializer):
     cursor = serializers.CharField(required=False)
     since = serializers.UUIDField(required=False)

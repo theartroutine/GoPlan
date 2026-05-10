@@ -85,6 +85,8 @@ export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
         onLoadOlder={chat.loadOlder}
         onRetry={chat.retryPending}
         onToggleReaction={chat.toggleReaction}
+        onDeleteMessage={chat.deleteMessage}
+        onHideMessagesForMe={chat.hideMessagesForMe}
       />
       {isChatClosed ? (
         <div className="border-t border-border bg-muted/40 px-3 py-3 text-center text-xs text-muted-foreground">

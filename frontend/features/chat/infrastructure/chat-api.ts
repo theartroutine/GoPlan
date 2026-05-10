@@ -4,6 +4,8 @@ import type {
   ChatGapFillResponse,
   ChatHistoryResponse,
   ChatMessage,
+  DeleteChatMessageMode,
+  HideChatMessagesResult,
   ReactionSummary,
   SendChatMessageInput,
   SendChatMessageResult,
@@ -105,4 +107,27 @@ export async function bffRemoveReaction(
     `${reactionBasePath(tripId, messageId)}/${encodeURIComponent(emoji)}`,
   );
   return res.data.reactions;
+}
+
+export async function bffDeleteChatMessage(
+  tripId: string,
+  messageId: string,
+  mode: DeleteChatMessageMode,
+): Promise<{ message: ChatMessage } | HideChatMessagesResult> {
+  const res = await bff.delete<{ message: ChatMessage } | HideChatMessagesResult>(
+    `${chatBasePath(tripId)}/${encodeURIComponent(messageId)}`,
+    { data: { mode } },
+  );
+  return res.data;
+}
+
+export async function bffHideChatMessagesForMe(
+  tripId: string,
+  messageIds: string[],
+): Promise<HideChatMessagesResult> {
+  const res = await bff.post<HideChatMessagesResult>(
+    `${chatBasePath(tripId)}/hide`,
+    { message_ids: messageIds },
+  );
+  return res.data;
 }

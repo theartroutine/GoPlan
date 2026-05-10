@@ -20,6 +20,7 @@ export const CHAT_WS_MESSAGE_TYPES = {
   SUBSCRIBED: "chat.subscribed",
   UNSUBSCRIBED: "chat.unsubscribed",
   MESSAGE: "chat.message",
+  MESSAGE_DELETED: "chat.message_deleted",
   KICKED: "chat.kicked",
   ERROR: "chat.error",
   REACTION_UPDATE: "chat.reaction_update",

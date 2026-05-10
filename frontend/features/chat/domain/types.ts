@@ -30,6 +30,9 @@ export type ChatMessage = {
   content: string;
   client_message_id: string | null;
   created_at: string;
+  is_deleted_for_everyone: boolean;
+  deleted_for_everyone_at: string | null;
+  deleted_for_everyone_by_id: string | null;
   reactions: ReactionSummary[];
 };
 
@@ -52,6 +55,12 @@ export type SendChatMessageResult = {
   message: ChatMessage;
   /** 201 when newly created, 200 when an idempotent retry returned the existing row. */
   status: 200 | 201;
+};
+
+export type DeleteChatMessageMode = "for_me" | "for_everyone";
+
+export type HideChatMessagesResult = {
+  hidden_message_ids: string[];
 };
 
 // -------- WebSocket payloads (browser wire format, dotted namespace) --------
@@ -78,6 +87,12 @@ export type WsChatUnsubscribed = {
 
 export type WsChatMessagePush = {
   type: "chat.message";
+  trip_id: string;
+  message: ChatMessage;
+};
+
+export type WsChatMessageDeleted = {
+  type: "chat.message_deleted";
   trip_id: string;
   message: ChatMessage;
 };
@@ -113,6 +128,7 @@ export type WsChatServerMessage =
   | WsChatSubscribed
   | WsChatUnsubscribed
   | WsChatMessagePush
+  | WsChatMessageDeleted
   | WsChatKicked
   | WsChatError
   | WsChatReactionUpdate;

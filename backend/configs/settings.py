@@ -194,6 +194,7 @@ REST_FRAMEWORK = {
         'expenses_contributions': '240/hour',
         'chat_send': '60/minute',
         'chat_reaction': '120/minute',
+        'chat_delete': '60/minute',
         'settlement_finalize': '30/hour',
         'settlement_reopen': '20/hour',
         'settlement_transfer_action': '240/hour',

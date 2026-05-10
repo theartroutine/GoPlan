@@ -3,15 +3,22 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from datetime import timedelta
 from uuid import UUID
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from chat.models import ALLOWED_REACTION_EMOJIS, ChatMessage, MessageReaction
+from chat.models import (
+    ALLOWED_REACTION_EMOJIS,
+    ChatMessage,
+    ChatMessageHiddenForUser,
+    MessageReaction,
+)
 from trips.models import MemberStatus, Trip, TripMember, TripStatus
 from trips.services import TripNotFoundError, TripTerminalError
 
@@ -22,6 +29,7 @@ HISTORY_MAX_LIMIT = 100
 GAP_FILL_DEFAULT_LIMIT = 100
 GAP_FILL_MAX_LIMIT = 200
 CHAT_MESSAGE_MAX_LENGTH = 2000
+MESSAGE_DELETE_FOR_EVERYONE_WINDOW = timedelta(minutes=5)
 
 
 class ChatServiceError(Exception):
@@ -50,6 +58,22 @@ class ChatReactionNotFoundError(ChatReactionError):
 
 class ChatReactionInvalidEmojiError(ChatReactionError):
     error_code = "INVALID_EMOJI"
+
+
+class ChatDeleteError(ChatServiceError):
+    error_code = "MESSAGE_DELETE_ERROR"
+
+
+class ChatDeleteForbiddenError(ChatDeleteError):
+    error_code = "MESSAGE_DELETE_FORBIDDEN"
+
+
+class ChatDeleteWindowExpiredError(ChatDeleteError):
+    error_code = "MESSAGE_DELETE_WINDOW_EXPIRED"
+
+
+class ChatDeleteInvalidModeError(ChatDeleteError):
+    error_code = "INVALID_DELETE_MODE"
 
 
 def _chat_group_name(trip_id) -> str:
@@ -147,6 +171,7 @@ def _fresh_reactions_payload(message_id) -> list[dict]:
 
 
 def build_chat_message_payload(message: ChatMessage) -> dict:
+    is_deleted = message.deleted_for_everyone_at is not None
     return {
         "id": str(message.id),
         "trip_id": str(message.trip_id),
@@ -155,18 +180,37 @@ def build_chat_message_payload(message: ChatMessage) -> dict:
             "display_name": message.sender_display_name_snapshot,
             "identify_tag": message.sender_identify_tag_snapshot,
         },
-        "content": message.content,
+        "content": "" if is_deleted else message.content,
         "client_message_id": (
             str(message.client_message_id) if message.client_message_id else None
         ),
         "created_at": message.created_at.isoformat(),
-        "reactions": build_reactions_payload(message),
+        "is_deleted_for_everyone": is_deleted,
+        "deleted_for_everyone_at": (
+            message.deleted_for_everyone_at.isoformat()
+            if message.deleted_for_everyone_at
+            else None
+        ),
+        "deleted_for_everyone_by_id": (
+            str(message.deleted_for_everyone_by_id)
+            if message.deleted_for_everyone_by_id
+            else None
+        ),
+        "reactions": [] if is_deleted else build_reactions_payload(message),
     }
 
 
 def build_chat_message_ws_payload(message: ChatMessage) -> dict:
     return {
         "type": "chat.message",
+        "trip_id": str(message.trip_id),
+        "message": build_chat_message_payload(message),
+    }
+
+
+def build_message_deleted_ws_payload(message: ChatMessage) -> dict:
+    return {
+        "type": "chat.message_deleted",
         "trip_id": str(message.trip_id),
         "message": build_chat_message_payload(message),
     }
@@ -185,6 +229,24 @@ def _push_chat_message(message: ChatMessage) -> None:
     except Exception:
         logger.error(
             "Failed to push chat message %s via WebSocket",
+            message.id,
+            exc_info=True,
+        )
+
+
+def _push_message_deleted(message: ChatMessage) -> None:
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            _chat_group_name(message.trip_id),
+            {
+                "type": "chat_message_deleted_push",
+                "data": build_message_deleted_ws_payload(message),
+            },
+        )
+    except Exception:
+        logger.error(
+            "Failed to push deleted chat message %s via WebSocket",
             message.id,
             exc_info=True,
         )
@@ -282,9 +344,10 @@ def _decode_cursor(cursor: str):
     return created_at, message_id
 
 
-def _history_page(trip: Trip, *, cursor: str | None, limit: int) -> dict:
+def _history_page(trip: Trip, *, user, cursor: str | None, limit: int) -> dict:
     queryset = (
         ChatMessage.objects.filter(trip=trip)
+        .exclude(hidden_for_users__user=user)
         .select_related("sender")
         .prefetch_related("reactions")
     )
@@ -303,7 +366,7 @@ def _history_page(trip: Trip, *, cursor: str | None, limit: int) -> dict:
     }
 
 
-def _gap_fill_page(trip: Trip, *, since, limit: int) -> dict:
+def _gap_fill_page(trip: Trip, *, user, since, limit: int) -> dict:
     try:
         anchor = ChatMessage.objects.get(pk=since, trip=trip)
     except ChatMessage.DoesNotExist:
@@ -312,6 +375,7 @@ def _gap_fill_page(trip: Trip, *, since, limit: int) -> dict:
     rows = list(
         ChatMessage.objects
         .filter(trip=trip)
+        .exclude(hidden_for_users__user=user)
         .filter(
             Q(created_at__gt=anchor.created_at)
             | Q(created_at=anchor.created_at, id__gt=anchor.id)
@@ -338,14 +402,98 @@ def list_chat_messages(
     trip = _get_active_chat_trip(trip_id, user)
     if since is not None:
         resolved_limit = min(limit or GAP_FILL_DEFAULT_LIMIT, GAP_FILL_MAX_LIMIT)
-        return _gap_fill_page(trip, since=since, limit=resolved_limit)
+        return _gap_fill_page(trip, user=user, since=since, limit=resolved_limit)
 
     resolved_limit = min(limit or HISTORY_DEFAULT_LIMIT, HISTORY_MAX_LIMIT)
-    return _history_page(trip, cursor=cursor, limit=resolved_limit)
+    return _history_page(trip, user=user, cursor=cursor, limit=resolved_limit)
 
 
 def notify_trip_chat_member_removed(*, trip_id, user_id) -> None:
     transaction.on_commit(lambda: _push_chat_kicked(trip_id=trip_id, user_id=user_id))
+
+
+# -------- Deletions --------
+
+def _normalize_message_id(message_id) -> UUID:
+    try:
+        return UUID(str(message_id))
+    except (TypeError, ValueError) as exc:
+        raise TripNotFoundError("Trip not found.") from exc
+
+
+def hide_messages_for_user(*, user, trip_id, message_ids) -> list[str]:
+    trip = _get_active_chat_trip(trip_id, user)
+
+    normalized_ids: list[UUID] = []
+    seen: set[UUID] = set()
+    for raw_id in message_ids:
+        message_id = _normalize_message_id(raw_id)
+        if message_id in seen:
+            continue
+        seen.add(message_id)
+        normalized_ids.append(message_id)
+
+    if not normalized_ids:
+        return []
+
+    with transaction.atomic():
+        messages = list(
+            ChatMessage.objects.select_for_update()
+            .filter(trip=trip, id__in=normalized_ids)
+            .only("id")
+        )
+        found_ids = {message.id for message in messages}
+        if found_ids != set(normalized_ids):
+            raise TripNotFoundError("Trip not found.")
+
+        ChatMessageHiddenForUser.objects.bulk_create(
+            [
+                ChatMessageHiddenForUser(message_id=message_id, user=user)
+                for message_id in normalized_ids
+            ],
+            ignore_conflicts=True,
+        )
+
+    return [str(message_id) for message_id in normalized_ids]
+
+
+def delete_message_for_everyone(*, user, trip_id, message_id) -> ChatMessage:
+    normalized_message_id = _normalize_message_id(message_id)
+
+    with transaction.atomic():
+        trip = _get_active_chat_trip(trip_id, user, for_update=True)
+        try:
+            message = (
+                ChatMessage.objects.select_for_update()
+                .get(pk=normalized_message_id, trip=trip)
+            )
+        except ChatMessage.DoesNotExist as exc:
+            raise TripNotFoundError("Trip not found.") from exc
+
+        if message.sender_id != user.id:
+            raise ChatDeleteForbiddenError("You can only remove your own message.")
+
+        if message.deleted_for_everyone_at is not None:
+            return message
+
+        if timezone.now() - message.created_at > MESSAGE_DELETE_FOR_EVERYONE_WINDOW:
+            raise ChatDeleteWindowExpiredError(
+                "This message can no longer be removed for everyone."
+            )
+
+        MessageReaction.objects.filter(message=message).delete()
+        message.content = ""
+        message.deleted_for_everyone_at = timezone.now()
+        message.deleted_for_everyone_by = user
+        message.save(
+            update_fields=[
+                "content",
+                "deleted_for_everyone_at",
+                "deleted_for_everyone_by",
+            ]
+        )
+        transaction.on_commit(lambda: _push_message_deleted(message))
+        return message
 
 
 # -------- Reactions --------

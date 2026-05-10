@@ -37,6 +37,14 @@ class ChatMessage(models.Model):
     content = models.TextField()
     client_message_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    deleted_for_everyone_at = models.DateTimeField(null=True, blank=True)
+    deleted_for_everyone_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="deleted_chat_messages_for_everyone",
+    )
 
     class Meta:
         ordering = ["-created_at", "-id"]
@@ -53,6 +61,36 @@ class ChatMessage(models.Model):
 
     def __str__(self) -> str:
         return f"ChatMessage {self.id} in trip={self.trip_id}"
+
+
+class ChatMessageHiddenForUser(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    message = models.ForeignKey(
+        ChatMessage,
+        on_delete=models.CASCADE,
+        related_name="hidden_for_users",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="hidden_chat_messages",
+    )
+    hidden_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "message"]),
+            models.Index(fields=["message", "user"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["message", "user"],
+                name="chat_unique_hidden_message_user",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"ChatMessageHiddenForUser message={self.message_id} user={self.user_id}"
 
 
 class MessageReaction(models.Model):

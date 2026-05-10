@@ -159,6 +159,39 @@ class ChatConsumerTests(TransactionTestCase):
 
         await communicator.disconnect()
 
+    async def test_chat_message_deleted_push_reaches_subscribed_member(self):
+        captain = await _create_user("ws-del-cap@example.com", "wsdcap", "WDC001")
+        member = await _create_user("ws-del-mem@example.com", "wsdmem", "WDM001")
+        trip = await _make_trip(captain)
+        await _add_member(trip, member)
+        communicator, connected = await _connect(member)
+        self.assertTrue(connected)
+
+        await communicator.send_json_to(
+            {"type": "chat.subscribe", "trip_id": str(trip.id)}
+        )
+        await communicator.receive_json_from(timeout=1)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"trip_chat_{trip.id}",
+            {
+                "type": "chat_message_deleted_push",
+                "data": {
+                    "type": "chat.message_deleted",
+                    "trip_id": str(trip.id),
+                    "message": {"id": "message-1", "is_deleted_for_everyone": True},
+                },
+            },
+        )
+
+        pushed = await communicator.receive_json_from(timeout=1)
+        self.assertEqual(pushed["type"], "chat.message_deleted")
+        self.assertEqual(pushed["message"]["id"], "message-1")
+        self.assertTrue(pushed["message"]["is_deleted_for_everyone"])
+
+        await communicator.disconnect()
+
     async def test_kicked_event_discards_group(self):
         captain = await _create_user("ws-kick-cap@example.com", "wskcap", "WKC001")
         member = await _create_user("ws-kick-mem@example.com", "wskmem", "WKM001")
