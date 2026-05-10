@@ -544,13 +544,15 @@ export function useTripChat(
       const message = stateRef.current.confirmed.get(messageId);
       if (!message) return;
 
-      const alreadyReacted = message.reactions.some(
-        (r) =>
-          r.emoji === emoji && r.reacted_by_ids.includes(currentUser.id),
+      // Each user has at most one reaction per message. Find their current one.
+      // If they clicked the same emoji → toggle it off. Otherwise → add/replace.
+      const currentReaction = message.reactions.find((r) =>
+        r.reacted_by_ids.includes(currentUser.id),
       );
+      const isSameEmoji = currentReaction?.emoji === emoji;
 
       try {
-        const reactions = alreadyReacted
+        const reactions = isSameEmoji
           ? await bffRemoveReaction(tripId, messageId, emoji)
           : await bffAddReaction(tripId, messageId, emoji);
         dispatch({ type: "UPDATE_REACTIONS", messageId, reactions });

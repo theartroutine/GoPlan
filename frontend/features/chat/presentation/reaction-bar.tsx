@@ -8,11 +8,16 @@ type Props = {
   onToggle: (emoji: string) => void;
 };
 
+function formatCount(count: number): string {
+  if (count >= 100) return "99+";
+  return String(count);
+}
+
 export function ReactionBar({ reactions, currentUserId, onToggle }: Props) {
   if (reactions.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-1 pt-1">
+    <div className="flex max-w-full flex-wrap gap-1 pt-0.5">
       {reactions.map((reaction) => {
         const reactedByMe =
           currentUserId !== null &&
@@ -29,9 +34,10 @@ export function ReactionBar({ reactions, currentUserId, onToggle }: Props) {
                 : "border-border bg-background text-foreground hover:bg-muted"
             }`}
             aria-label={`${reaction.emoji} ${reaction.count}${reactedByMe ? ", reacted" : ""}`}
+            aria-pressed={reactedByMe}
           >
             <span>{reaction.emoji}</span>
-            <span className="tabular-nums">{reaction.count}</span>
+            <span className="tabular-nums">{formatCount(reaction.count)}</span>
           </button>
         );
       })}

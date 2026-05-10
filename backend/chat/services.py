@@ -391,6 +391,10 @@ def add_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
         except ChatMessage.DoesNotExist as exc:
             raise TripNotFoundError("Trip not found.") from exc
 
+        # Enforce one reaction per user per message: atomically replace any
+        # existing reaction with a different emoji before creating the new one.
+        MessageReaction.objects.filter(message=message, user=user).exclude(emoji=emoji).delete()
+
         try:
             MessageReaction.objects.create(message=message, user=user, emoji=emoji)
         except IntegrityError:

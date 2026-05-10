@@ -1,8 +1,10 @@
 "use client";
 
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import type { ChatMessage } from "@/features/chat/domain/types";
 import { ChatAvatar } from "@/features/chat/presentation/chat-avatar";
-import { EmojiPickerPopover } from "@/features/chat/presentation/emoji-picker-popover";
+import { EmojiPicker } from "@/features/chat/presentation/emoji-picker-popover";
 import { ReactionBar } from "@/features/chat/presentation/reaction-bar";
 
 type Props = {
@@ -40,6 +42,8 @@ function senderLabel(message: ChatMessage): string {
   return "Deleted user";
 }
 
+const LONG_PRESS_MS = 400;
+
 export function MessageBubble({
   message,
   isOwn,
@@ -53,39 +57,102 @@ export function MessageBubble({
   onRetry,
   onToggleReaction,
 }: Props) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const time = formatTime(message.created_at);
   const canReact = !isPending && !isFailed && onToggleReaction !== undefined;
+
+  // Find the emoji the current user has already reacted with (if any).
+  const currentUserEmoji: string | null =
+    currentUserId !== null
+      ? (message.reactions.find((r) =>
+          r.reacted_by_ids.includes(currentUserId),
+        )?.emoji ?? null)
+      : null;
+
+  const clearLongPress = useCallback(() => {
+    if (longPressRef.current !== null) {
+      clearTimeout(longPressRef.current);
+      longPressRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearLongPress, [clearLongPress]);
+
+  const handleMouseEnter = () => setIsHovered(true);
+
+  // When mouse leaves the message row, hide trigger and close picker.
+  // The picker panel is a DOM descendant of this container, so moving the mouse
+  // from the bubble to the picker (positioned above) does NOT trigger onMouseLeave.
+  const handleMouseLeave = () => {
+    setIsHovered(false);
+    setPickerOpen(false);
+  };
+
+  // Long-press on mobile opens picker directly (no hover available on touch).
+  const handleTouchStart = () => {
+    if (!canReact) return;
+    clearLongPress();
+    longPressRef.current = setTimeout(() => {
+      longPressRef.current = null;
+      setPickerOpen(true);
+    }, LONG_PRESS_MS);
+  };
+
+  const handleTouchEnd = () => clearLongPress();
+
+  const handleReactionSelect = (emoji: string) => {
+    setPickerOpen(false);
+    onToggleReaction?.(message.id, emoji);
+  };
+
+  const bubbleEl = (
+    <div
+      className={`min-w-0 rounded-2xl px-3 py-2 text-sm shadow-sm ${
+        isOwn
+          ? `bg-primary text-primary-foreground${isPending ? " opacity-70" : ""}`
+          : "bg-muted text-foreground"
+      }`}
+    >
+      <p className="whitespace-pre-wrap break-all">{message.content}</p>
+    </div>
+  );
+
+  const emojiPickerEl = canReact ? (
+    <EmojiPicker
+      showTrigger={isHovered}
+      isOwn={isOwn}
+      currentUserEmoji={currentUserEmoji}
+      open={pickerOpen}
+      onOpenChange={setPickerOpen}
+      onSelect={handleReactionSelect}
+    />
+  ) : null;
+
+  const commonRowProps = {
+    "data-testid": "chat-message" as const,
+    "data-message-id": message.id,
+    onMouseEnter: handleMouseEnter,
+    onMouseLeave: handleMouseLeave,
+    onTouchStart: handleTouchStart,
+    onTouchEnd: handleTouchEnd,
+    onTouchCancel: handleTouchEnd,
+  };
 
   if (isOwn) {
     return (
       <div
+        {...commonRowProps}
         className={`flex w-full justify-end ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
-        data-testid="chat-message"
-        data-message-id={message.id}
       >
         <div className="flex min-w-0 max-w-[78%] flex-col items-end gap-0.5 sm:max-w-[60%]">
-          {canReact ? (
-            <EmojiPickerPopover
-              align="right"
-              onSelect={(emoji) => onToggleReaction(message.id, emoji)}
-            >
-              <div
-                className={`min-w-0 rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm ${
-                  isPending ? "opacity-70" : ""
-                }`}
-              >
-                <p className="whitespace-pre-wrap break-all">{message.content}</p>
-              </div>
-            </EmojiPickerPopover>
-          ) : (
-            <div
-              className={`min-w-0 rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm ${
-                isPending ? "opacity-70" : ""
-              }`}
-            >
-              <p className="whitespace-pre-wrap break-all">{message.content}</p>
-            </div>
-          )}
+          {/* Smiley trigger sits to the LEFT of the own bubble */}
+          <div className="flex items-end gap-1.5">
+            {emojiPickerEl}
+            {bubbleEl}
+          </div>
           <ReactionBar
             reactions={message.reactions}
             currentUserId={currentUserId}
@@ -113,12 +180,11 @@ export function MessageBubble({
     );
   }
 
-  // Other-sender layout: avatar gutter on the left, bubble + optional name + meta.
+  // Other-sender layout: avatar gutter on the left, smiley trigger to the RIGHT of bubble.
   return (
     <div
+      {...commonRowProps}
       className={`flex w-full items-end gap-2 ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
-      data-testid="chat-message"
-      data-message-id={message.id}
     >
       <div className="w-8 shrink-0">
         {showAvatar && (
@@ -135,20 +201,11 @@ export function MessageBubble({
             {senderLabel(message)}
           </span>
         )}
-        {canReact ? (
-          <EmojiPickerPopover
-            align="left"
-            onSelect={(emoji) => onToggleReaction(message.id, emoji)}
-          >
-            <div className="min-w-0 rounded-2xl bg-muted px-3 py-2 text-sm text-foreground shadow-sm">
-              <p className="whitespace-pre-wrap break-all">{message.content}</p>
-            </div>
-          </EmojiPickerPopover>
-        ) : (
-          <div className="min-w-0 rounded-2xl bg-muted px-3 py-2 text-sm text-foreground shadow-sm">
-            <p className="whitespace-pre-wrap break-all">{message.content}</p>
-          </div>
-        )}
+        {/* Smiley trigger sits to the RIGHT of others' bubble */}
+        <div className="flex items-end gap-1.5">
+          {bubbleEl}
+          {emojiPickerEl}
+        </div>
         <ReactionBar
           reactions={message.reactions}
           currentUserId={currentUserId}

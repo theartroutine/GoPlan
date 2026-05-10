@@ -170,6 +170,30 @@ class AddReactionServiceTests(APITestCase):
                 emoji="👍",
             )
 
+    @patch("chat.services._push_reaction_update")
+    def test_replace_reaction_replaces_existing(self, mock_push):
+        """Adding a different emoji atomically replaces the user's existing reaction."""
+        add_reaction(
+            user=self.member,
+            trip_id=self.trip.id,
+            message_id=self.message.id,
+            emoji="❤️",
+        )
+        reactions = add_reaction(
+            user=self.member,
+            trip_id=self.trip.id,
+            message_id=self.message.id,
+            emoji="😂",
+        )
+        self.assertFalse(MessageReaction.objects.filter(
+            message=self.message, user=self.member, emoji="❤️"
+        ).exists())
+        self.assertTrue(MessageReaction.objects.filter(
+            message=self.message, user=self.member, emoji="😂"
+        ).exists())
+        self.assertEqual(len(reactions), 1)
+        self.assertEqual(reactions[0]["emoji"], "😂")
+
     def test_add_wrong_trip_message_raises(self):
         other_captain = create_completed_user("other-cap@example.com", "othcap", "OTC001")
         other_trip = _make_trip(other_captain)
