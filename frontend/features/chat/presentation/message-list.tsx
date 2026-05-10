@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type {
   ChatMessage,
@@ -55,6 +55,9 @@ export function MessageList({
 }: Props) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [openReactionPickerMessageId, setOpenReactionPickerMessageId] =
+    useState<string | null>(null);
   const wasNearBottomRef = useRef(true);
   const lastMessageIdRef = useRef<string | null>(null);
   const firstMessageIdRef = useRef<string | null>(null);
@@ -67,6 +70,40 @@ export function MessageList({
   // are few messages) from triggering a load immediately on mount.
   const userInteractedRef = useRef(false);
   const isSelectionMode = selectedIds.size > 0;
+
+  const activateMessage = useCallback((messageId: string) => {
+    setActiveMessageId(messageId);
+    setOpenReactionPickerMessageId((current) =>
+      current === null || current === messageId ? current : null,
+    );
+  }, []);
+
+  const deactivateMessage = useCallback((messageId: string) => {
+    setActiveMessageId((current) => (current === messageId ? null : current));
+    setOpenReactionPickerMessageId((current) =>
+      current === messageId ? null : current,
+    );
+  }, []);
+
+  const clearActiveMessage = useCallback(() => {
+    setActiveMessageId(null);
+    setOpenReactionPickerMessageId(null);
+  }, []);
+
+  const setReactionPickerOpen = useCallback(
+    (messageId: string, open: boolean) => {
+      if (open) {
+        setActiveMessageId(messageId);
+        setOpenReactionPickerMessageId(messageId);
+        return;
+      }
+
+      setOpenReactionPickerMessageId((current) =>
+        current === messageId ? null : current,
+      );
+    },
+    [],
+  );
 
   const toggleSelected = (messageId: string) => {
     setSelectedIds((prev) => {
@@ -170,6 +207,7 @@ export function MessageList({
   return (
     <div
       ref={scrollerRef}
+      onMouseLeave={clearActiveMessage}
       className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3 py-3 sm:px-4"
     >
       {hasMoreOlder && (
@@ -242,8 +280,13 @@ export function MessageList({
               currentUserId={currentUserId}
               isSelected={selectedIds.has(message.id)}
               isSelectionMode={isSelectionMode}
+              isHovered={activeMessageId === message.id}
+              isReactionPickerOpen={openReactionPickerMessageId === message.id}
               onRetry={cid ? () => onRetry(cid) : undefined}
+              onHoverStart={activateMessage}
+              onHoverEnd={deactivateMessage}
               onToggleReaction={onToggleReaction}
+              onReactionPickerOpenChange={setReactionPickerOpen}
               onDeleteMessage={onDeleteMessage}
               onToggleSelected={onHideMessagesForMe ? toggleSelected : undefined}
             />

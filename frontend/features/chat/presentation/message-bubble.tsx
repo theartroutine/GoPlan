@@ -37,8 +37,13 @@ type Props = {
   currentUserId: string | null;
   isSelected?: boolean;
   isSelectionMode?: boolean;
+  isHovered: boolean;
+  isReactionPickerOpen: boolean;
   onRetry?: () => void;
+  onHoverStart: (messageId: string) => void;
+  onHoverEnd: (messageId: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void;
+  onReactionPickerOpenChange: (messageId: string, open: boolean) => void;
   onDeleteMessage?: (messageId: string, mode: DeleteChatMessageMode) => void;
   onToggleSelected?: (messageId: string) => void;
 };
@@ -82,13 +87,16 @@ export function MessageBubble({
   currentUserId,
   isSelected = false,
   isSelectionMode = false,
+  isHovered,
+  isReactionPickerOpen,
   onRetry,
+  onHoverStart,
+  onHoverEnd,
   onToggleReaction,
+  onReactionPickerOpenChange,
   onDeleteMessage,
   onToggleSelected,
 }: Props) {
-  const [isHovered, setIsHovered] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState<DeleteChatMessageMode>("for_me");
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,14 +126,13 @@ export function MessageBubble({
 
   useEffect(() => clearLongPress, [clearLongPress]);
 
-  const handleMouseEnter = () => setIsHovered(true);
+  const handleMouseEnter = () => onHoverStart(message.id);
 
   // When mouse leaves the message row, hide trigger and close picker.
   // The picker panel is a DOM descendant of this container, so moving the mouse
   // from the bubble to the picker (positioned above) does NOT trigger onMouseLeave.
   const handleMouseLeave = () => {
-    setIsHovered(false);
-    setPickerOpen(false);
+    onHoverEnd(message.id);
   };
 
   // Long-press on mobile opens picker directly (no hover available on touch).
@@ -134,15 +141,19 @@ export function MessageBubble({
     clearLongPress();
     longPressRef.current = setTimeout(() => {
       longPressRef.current = null;
-      setPickerOpen(true);
+      onReactionPickerOpenChange(message.id, true);
     }, LONG_PRESS_MS);
   };
 
   const handleTouchEnd = () => clearLongPress();
 
   const handleReactionSelect = (emoji: string) => {
-    setPickerOpen(false);
+    onReactionPickerOpenChange(message.id, false);
     onToggleReaction?.(message.id, emoji);
+  };
+
+  const handleReactionPickerOpenChange = (open: boolean) => {
+    onReactionPickerOpenChange(message.id, open);
   };
 
   const openDeleteDialog = () => {
@@ -234,15 +245,23 @@ export function MessageBubble({
       showTrigger={isHovered}
       isOwn={isOwn}
       currentUserEmoji={currentUserEmoji}
-      open={pickerOpen}
-      onOpenChange={setPickerOpen}
+      open={isReactionPickerOpen}
+      onOpenChange={handleReactionPickerOpenChange}
       onSelect={handleReactionSelect}
     />
   ) : null;
 
+  // onMouseLeave on the outer row acts as a safety-net: clears hover state when the
+  // cursor exits the row entirely (e.g. fast mouse movement, programmatic scroll).
   const commonRowProps = {
     "data-testid": "chat-message" as const,
     "data-message-id": message.id,
+    onMouseLeave: handleMouseLeave,
+  };
+
+  // onMouseEnter is intentionally on the inner bubble wrapper only — hovering the
+  // blank row area should not reveal actions.
+  const bubbleInteractionProps = {
     onMouseEnter: handleMouseEnter,
     onMouseLeave: handleMouseLeave,
     onTouchStart: handleTouchStart,
@@ -318,7 +337,7 @@ export function MessageBubble({
         >
           <div className="flex min-w-0 max-w-[78%] flex-col items-end gap-0.5 sm:max-w-[60%]">
             {/* Smiley trigger sits to the LEFT of the own bubble */}
-            <div className="flex items-end gap-1.5">
+            <div {...bubbleInteractionProps} className="flex items-center gap-1.5">
               {actionControlsEl}
               {emojiPickerEl}
               {bubbleEl}
@@ -377,7 +396,7 @@ export function MessageBubble({
             </span>
           )}
           {/* Smiley trigger sits to the RIGHT of others' bubble */}
-          <div className="flex items-end gap-1.5">
+          <div {...bubbleInteractionProps} className="flex items-center gap-1.5">
             {bubbleEl}
             {emojiPickerEl}
             {actionControlsEl}
