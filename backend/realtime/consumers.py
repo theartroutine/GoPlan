@@ -6,7 +6,10 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.conf import settings
 
-from chat.services import ensure_user_can_access_trip_chat
+from chat.services import (
+    ensure_user_can_access_trip_chat,
+    personalize_chat_event_payload_for_viewer,
+)
 from trips.services import TripNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -195,7 +198,9 @@ class RealtimeConsumer(BaseConsumer):
             logger.exception("Failed to verify chat access before push")
             return
 
-        await self.send_json(data)
+        await self.send_json(
+            personalize_chat_event_payload_for_viewer(data, self.user)
+        )
 
     async def chat_message_deleted_push(self, event):
         data = event.get("data")
@@ -221,7 +226,9 @@ class RealtimeConsumer(BaseConsumer):
             logger.exception("Failed to verify chat access before deleted-message push")
             return
 
-        await self.send_json(data)
+        await self.send_json(
+            personalize_chat_event_payload_for_viewer(data, self.user)
+        )
 
     async def chat_reaction_update_push(self, event):
         data = event.get("data")

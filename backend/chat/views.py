@@ -142,7 +142,12 @@ class TripChatMessagesAPIView(APIView):
             return _error_response(str(exc), error_code, status_code)
 
         return Response(
-            {"message": build_chat_message_payload(message)},
+            {
+                "message": build_chat_message_payload(
+                    message,
+                    viewer=request.user,
+                )
+            },
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
@@ -184,7 +189,12 @@ class ChatMessageDeletionAPIView(APIView):
                     message_id=message_id,
                 )
                 return Response(
-                    {"message": build_chat_message_payload(message)},
+                    {
+                        "message": build_chat_message_payload(
+                            message,
+                            viewer=request.user,
+                        )
+                    },
                     status=status.HTTP_200_OK,
                 )
 

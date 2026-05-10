@@ -508,6 +508,84 @@ describe("useTripChat", () => {
     expect(result.current.failedClientIds.size).toBe(0);
   });
 
+  it("locks chat mutations when a reaction discovers the trip is terminal", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "terminal-reaction" })],
+      next_cursor: null,
+    });
+    chatApiMock.bffAddReaction.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: { detail: "Trip is read-only.", error_code: "TRIP_TERMINAL" },
+      },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    await act(async () => {
+      await result.current.toggleReaction("terminal-reaction", "👍");
+    });
+
+    expect(result.current.sendLockReason).toBe("terminal");
+    expect(result.current.errorCode).toBe("TRIP_TERMINAL");
+  });
+
+  it("locks chat mutations when delete discovers the trip is terminal", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "terminal-delete" })],
+      next_cursor: null,
+    });
+    chatApiMock.bffDeleteChatMessage.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: { detail: "Trip is read-only.", error_code: "TRIP_TERMINAL" },
+      },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    await act(async () => {
+      await result.current.deleteMessage("terminal-delete", "for_me");
+    });
+
+    expect(result.current.sendLockReason).toBe("terminal");
+    expect(result.current.errorCode).toBe("TRIP_TERMINAL");
+  });
+
+  it("locks chat mutations when bulk hide discovers the trip is terminal", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "terminal-hide" })],
+      next_cursor: null,
+    });
+    chatApiMock.bffHideChatMessagesForMe.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: { detail: "Trip is read-only.", error_code: "TRIP_TERMINAL" },
+      },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    await act(async () => {
+      await result.current.hideMessagesForMe(["terminal-hide"]);
+    });
+
+    expect(result.current.sendLockReason).toBe("terminal");
+    expect(result.current.errorCode).toBe("TRIP_TERMINAL");
+  });
+
   it("marks failed sends so the UI can offer retry", async () => {
     chatApiMock.bffListChatHistory.mockResolvedValue({
       results: [],

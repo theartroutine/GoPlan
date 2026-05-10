@@ -94,7 +94,7 @@ type ChatAction =
   | { type: "CONFIRM_PENDING"; clientMessageId: string; message: ChatMessage }
   | { type: "FAIL_PENDING"; clientMessageId: string }
   | { type: "CLEAR_FAILED"; clientMessageId: string }
-  | { type: "LOCK_SEND_TERMINAL"; clientMessageId: string }
+  | { type: "LOCK_SEND_TERMINAL"; clientMessageId?: string }
   | { type: "SEND_START" }
   | { type: "SEND_END" }
   | { type: "KICKED" }
@@ -227,8 +227,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "LOCK_SEND_TERMINAL": {
       const pending = new Map(state.pending);
       const failed = new Set(state.failed);
-      pending.delete(action.clientMessageId);
-      failed.delete(action.clientMessageId);
+      if (action.clientMessageId) {
+        pending.delete(action.clientMessageId);
+        failed.delete(action.clientMessageId);
+      }
       return {
         ...state,
         pending,
@@ -356,6 +358,10 @@ function dispatchRecoverableOrAccessLostError(
   dispatch: React.Dispatch<ChatAction>,
   errorCode: string,
 ): void {
+  if (errorCode === "TRIP_TERMINAL") {
+    dispatch({ type: "LOCK_SEND_TERMINAL" });
+    return;
+  }
   if (isRoomAccessLostError(errorCode)) {
     dispatch({ type: "KICKED" });
     return;

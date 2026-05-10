@@ -134,7 +134,7 @@ class ChatMessageDeletionServiceTests(APITestCase):
         self.assertIsNotNone(deleted.deleted_for_everyone_at)
         self.assertEqual(deleted.deleted_for_everyone_by_id, self.captain.id)
         self.assertFalse(MessageReaction.objects.filter(message=deleted).exists())
-        payload = build_chat_message_payload(deleted)
+        payload = build_chat_message_payload(deleted, viewer=self.captain)
         self.assertTrue(payload["is_deleted_for_everyone"])
         self.assertEqual(payload["content"], "")
         self.assertEqual(payload["reactions"], [])
@@ -142,13 +142,22 @@ class ChatMessageDeletionServiceTests(APITestCase):
         self.assertFalse(payload["can_delete_for_everyone"])
 
     def test_payload_exposes_server_delete_window_for_active_message(self):
-        payload = build_chat_message_payload(self.message)
+        payload = build_chat_message_payload(self.message, viewer=self.captain)
 
         self.assertEqual(
             payload["delete_for_everyone_until"],
             (self.message.created_at + timedelta(minutes=5)).isoformat(),
         )
         self.assertTrue(payload["can_delete_for_everyone"])
+
+    def test_payload_marks_everyone_delete_unavailable_for_non_sender(self):
+        payload = build_chat_message_payload(self.message, viewer=self.member)
+
+        self.assertEqual(
+            payload["delete_for_everyone_until"],
+            (self.message.created_at + timedelta(minutes=5)).isoformat(),
+        )
+        self.assertFalse(payload["can_delete_for_everyone"])
 
     def test_delete_for_everyone_rejects_non_sender(self):
         with self.assertRaises(ChatDeleteForbiddenError):

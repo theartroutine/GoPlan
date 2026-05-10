@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
 from channels.routing import URLRouter
@@ -7,11 +9,12 @@ from channels.testing import WebsocketCommunicator
 from django.conf import settings
 from django.test import TransactionTestCase, override_settings
 from django.urls import re_path
+from django.utils import timezone
 
 from realtime.consumers import RealtimeConsumer
 from realtime.middleware import WebSocketAuthMiddleware
 from realtime.services import issue_ws_ticket
-from test_helpers import create_completed_user
+from test_helpers import create_completed_user, create_verified_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
 TEST_CHANNEL_LAYERS = {
@@ -32,6 +35,11 @@ def _build_application():
 @database_sync_to_async
 def _create_user(email, identify_name, identify_code):
     return create_completed_user(email, identify_name, identify_code)
+
+
+@database_sync_to_async
+def _create_verified_incomplete_user(email):
+    return create_verified_user(email=email)
 
 
 @database_sync_to_async
@@ -127,6 +135,25 @@ class ChatConsumerTests(TransactionTestCase):
 
         await communicator.disconnect()
 
+    async def test_subscribe_incomplete_profile_member_returns_error_without_closing(self):
+        captain = await _create_user("ws-profile-cap@example.com", "wspcap", "WPP001")
+        member = await _create_verified_incomplete_user("ws-profile-mem@example.com")
+        trip = await _make_trip(captain)
+        await _add_member(trip, member)
+        communicator, connected = await _connect(member)
+        self.assertTrue(connected)
+
+        await communicator.send_json_to(
+            {"type": "chat.subscribe", "trip_id": str(trip.id)}
+        )
+        error = await communicator.receive_json_from(timeout=1)
+
+        self.assertEqual(error["type"], "chat.error")
+        self.assertEqual(error["error_code"], "TRIP_NOT_FOUND")
+        self.assertTrue(await communicator.receive_nothing(timeout=0.1))
+
+        await communicator.disconnect()
+
     async def test_chat_message_push_reaches_subscribed_member(self):
         captain = await _create_user("ws-push-cap@example.com", "wspcap", "WPC001")
         member = await _create_user("ws-push-mem@example.com", "wspmem", "WPM001")
@@ -156,6 +183,46 @@ class ChatConsumerTests(TransactionTestCase):
         pushed = await communicator.receive_json_from(timeout=1)
         self.assertEqual(pushed["type"], "chat.message")
         self.assertEqual(pushed["message"]["id"], "message-1")
+
+        await communicator.disconnect()
+
+    async def test_message_push_personalizes_delete_eligibility_for_receiver(self):
+        captain = await _create_user("ws-can-cap@example.com", "wsccap", "WCC001")
+        member = await _create_user("ws-can-mem@example.com", "wscmem", "WCM001")
+        trip = await _make_trip(captain)
+        await _add_member(trip, member)
+        communicator, connected = await _connect(captain)
+        self.assertTrue(connected)
+
+        await communicator.send_json_to(
+            {"type": "chat.subscribe", "trip_id": str(trip.id)}
+        )
+        await communicator.receive_json_from(timeout=1)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"trip_chat_{trip.id}",
+            {
+                "type": "chat_message_push",
+                "data": {
+                    "type": "chat.message",
+                    "trip_id": str(trip.id),
+                    "message": {
+                        "id": "message-from-member",
+                        "sender": {"id": str(member.id)},
+                        "is_deleted_for_everyone": False,
+                        "delete_for_everyone_until": (
+                            timezone.now() + timedelta(minutes=5)
+                        ).isoformat(),
+                        "can_delete_for_everyone": True,
+                    },
+                },
+            },
+        )
+
+        pushed = await communicator.receive_json_from(timeout=1)
+        self.assertEqual(pushed["type"], "chat.message")
+        self.assertFalse(pushed["message"]["can_delete_for_everyone"])
 
         await communicator.disconnect()
 

@@ -104,12 +104,22 @@ def _delete_for_everyone_until(message: ChatMessage) -> datetime:
     return message.created_at + MESSAGE_DELETE_FOR_EVERYONE_WINDOW
 
 
+def _is_profile_completed_for_chat(user) -> bool:
+    return bool(
+        getattr(user, "email_verified", False)
+        and getattr(user, "is_profile_completed", False)
+    )
+
+
 def _ensure_message_accepts_reactions(message: ChatMessage) -> None:
     if message.deleted_for_everyone_at is not None:
         raise ChatMessageDeletedError("Deleted messages cannot be reacted to.")
 
 
 def _get_active_chat_trip(trip_id, user, *, for_update: bool = False) -> Trip:
+    if not _is_profile_completed_for_chat(user):
+        raise TripNotFoundError("Trip not found.")
+
     try:
         normalized_trip_id = UUID(str(trip_id))
     except (TypeError, ValueError) as exc:
@@ -188,7 +198,17 @@ def _fresh_reactions_payload(message_id) -> list[dict]:
     ]
 
 
-def build_chat_message_payload(message: ChatMessage) -> dict:
+def _can_viewer_delete_for_everyone(message: ChatMessage, viewer) -> bool:
+    if viewer is None:
+        return False
+    if message.sender_id != getattr(viewer, "id", None):
+        return False
+    if message.deleted_for_everyone_at is not None:
+        return False
+    return timezone.now() <= _delete_for_everyone_until(message)
+
+
+def build_chat_message_payload(message: ChatMessage, *, viewer=None) -> dict:
     is_deleted = message.deleted_for_everyone_at is not None
     delete_for_everyone_until = (
         None if is_deleted else _delete_for_everyone_until(message)
@@ -222,12 +242,51 @@ def build_chat_message_payload(message: ChatMessage) -> dict:
             if delete_for_everyone_until is not None
             else None
         ),
-        "can_delete_for_everyone": (
-            delete_for_everyone_until is not None
-            and timezone.now() <= delete_for_everyone_until
-        ),
+        "can_delete_for_everyone": _can_viewer_delete_for_everyone(message, viewer),
         "reactions": [] if is_deleted else build_reactions_payload(message),
     }
+
+
+def personalize_chat_message_payload_for_viewer(message_payload: dict, viewer) -> dict:
+    """Return a per-viewer copy of a ChatMessage payload.
+
+    Channel-layer chat events fan out one server-built payload to many sockets.
+    This helper keeps viewer-specific fields, currently delete eligibility,
+    accurate without mutating the shared event data.
+    """
+    personalized = {**message_payload}
+    sender = personalized.get("sender")
+    sender_id = sender.get("id") if isinstance(sender, dict) else None
+    delete_until_raw = personalized.get("delete_for_everyone_until")
+    can_delete = False
+
+    if (
+        not personalized.get("is_deleted_for_everyone")
+        and sender_id is not None
+        and str(sender_id) == str(getattr(viewer, "id", None))
+        and isinstance(delete_until_raw, str)
+    ):
+        delete_until = parse_datetime(delete_until_raw)
+        if delete_until is not None and timezone.is_naive(delete_until):
+            delete_until = timezone.make_aware(
+                delete_until,
+                timezone.get_current_timezone(),
+            )
+        can_delete = delete_until is not None and timezone.now() <= delete_until
+
+    personalized["can_delete_for_everyone"] = can_delete
+    return personalized
+
+
+def personalize_chat_event_payload_for_viewer(event_payload: dict, viewer) -> dict:
+    personalized = {**event_payload}
+    message = personalized.get("message")
+    if isinstance(message, dict):
+        personalized["message"] = personalize_chat_message_payload_for_viewer(
+            message,
+            viewer,
+        )
+    return personalized
 
 
 def build_chat_message_ws_payload(message: ChatMessage) -> dict:
@@ -390,7 +449,9 @@ def _history_page(trip: Trip, *, user, cursor: str | None, limit: int) -> dict:
     rows = list(queryset.order_by("-created_at", "-id")[: limit + 1])
     page = rows[:limit]
     return {
-        "results": [build_chat_message_payload(message) for message in page],
+        "results": [
+            build_chat_message_payload(message, viewer=user) for message in page
+        ],
         "next_cursor": _encode_cursor(page[-1]) if len(rows) > limit and page else None,
     }
 
@@ -415,7 +476,9 @@ def _gap_fill_page(trip: Trip, *, user, since, limit: int) -> dict:
     )
     page = rows[:limit]
     return {
-        "results": [build_chat_message_payload(message) for message in page],
+        "results": [
+            build_chat_message_payload(message, viewer=user) for message in page
+        ],
         "has_more": len(rows) > limit,
     }
 
