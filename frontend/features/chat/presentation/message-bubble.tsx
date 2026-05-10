@@ -224,7 +224,7 @@ export function MessageBubble({
 
   const bubbleEl = (
     isDeletedForEveryone ? (
-      <div className="min-w-0 px-1 py-1 text-xs italic text-muted-foreground">
+      <div className="min-w-0 rounded-2xl border border-dashed border-foreground/60 px-3 py-1.5 text-xs italic text-muted-foreground">
         Bạn đã xóa một tin nhắn
       </div>
     ) : (
