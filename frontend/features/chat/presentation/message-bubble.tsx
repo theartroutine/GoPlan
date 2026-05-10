@@ -166,6 +166,8 @@ export function MessageBubble({
     setDeleteDialogOpen(false);
   };
 
+  const actionsVisible = isHovered || deleteDialogOpen;
+
   const selectTriggerBtn = canSelect ? (
     <button
       type="button"
@@ -191,21 +193,22 @@ export function MessageBubble({
   // Hover action controls (hidden in selection mode).
   // Own: [Select][Trash] so reading right-to-left from bubble → Emoji, Trash, Select.
   // Other: [Trash][Select] so reading left-to-right from bubble → Emoji, Trash, Select.
-  const actionControlsEl = (canRemove || canSelect) && !isSelectionMode ? (
-    <div
-      className={`flex shrink-0 items-center gap-0.5 transition-opacity sm:opacity-0 ${
-        isHovered || deleteDialogOpen
-          ? "sm:opacity-100"
-          : "sm:pointer-events-none"
-      }`}
-    >
-      {isOwn ? (
-        <>{selectTriggerBtn}{trashBtn}</>
-      ) : (
-        <>{trashBtn}{selectTriggerBtn}</>
-      )}
-    </div>
-  ) : null;
+  const actionControlsEl =
+    (canRemove || canSelect) && !isSelectionMode && actionsVisible ? (
+      <div className="flex shrink-0 items-center gap-0.5">
+        {isOwn ? (
+          <>
+            {selectTriggerBtn}
+            {trashBtn}
+          </>
+        ) : (
+          <>
+            {trashBtn}
+            {selectTriggerBtn}
+          </>
+        )}
+      </div>
+    ) : null;
 
   // Circular checkbox shown at edge of the row in selection mode.
   const edgeCheckboxEl = canSelect && isSelectionMode ? (
@@ -222,13 +225,25 @@ export function MessageBubble({
     </button>
   ) : null;
 
+  const bubbleSurfaceProps = {
+    "data-chat-message-hover-surface": "true" as const,
+    onMouseEnter: handleMouseEnter,
+    onTouchStart: handleTouchStart,
+    onTouchEnd: handleTouchEnd,
+    onTouchCancel: handleTouchEnd,
+  };
+
   const bubbleEl = (
     isDeletedForEveryone ? (
-      <div className="min-w-0 rounded-2xl border border-dashed border-foreground/60 px-3 py-1.5 text-xs italic text-muted-foreground">
+      <div
+        {...bubbleSurfaceProps}
+        className="min-w-0 rounded-2xl border border-dashed border-foreground/60 px-3 py-1.5 text-xs italic text-muted-foreground"
+      >
         Bạn đã xóa một tin nhắn
       </div>
     ) : (
       <div
+        {...bubbleSurfaceProps}
         className={`min-w-0 rounded-2xl px-3 py-2 text-sm shadow-sm ${
           isOwn
             ? `bg-primary text-primary-foreground${isPending ? " opacity-70" : ""}`
@@ -240,9 +255,9 @@ export function MessageBubble({
     )
   );
 
-  const emojiPickerEl = canReact ? (
+  const emojiPickerEl = canReact && (isHovered || isReactionPickerOpen) ? (
     <EmojiPicker
-      showTrigger={isHovered}
+      showTrigger
       isOwn={isOwn}
       currentUserEmoji={currentUserEmoji}
       open={isReactionPickerOpen}
@@ -259,14 +274,14 @@ export function MessageBubble({
     onMouseLeave: handleMouseLeave,
   };
 
-  // onMouseEnter is intentionally on the inner bubble wrapper only — hovering the
-  // blank row area should not reveal actions.
+  // The wrapper owns leave behavior so users can move from the bubble to the
+  // revealed icons. Enter behavior lives on the visible bubble surface only;
+  // hidden icon slots must not activate hover.
   const bubbleInteractionProps = {
-    onMouseEnter: handleMouseEnter,
+    "data-chat-message-hover-region": message.id,
+    "data-chat-message-active":
+      isHovered || isReactionPickerOpen ? "true" : undefined,
     onMouseLeave: handleMouseLeave,
-    onTouchStart: handleTouchStart,
-    onTouchEnd: handleTouchEnd,
-    onTouchCancel: handleTouchEnd,
   };
 
   const deleteDialogEl = canRemove ? (

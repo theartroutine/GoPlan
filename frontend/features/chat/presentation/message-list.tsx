@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 import type {
   ChatMessage,
@@ -89,6 +96,27 @@ export function MessageList({
     setActiveMessageId(null);
     setOpenReactionPickerMessageId(null);
   }, []);
+
+  const clearActiveMessageFromBlankSpace = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        clearActiveMessage();
+        return;
+      }
+
+      if (target.closest("[data-chat-message-hover-surface]") !== null) {
+        return;
+      }
+
+      if (target.closest('[data-chat-message-active="true"]') !== null) {
+        return;
+      }
+
+      clearActiveMessage();
+    },
+    [clearActiveMessage],
+  );
 
   const setReactionPickerOpen = useCallback(
     (messageId: string, open: boolean) => {
@@ -207,6 +235,7 @@ export function MessageList({
   return (
     <div
       ref={scrollerRef}
+      onMouseMove={clearActiveMessageFromBlankSpace}
       onMouseLeave={clearActiveMessage}
       className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3 py-3 sm:px-4"
     >

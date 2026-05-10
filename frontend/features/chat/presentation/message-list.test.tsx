@@ -23,23 +23,56 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 function getInteractionForMessage(content: string): HTMLElement {
-  const textEl = screen.getByText((_, element) => {
-    return element?.tagName.toLowerCase() === "p" && element.textContent === content;
-  });
-  const bubbleEl = textEl.parentElement;
-  const interactionEl = bubbleEl?.parentElement;
+  const bubbleEl = getBubbleForMessage(content);
+  const interactionEl = bubbleEl.parentElement;
   if (!(interactionEl instanceof HTMLElement)) {
     throw new Error(`Could not find interaction wrapper for "${content}".`);
   }
   return interactionEl;
 }
 
-function getReactionTriggers(): HTMLButtonElement[] {
-  return Array.from(
-    document.querySelectorAll<HTMLButtonElement>(
-      'button[aria-label="Add reaction"]',
-    ),
+function getBubbleForMessage(content: string): HTMLElement {
+  const textEl = screen.getByText((_, element) => {
+    return element?.tagName.toLowerCase() === "p" && element.textContent === content;
+  });
+  const bubbleEl = textEl.parentElement;
+  if (!(bubbleEl instanceof HTMLElement)) {
+    throw new Error(`Could not find bubble for "${content}".`);
+  }
+  return bubbleEl;
+}
+
+function queryReactionTriggerForMessage(
+  content: string,
+): HTMLButtonElement | null {
+  return getInteractionForMessage(content).querySelector<HTMLButtonElement>(
+    'button[aria-label="Add reaction"]',
   );
+}
+
+function getReactionTriggerForMessage(content: string): HTMLButtonElement {
+  const button = queryReactionTriggerForMessage(content);
+  if (button === null) {
+    throw new Error(`Could not find reaction trigger for "${content}".`);
+  }
+  return button;
+}
+
+function queryRemoveButtonForMessage(content: string): HTMLButtonElement | null {
+  return getInteractionForMessage(content).querySelector<HTMLButtonElement>(
+    'button[aria-label="Remove message"]',
+  );
+}
+
+function getMessageListForMessage(content: string): HTMLElement {
+  const rowEl = getInteractionForMessage(content).closest(
+    '[data-testid="chat-message"]',
+  );
+  const listEl = rowEl?.parentElement;
+  if (!(listEl instanceof HTMLElement)) {
+    throw new Error(`Could not find message list for "${content}".`);
+  }
+  return listEl;
 }
 
 describe("MessageList", () => {
@@ -81,6 +114,7 @@ describe("MessageList", () => {
       />,
     );
 
+    fireEvent.mouseEnter(getBubbleForMessage("hello"));
     fireEvent.click(screen.getByRole("button", { name: "Remove message" }));
     fireEvent.click(screen.getByLabelText(/Thu hồi với mọi người/));
     fireEvent.click(screen.getByRole("button", { name: "Gỡ" }));
@@ -108,7 +142,8 @@ describe("MessageList", () => {
       />,
     );
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Select message" })[0]);
+    fireEvent.mouseEnter(getBubbleForMessage("one"));
+    fireEvent.click(screen.getByRole("button", { name: "Select message" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Select message" })[1]);
 
     expect(screen.getByText("2 selected")).not.toBeNull();
@@ -137,16 +172,14 @@ describe("MessageList", () => {
       />,
     );
 
-    const [firstReactionTrigger, secondReactionTrigger] = getReactionTriggers();
+    fireEvent.mouseEnter(getBubbleForMessage("one"));
+    expect(queryReactionTriggerForMessage("one")).not.toBeNull();
+    expect(queryReactionTriggerForMessage("two")).toBeNull();
 
-    fireEvent.mouseEnter(getInteractionForMessage("one"));
-    expect(firstReactionTrigger.getAttribute("aria-hidden")).toBeNull();
-    expect(secondReactionTrigger.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.mouseEnter(getBubbleForMessage("two"));
 
-    fireEvent.mouseEnter(getInteractionForMessage("two"));
-
-    expect(firstReactionTrigger.getAttribute("aria-hidden")).toBe("true");
-    expect(secondReactionTrigger.getAttribute("aria-hidden")).toBeNull();
+    expect(queryReactionTriggerForMessage("one")).toBeNull();
+    expect(queryReactionTriggerForMessage("two")).not.toBeNull();
   });
 
   it("hides hover controls when the pointer leaves the active message", () => {
@@ -164,15 +197,14 @@ describe("MessageList", () => {
       />,
     );
 
-    const [reactionTrigger] = getReactionTriggers();
     const interactionEl = getInteractionForMessage("one");
 
-    fireEvent.mouseEnter(interactionEl);
-    expect(reactionTrigger.getAttribute("aria-hidden")).toBeNull();
+    fireEvent.mouseEnter(getBubbleForMessage("one"));
+    expect(queryReactionTriggerForMessage("one")).not.toBeNull();
 
     fireEvent.mouseLeave(interactionEl);
 
-    expect(reactionTrigger.getAttribute("aria-hidden")).toBe("true");
+    expect(queryReactionTriggerForMessage("one")).toBeNull();
   });
 
   it("closes an open reaction picker when another message becomes active", () => {
@@ -193,13 +225,121 @@ describe("MessageList", () => {
       />,
     );
 
-    fireEvent.mouseEnter(getInteractionForMessage("one"));
-    fireEvent.click(getReactionTriggers()[0]);
+    fireEvent.mouseEnter(getBubbleForMessage("one"));
+    fireEvent.click(getReactionTriggerForMessage("one"));
     expect(screen.getByRole("dialog", { name: "Pick a reaction" })).not.toBeNull();
 
-    fireEvent.mouseEnter(getInteractionForMessage("two"));
+    fireEvent.mouseEnter(getBubbleForMessage("two"));
 
     expect(screen.queryByRole("dialog", { name: "Pick a reaction" })).toBeNull();
+  });
+
+  it("mounts hover controls only for the active message", () => {
+    render(
+      <MessageList
+        messages={[
+          makeMessage({ id: "m-1", content: "one" }),
+          makeMessage({ id: "m-2", content: "two" }),
+        ]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+        onToggleReaction={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    );
+
+    expect(queryReactionTriggerForMessage("one")).toBeNull();
+    expect(queryRemoveButtonForMessage("one")).toBeNull();
+    expect(queryReactionTriggerForMessage("two")).toBeNull();
+    expect(queryRemoveButtonForMessage("two")).toBeNull();
+
+    fireEvent.mouseEnter(getBubbleForMessage("one"));
+
+    expect(queryReactionTriggerForMessage("one")).not.toBeNull();
+    expect(queryRemoveButtonForMessage("one")).not.toBeNull();
+    expect(queryReactionTriggerForMessage("two")).toBeNull();
+    expect(queryRemoveButtonForMessage("two")).toBeNull();
+  });
+
+  it("does not reveal hover controls when the pointer enters the non-bubble hover shell", () => {
+    render(
+      <MessageList
+        messages={[makeMessage({ id: "m-1", content: "one" })]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+        onToggleReaction={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    );
+
+    fireEvent.mouseEnter(getInteractionForMessage("one"));
+
+    expect(queryReactionTriggerForMessage("one")).toBeNull();
+    expect(queryRemoveButtonForMessage("one")).toBeNull();
+  });
+
+  it("clears the active message when the pointer crosses another message hidden action shell", () => {
+    render(
+      <MessageList
+        messages={[
+          makeMessage({ id: "m-1", content: "one" }),
+          makeMessage({ id: "m-2", content: "two" }),
+        ]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+        onToggleReaction={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    );
+
+    fireEvent.mouseEnter(getBubbleForMessage("one"));
+    expect(queryReactionTriggerForMessage("one")).not.toBeNull();
+    expect(queryRemoveButtonForMessage("one")).not.toBeNull();
+
+    fireEvent.mouseMove(getInteractionForMessage("two"));
+
+    expect(queryReactionTriggerForMessage("one")).toBeNull();
+    expect(queryRemoveButtonForMessage("one")).toBeNull();
+    expect(queryReactionTriggerForMessage("two")).toBeNull();
+    expect(queryRemoveButtonForMessage("two")).toBeNull();
+  });
+
+  it("clears hover controls when the pointer moves over blank chat space", () => {
+    render(
+      <MessageList
+        messages={[makeMessage({ id: "m-1", content: "one" })]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+        onToggleReaction={vi.fn()}
+      />,
+    );
+
+    fireEvent.mouseEnter(getBubbleForMessage("one"));
+    expect(queryReactionTriggerForMessage("one")).not.toBeNull();
+
+    fireEvent.mouseMove(getMessageListForMessage("one"));
+
+    expect(queryReactionTriggerForMessage("one")).toBeNull();
   });
 
   it("centers hover controls beside multiline message bubbles", () => {
