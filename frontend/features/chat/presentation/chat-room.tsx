@@ -23,6 +23,28 @@ function getChatWarning(errorCode: string | null): string | null {
   if (errorCode === "SERVER_ERROR" || errorCode === "INVALID_PAYLOAD") {
     return "Realtime updates are unavailable.";
   }
+  if (errorCode === "MESSAGE_DELETE_WINDOW_EXPIRED") {
+    return "This message can no longer be removed for everyone.";
+  }
+  if (errorCode === "MESSAGE_DELETE_FORBIDDEN") {
+    return "You can only remove your own message.";
+  }
+  if (errorCode === "MESSAGE_DELETED") {
+    return "This message has already been removed.";
+  }
+  if (errorCode === "TRIP_TERMINAL") {
+    return "This trip is closed. Chat changes are disabled.";
+  }
+  if (
+    errorCode === "REACTION_DUPLICATE" ||
+    errorCode === "REACTION_NOT_FOUND" ||
+    errorCode === "INVALID_EMOJI"
+  ) {
+    return "Could not update reaction. Please try again.";
+  }
+  if (errorCode === "DELETE_FAILED" || errorCode === "REACTION_FAILED") {
+    return "Could not update chat. Please try again.";
+  }
   return null;
 }
 
@@ -84,9 +106,9 @@ export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
         isLoadingOlder={chat.isLoadingOlder}
         onLoadOlder={chat.loadOlder}
         onRetry={chat.retryPending}
-        onToggleReaction={chat.toggleReaction}
-        onDeleteMessage={chat.deleteMessage}
-        onHideMessagesForMe={chat.hideMessagesForMe}
+        onToggleReaction={isChatClosed ? undefined : chat.toggleReaction}
+        onDeleteMessage={isChatClosed ? undefined : chat.deleteMessage}
+        onHideMessagesForMe={isChatClosed ? undefined : chat.hideMessagesForMe}
       />
       {isChatClosed ? (
         <div className="border-t border-border bg-muted/40 px-3 py-3 text-center text-xs text-muted-foreground">

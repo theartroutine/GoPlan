@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from asgiref.sync import async_to_sync
@@ -60,6 +60,10 @@ class ChatReactionInvalidEmojiError(ChatReactionError):
     error_code = "INVALID_EMOJI"
 
 
+class ChatMessageDeletedError(ChatServiceError):
+    error_code = "MESSAGE_DELETED"
+
+
 class ChatDeleteError(ChatServiceError):
     error_code = "MESSAGE_DELETE_ERROR"
 
@@ -89,6 +93,20 @@ def _normalize_content(content: str) -> str:
     if len(normalized) > CHAT_MESSAGE_MAX_LENGTH:
         raise ChatInvalidContentError("Message content is too long.")
     return normalized
+
+
+def _ensure_trip_is_mutable(trip: Trip) -> None:
+    if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+        raise TripTerminalError("Completed or cancelled trips are read-only.")
+
+
+def _delete_for_everyone_until(message: ChatMessage) -> datetime:
+    return message.created_at + MESSAGE_DELETE_FOR_EVERYONE_WINDOW
+
+
+def _ensure_message_accepts_reactions(message: ChatMessage) -> None:
+    if message.deleted_for_everyone_at is not None:
+        raise ChatMessageDeletedError("Deleted messages cannot be reacted to.")
 
 
 def _get_active_chat_trip(trip_id, user, *, for_update: bool = False) -> Trip:
@@ -172,6 +190,9 @@ def _fresh_reactions_payload(message_id) -> list[dict]:
 
 def build_chat_message_payload(message: ChatMessage) -> dict:
     is_deleted = message.deleted_for_everyone_at is not None
+    delete_for_everyone_until = (
+        None if is_deleted else _delete_for_everyone_until(message)
+    )
     return {
         "id": str(message.id),
         "trip_id": str(message.trip_id),
@@ -195,6 +216,15 @@ def build_chat_message_payload(message: ChatMessage) -> dict:
             str(message.deleted_for_everyone_by_id)
             if message.deleted_for_everyone_by_id
             else None
+        ),
+        "delete_for_everyone_until": (
+            delete_for_everyone_until.isoformat()
+            if delete_for_everyone_until is not None
+            else None
+        ),
+        "can_delete_for_everyone": (
+            delete_for_everyone_until is not None
+            and timezone.now() <= delete_for_everyone_until
         ),
         "reactions": [] if is_deleted else build_reactions_payload(message),
     }
@@ -294,8 +324,7 @@ def send_chat_message(
         if existing_message is not None:
             return existing_message, False
 
-        if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
-            raise TripTerminalError("Completed or cancelled trips are read-only.")
+        _ensure_trip_is_mutable(trip)
 
         try:
             with transaction.atomic():
@@ -422,8 +451,6 @@ def _normalize_message_id(message_id) -> UUID:
 
 
 def hide_messages_for_user(*, user, trip_id, message_ids) -> list[str]:
-    trip = _get_active_chat_trip(trip_id, user)
-
     normalized_ids: list[UUID] = []
     seen: set[UUID] = set()
     for raw_id in message_ids:
@@ -437,6 +464,8 @@ def hide_messages_for_user(*, user, trip_id, message_ids) -> list[str]:
         return []
 
     with transaction.atomic():
+        trip = _get_active_chat_trip(trip_id, user, for_update=True)
+        _ensure_trip_is_mutable(trip)
         messages = list(
             ChatMessage.objects.select_for_update()
             .filter(trip=trip, id__in=normalized_ids)
@@ -462,6 +491,7 @@ def delete_message_for_everyone(*, user, trip_id, message_id) -> ChatMessage:
 
     with transaction.atomic():
         trip = _get_active_chat_trip(trip_id, user, for_update=True)
+        _ensure_trip_is_mutable(trip)
         try:
             message = (
                 ChatMessage.objects.select_for_update()
@@ -525,11 +555,9 @@ def add_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
     if emoji not in ALLOWED_REACTION_EMOJIS:
         raise ChatReactionInvalidEmojiError("Unsupported emoji.")
 
-    # Validate membership before entering the lock — avoids holding the row
-    # lock while performing the membership check cross-table.
-    trip = _get_active_chat_trip(trip_id, user)
-
     with transaction.atomic():
+        trip = _get_active_chat_trip(trip_id, user, for_update=True)
+        _ensure_trip_is_mutable(trip)
         try:
             # Lock message row to serialize concurrent reaction mutations and
             # ensure the payload snapshot is consistent with what we push.
@@ -538,10 +566,14 @@ def add_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
             )
         except ChatMessage.DoesNotExist as exc:
             raise TripNotFoundError("Trip not found.") from exc
+        _ensure_message_accepts_reactions(message)
 
         # Enforce one reaction per user per message: atomically replace any
         # existing reaction with a different emoji before creating the new one.
-        MessageReaction.objects.filter(message=message, user=user).exclude(emoji=emoji).delete()
+        MessageReaction.objects.filter(
+            message=message,
+            user=user,
+        ).exclude(emoji=emoji).delete()
 
         try:
             MessageReaction.objects.create(message=message, user=user, emoji=emoji)
@@ -560,15 +592,16 @@ def remove_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
     if emoji not in ALLOWED_REACTION_EMOJIS:
         raise ChatReactionInvalidEmojiError("Unsupported emoji.")
 
-    trip = _get_active_chat_trip(trip_id, user)
-
     with transaction.atomic():
+        trip = _get_active_chat_trip(trip_id, user, for_update=True)
+        _ensure_trip_is_mutable(trip)
         try:
             message = ChatMessage.objects.select_for_update().get(
                 pk=message_id, trip=trip
             )
         except ChatMessage.DoesNotExist as exc:
             raise TripNotFoundError("Trip not found.") from exc
+        _ensure_message_accepts_reactions(message)
 
         deleted_count, _ = MessageReaction.objects.filter(
             message=message, user=user, emoji=emoji

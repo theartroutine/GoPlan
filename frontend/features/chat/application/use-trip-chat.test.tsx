@@ -7,6 +7,8 @@ const chatApiMock = vi.hoisted(() => ({
   bffListChatHistory: vi.fn(),
   bffGapFillChatMessages: vi.fn(),
   bffSendChatMessage: vi.fn(),
+  bffAddReaction: vi.fn(),
+  bffRemoveReaction: vi.fn(),
   bffDeleteChatMessage: vi.fn(),
   bffHideChatMessagesForMe: vi.fn(),
 }));
@@ -28,6 +30,7 @@ const wsBridgeMock = vi.hoisted(() => {
           onError?: (e: unknown) => void;
           onSubscribed?: (e: unknown) => void;
           onMessageDeleted?: (e: unknown) => void;
+          onReactionUpdate?: (e: unknown) => void;
         },
       ) => {
         listenersRef.current = listeners as never;
@@ -62,6 +65,8 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
     is_deleted_for_everyone: false,
     deleted_for_everyone_at: null,
     deleted_for_everyone_by_id: null,
+    delete_for_everyone_until: "2026-05-08T10:05:00Z",
+    can_delete_for_everyone: true,
     reactions: [],
     ...overrides,
   };
@@ -73,6 +78,8 @@ describe("useTripChat", () => {
     chatApiMock.bffListChatHistory.mockReset();
     chatApiMock.bffGapFillChatMessages.mockReset();
     chatApiMock.bffSendChatMessage.mockReset();
+    chatApiMock.bffAddReaction.mockReset();
+    chatApiMock.bffRemoveReaction.mockReset();
     chatApiMock.bffDeleteChatMessage.mockReset();
     chatApiMock.bffHideChatMessagesForMe.mockReset();
     wsBridgeMock.listenersRef.current = null;
@@ -573,6 +580,8 @@ describe("useTripChat", () => {
           is_deleted_for_everyone: true,
           deleted_for_everyone_at: "2026-05-08T10:01:00Z",
           deleted_for_everyone_by_id: ME.id,
+          delete_for_everyone_until: null,
+          can_delete_for_everyone: false,
         }),
       });
     });
@@ -612,10 +621,69 @@ describe("useTripChat", () => {
           is_deleted_for_everyone: true,
           deleted_for_everyone_at: "2026-05-08T10:02:00Z",
           deleted_for_everyone_by_id: ME.id,
+          delete_for_everyone_until: null,
+          can_delete_for_everyone: false,
         }),
       });
     });
 
     expect(result.current.messages).toHaveLength(0);
+  });
+
+  it("surfaces reaction mutation errors instead of swallowing them", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "react-fails" })],
+      next_cursor: null,
+    });
+    chatApiMock.bffAddReaction.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: { detail: "Message is deleted.", error_code: "MESSAGE_DELETED" },
+      },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    await act(async () => {
+      await result.current.toggleReaction("react-fails", "👍");
+    });
+
+    expect(result.current.errorCode).toBe("MESSAGE_DELETED");
+  });
+
+  it("clears operation errors after a successful reaction update", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "react-recovers" })],
+      next_cursor: null,
+    });
+    chatApiMock.bffAddReaction
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { detail: "Message is deleted.", error_code: "MESSAGE_DELETED" },
+        },
+      })
+      .mockResolvedValueOnce([{ emoji: "👍", count: 1, reacted_by_ids: [ME.id] }]);
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    await act(async () => {
+      await result.current.toggleReaction("react-recovers", "👍");
+    });
+    expect(result.current.errorCode).toBe("MESSAGE_DELETED");
+
+    await act(async () => {
+      await result.current.toggleReaction("react-recovers", "👍");
+    });
+
+    expect(result.current.errorCode).toBeNull();
   });
 });

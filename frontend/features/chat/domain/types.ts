@@ -33,6 +33,8 @@ export type ChatMessage = {
   is_deleted_for_everyone: boolean;
   deleted_for_everyone_at: string | null;
   deleted_for_everyone_by_id: string | null;
+  delete_for_everyone_until: string | null;
+  can_delete_for_everyone: boolean;
   reactions: ReactionSummary[];
 };
 

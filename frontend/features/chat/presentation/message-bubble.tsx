@@ -66,13 +66,9 @@ function senderLabel(message: ChatMessage): string {
 }
 
 const LONG_PRESS_MS = 400;
-const DELETE_FOR_EVERYONE_WINDOW_MS = 5 * 60 * 1000;
 
 function canDeleteForEveryone(message: ChatMessage, isOwn: boolean): boolean {
-  if (!isOwn || message.is_deleted_for_everyone) return false;
-  const createdAt = Date.parse(message.created_at);
-  if (Number.isNaN(createdAt)) return false;
-  return Date.now() - createdAt <= DELETE_FOR_EVERYONE_WINDOW_MS;
+  return isOwn && !message.is_deleted_for_everyone && message.can_delete_for_everyone;
 }
 
 export function MessageBubble({
@@ -239,7 +235,7 @@ export function MessageBubble({
         {...bubbleSurfaceProps}
         className="min-w-0 rounded-2xl border border-dashed border-foreground/60 px-3 py-1.5 text-xs italic text-muted-foreground"
       >
-        Bạn đã xóa một tin nhắn
+        Tin nhắn đã được xóa
       </div>
     ) : (
       <div
@@ -386,7 +382,11 @@ export function MessageBubble({
             <ReactionBar
               reactions={isDeletedForEveryone ? [] : message.reactions}
               currentUserId={currentUserId}
-              onToggle={(emoji) => onToggleReaction?.(message.id, emoji)}
+              onToggle={
+                onToggleReaction
+                  ? (emoji) => onToggleReaction(message.id, emoji)
+                  : undefined
+              }
             />
             {(showMeta || isPending || isFailed) && (
               <div className="flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
@@ -446,7 +446,11 @@ export function MessageBubble({
           <ReactionBar
             reactions={isDeletedForEveryone ? [] : message.reactions}
             currentUserId={currentUserId}
-            onToggle={(emoji) => onToggleReaction?.(message.id, emoji)}
+            onToggle={
+              onToggleReaction
+                ? (emoji) => onToggleReaction(message.id, emoji)
+                : undefined
+            }
           />
           {showMeta && (
             <span className="px-1 text-[10px] text-muted-foreground">{time}</span>

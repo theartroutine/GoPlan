@@ -4,12 +4,14 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from django.db import IntegrityError
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
 from chat.models import ALLOWED_REACTION_EMOJIS, ChatMessage, MessageReaction
 from chat.services import (
     ChatReactionDuplicateError,
+    ChatServiceError,
     ChatReactionInvalidEmojiError,
     ChatReactionNotFoundError,
     add_reaction,
@@ -18,7 +20,7 @@ from chat.services import (
 )
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
-from trips.services import TripNotFoundError
+from trips.services import TripNotFoundError, TripTerminalError
 
 
 def _auth(user):
@@ -207,6 +209,35 @@ class AddReactionServiceTests(APITestCase):
                 emoji="👍",
             )
 
+    def test_add_reaction_rejects_terminal_trip(self):
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        with self.assertRaises(TripTerminalError):
+            add_reaction(
+                user=self.member,
+                trip_id=self.trip.id,
+                message_id=self.message.id,
+                emoji="👍",
+            )
+
+    def test_add_reaction_rejects_deleted_message(self):
+        self.message.deleted_for_everyone_at = timezone.now()
+        self.message.deleted_for_everyone_by = self.captain
+        self.message.save(
+            update_fields=["deleted_for_everyone_at", "deleted_for_everyone_by"]
+        )
+
+        with self.assertRaises(ChatServiceError) as ctx:
+            add_reaction(
+                user=self.member,
+                trip_id=self.trip.id,
+                message_id=self.message.id,
+                emoji="👍",
+            )
+
+        self.assertEqual(ctx.exception.error_code, "MESSAGE_DELETED")
+
 
 class RemoveReactionServiceTests(APITestCase):
 
@@ -262,6 +293,41 @@ class RemoveReactionServiceTests(APITestCase):
                 message_id=self.message.id,
                 emoji="❤️",
             )
+
+    def test_remove_reaction_rejects_terminal_trip(self):
+        MessageReaction.objects.create(
+            message=self.message, user=self.member, emoji="👍"
+        )
+        self.trip.status = TripStatus.CANCELLED
+        self.trip.save(update_fields=["status"])
+
+        with self.assertRaises(TripTerminalError):
+            remove_reaction(
+                user=self.member,
+                trip_id=self.trip.id,
+                message_id=self.message.id,
+                emoji="👍",
+            )
+
+    def test_remove_reaction_rejects_deleted_message(self):
+        MessageReaction.objects.create(
+            message=self.message, user=self.member, emoji="👍"
+        )
+        self.message.deleted_for_everyone_at = timezone.now()
+        self.message.deleted_for_everyone_by = self.captain
+        self.message.save(
+            update_fields=["deleted_for_everyone_at", "deleted_for_everyone_by"]
+        )
+
+        with self.assertRaises(ChatServiceError) as ctx:
+            remove_reaction(
+                user=self.member,
+                trip_id=self.trip.id,
+                message_id=self.message.id,
+                emoji="👍",
+            )
+
+        self.assertEqual(ctx.exception.error_code, "MESSAGE_DELETED")
 
 
 # -------- API (view) tests --------
@@ -337,6 +403,37 @@ class MessageReactionAPIAddTests(APITestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_add_reaction_terminal_trip_returns_409(self):
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        response = self.client.post(
+            self.url,
+            {"emoji": "👍"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
+
+    def test_add_reaction_deleted_message_returns_409(self):
+        self.message.deleted_for_everyone_at = timezone.now()
+        self.message.deleted_for_everyone_by = self.captain
+        self.message.save(
+            update_fields=["deleted_for_everyone_at", "deleted_for_everyone_by"]
+        )
+
+        response = self.client.post(
+            self.url,
+            {"emoji": "👍"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "MESSAGE_DELETED")
+
     def test_all_allowed_emojis_accepted(self):
         # Each emoji from a different user or same user sequentially
         for emoji in ALLOWED_REACTION_EMOJIS:
@@ -401,6 +498,17 @@ class MessageReactionAPIRemoveTests(APITestCase):
         url = _reaction_detail_url(self.trip.id, self.message.id, "❤️")
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 401)
+
+    def test_remove_reaction_terminal_trip_returns_409(self):
+        self._add_reaction(self.member, "👍")
+        self.trip.status = TripStatus.CANCELLED
+        self.trip.save(update_fields=["status"])
+
+        url = _reaction_detail_url(self.trip.id, self.message.id, "👍")
+        response = self.client.delete(url, **_auth(self.member))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
 
     def test_reactions_in_message_history_payload(self):
         """Reactions must appear in chat history responses."""

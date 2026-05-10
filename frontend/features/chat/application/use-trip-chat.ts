@@ -260,7 +260,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       if (!existing) return state;
       const confirmed = new Map(state.confirmed);
       confirmed.set(action.messageId, { ...existing, reactions: action.reactions });
-      return { ...state, confirmed };
+      return { ...state, confirmed, errorCode: null };
     }
 
     case "HIDE_MESSAGES": {
@@ -272,7 +272,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         confirmed.delete(messageId);
         pending.delete(messageId);
       }
-      return { ...state, confirmed, pending, hidden };
+      return { ...state, confirmed, pending, hidden, errorCode: null };
     }
 
     default:
@@ -519,6 +519,8 @@ export function useTripChat(
           is_deleted_for_everyone: false,
           deleted_for_everyone_at: null,
           deleted_for_everyone_by_id: null,
+          delete_for_everyone_until: null,
+          can_delete_for_everyone: false,
           reactions: [],
         };
         dispatch({ type: "ADD_PENDING", message: optimistic });
@@ -590,8 +592,9 @@ export function useTripChat(
           ? await bffRemoveReaction(tripId, messageId, emoji)
           : await bffAddReaction(tripId, messageId, emoji);
         dispatch({ type: "UPDATE_REACTIONS", messageId, reactions });
-      } catch {
-        // Silently ignore — WS will eventually sync state, or user can retry.
+      } catch (error) {
+        const errorCode = extractErrorCode(error, "REACTION_FAILED");
+        dispatchRecoverableOrAccessLostError(dispatch, errorCode);
       }
     },
     [tripId, currentUser.id],

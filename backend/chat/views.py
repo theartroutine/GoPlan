@@ -20,6 +20,7 @@ from chat.services import (
     ChatDeleteWindowExpiredError,
     ChatInvalidContentError,
     ChatInvalidCursorError,
+    ChatMessageDeletedError,
     ChatReactionDuplicateError,
     ChatReactionInvalidEmojiError,
     ChatReactionNotFoundError,
@@ -57,6 +58,8 @@ def _map_service_error(exc: Exception) -> tuple[str, int] | None:
     if isinstance(exc, ChatDeleteForbiddenError):
         return exc.error_code, status.HTTP_403_FORBIDDEN
     if isinstance(exc, ChatDeleteWindowExpiredError):
+        return exc.error_code, status.HTTP_409_CONFLICT
+    if isinstance(exc, ChatMessageDeletedError):
         return exc.error_code, status.HTTP_409_CONFLICT
     if isinstance(exc, (ChatInvalidContentError, ChatInvalidCursorError, ChatReactionInvalidEmojiError)):
         return exc.error_code, status.HTTP_400_BAD_REQUEST

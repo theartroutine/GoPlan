@@ -17,6 +17,8 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     is_deleted_for_everyone: false,
     deleted_for_everyone_at: null,
     deleted_for_everyone_by_id: null,
+    delete_for_everyone_until: "2026-05-08T10:05:00Z",
+    can_delete_for_everyone: true,
     reactions: [],
     ...overrides,
   };
@@ -97,12 +99,17 @@ describe("MessageList", () => {
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
   });
 
-  it("opens remove dialog with both modes for an own recent message", () => {
+  it("opens remove dialog with both modes when the backend allows everyone-delete", () => {
     const onDeleteMessage = vi.fn();
 
     render(
       <MessageList
-        messages={[makeMessage({ created_at: new Date().toISOString() })]}
+        messages={[
+          makeMessage({
+            created_at: "2000-01-01T00:00:00Z",
+            can_delete_for_everyone: true,
+          }),
+        ]}
         currentUserId={CURRENT_USER_ID}
         pendingClientIds={new Set()}
         failedClientIds={new Set()}
@@ -120,6 +127,55 @@ describe("MessageList", () => {
     fireEvent.click(screen.getByRole("button", { name: "Gỡ" }));
 
     expect(onDeleteMessage).toHaveBeenCalledWith("m-1", "for_everyone");
+  });
+
+  it("hides everyone-delete when the backend says the window is closed", () => {
+    render(
+      <MessageList
+        messages={[makeMessage({ can_delete_for_everyone: false })]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    );
+
+    fireEvent.mouseEnter(getBubbleForMessage("hello"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove message" }));
+
+    expect(screen.queryByLabelText(/Thu hồi với mọi người/)).toBeNull();
+  });
+
+  it("uses neutral tombstone copy for globally deleted messages", () => {
+    render(
+      <MessageList
+        messages={[
+          makeMessage({
+            content: "",
+            sender: { id: "user-other", display_name: "Other", identify_tag: null },
+            is_deleted_for_everyone: true,
+            deleted_for_everyone_at: "2026-05-08T10:01:00Z",
+            deleted_for_everyone_by_id: "user-other",
+            delete_for_everyone_until: null,
+            can_delete_for_everyone: false,
+          }),
+        ]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Tin nhắn đã được xóa")).not.toBeNull();
+    expect(screen.queryByText("Bạn đã xóa một tin nhắn")).toBeNull();
   });
 
   it("bulk selection only offers remove for current user", () => {

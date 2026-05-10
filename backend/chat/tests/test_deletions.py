@@ -20,7 +20,7 @@ from chat.services import (
 )
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
-from trips.services import TripNotFoundError
+from trips.services import TripNotFoundError, TripTerminalError
 
 TEST_CHANNEL_LAYERS = {
     "default": {
@@ -138,6 +138,17 @@ class ChatMessageDeletionServiceTests(APITestCase):
         self.assertTrue(payload["is_deleted_for_everyone"])
         self.assertEqual(payload["content"], "")
         self.assertEqual(payload["reactions"], [])
+        self.assertIsNone(payload["delete_for_everyone_until"])
+        self.assertFalse(payload["can_delete_for_everyone"])
+
+    def test_payload_exposes_server_delete_window_for_active_message(self):
+        payload = build_chat_message_payload(self.message)
+
+        self.assertEqual(
+            payload["delete_for_everyone_until"],
+            (self.message.created_at + timedelta(minutes=5)).isoformat(),
+        )
+        self.assertTrue(payload["can_delete_for_everyone"])
 
     def test_delete_for_everyone_rejects_non_sender(self):
         with self.assertRaises(ChatDeleteForbiddenError):
@@ -156,6 +167,28 @@ class ChatMessageDeletionServiceTests(APITestCase):
                 user=self.captain,
                 trip_id=self.trip.id,
                 message_id=self.message.id,
+            )
+
+    def test_delete_for_everyone_rejects_terminal_trip(self):
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        with self.assertRaises(TripTerminalError):
+            delete_message_for_everyone(
+                user=self.captain,
+                trip_id=self.trip.id,
+                message_id=self.message.id,
+            )
+
+    def test_hide_messages_for_user_rejects_terminal_trip(self):
+        self.trip.status = TripStatus.CANCELLED
+        self.trip.save(update_fields=["status"])
+
+        with self.assertRaises(TripTerminalError):
+            hide_messages_for_user(
+                user=self.member,
+                trip_id=self.trip.id,
+                message_ids=[self.message.id],
             )
 
     def test_non_member_cannot_hide_message(self):
@@ -216,6 +249,34 @@ class ChatMessageDeletionAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data["error_code"], "MESSAGE_DELETE_FORBIDDEN")
+
+    def test_delete_for_everyone_terminal_trip_returns_409(self):
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        response = self.client.delete(
+            _message_url(self.trip.id, self.message.id),
+            {"mode": "for_everyone"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
+
+    def test_delete_for_me_terminal_trip_returns_409(self):
+        self.trip.status = TripStatus.CANCELLED
+        self.trip.save(update_fields=["status"])
+
+        response = self.client.delete(
+            _message_url(self.trip.id, self.message.id),
+            {"mode": "for_me"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
 
     def test_bulk_hide_hides_multiple_messages_for_current_user(self):
         second = _make_message(self.trip, self.member, "Second")
