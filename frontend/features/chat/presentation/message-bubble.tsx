@@ -414,6 +414,9 @@ export function MessageBubble({
   }
 
   // Other-sender layout: avatar gutter on the left, smiley trigger to the RIGHT of bubble.
+  // Avatar lives on the same flex line as the bubble (items-end) so its bottom
+  // aligns with the bubble bottom, not with the row bottom (which would include
+  // the timestamp meta and reactions).
   return (
     <>
       <div
@@ -421,40 +424,46 @@ export function MessageBubble({
         className={`flex w-full items-end gap-2 ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
       >
         {edgeCheckboxEl}
-        <div className="w-8 shrink-0">
-          {showAvatar && (
-            <ChatAvatar
-              name={senderLabel(message)}
-              seed={message.sender.id ?? message.sender.display_name}
-              size="default"
-            />
-          )}
-        </div>
-        <div className="flex min-w-0 max-w-[78%] flex-col items-start gap-0.5 sm:max-w-[60%]">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
           {showSenderName && (
-            <span className="px-1 text-[11px] font-medium text-muted-foreground">
+            <span className="pl-10 text-[11px] font-medium text-muted-foreground">
               {senderLabel(message)}
             </span>
           )}
-          {/* Hover icons (Emoji/Trash/Select) float in an absolute overlay
-              to the RIGHT of others' bubble so the bubble keeps its full
-              max width when icons appear on hover. */}
-          <div {...bubbleInteractionProps} className="relative flex items-center">
-            {bubbleEl}
-            {hoverOverlayEl}
+          <div className="flex w-full items-end gap-2">
+            <div className="w-8 shrink-0">
+              {showAvatar && (
+                <ChatAvatar
+                  name={senderLabel(message)}
+                  seed={message.sender.id ?? message.sender.display_name}
+                  size="default"
+                />
+              )}
+            </div>
+            <div className="flex min-w-0 max-w-[78%] sm:max-w-[60%]">
+              {/* Hover icons (Emoji/Trash/Select) float in an absolute overlay
+                  to the RIGHT of others' bubble so the bubble keeps its full
+                  max width when icons appear on hover. */}
+              <div {...bubbleInteractionProps} className="relative flex items-center">
+                {bubbleEl}
+                {hoverOverlayEl}
+              </div>
+            </div>
           </div>
-          <ReactionBar
-            reactions={isDeletedForEveryone ? [] : message.reactions}
-            currentUserId={currentUserId}
-            onToggle={
-              onToggleReaction
-                ? (emoji) => onToggleReaction(message.id, emoji)
-                : undefined
-            }
-          />
-          {showMeta && (
-            <span className="px-1 text-[10px] text-muted-foreground">{time}</span>
-          )}
+          <div className="flex flex-col items-start gap-0.5 pl-10">
+            <ReactionBar
+              reactions={isDeletedForEveryone ? [] : message.reactions}
+              currentUserId={currentUserId}
+              onToggle={
+                onToggleReaction
+                  ? (emoji) => onToggleReaction(message.id, emoji)
+                  : undefined
+              }
+            />
+            {showMeta && (
+              <span className="px-1 text-[10px] text-muted-foreground">{time}</span>
+            )}
+          </div>
         </div>
       </div>
       {deleteDialogEl}
