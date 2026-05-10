@@ -18,10 +18,19 @@ type Props = {
   };
 };
 
+function getChatWarning(errorCode: string | null): string | null {
+  if (errorCode === "GAP_FILL_INCOMPLETE") return "Some messages may be missing.";
+  if (errorCode === "SERVER_ERROR" || errorCode === "INVALID_PAYLOAD") {
+    return "Realtime updates are unavailable.";
+  }
+  return null;
+}
+
 export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
   const { status: wsStatus } = useWebSocket();
   const chat = useTripChat(tripId, currentUser);
   const isChatClosed = isTerminal || chat.sendLockReason === "terminal";
+  const chatWarning = getChatWarning(chat.errorCode);
 
   if (chat.status === "loading") {
     return (
@@ -57,6 +66,15 @@ export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <ConnectionBanner status={wsStatus} />
+      {chatWarning && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          {chatWarning}
+        </div>
+      )}
       <MessageList
         messages={chat.messages}
         currentUserId={currentUser.id}
@@ -66,6 +84,7 @@ export function ChatRoom({ tripId, isTerminal, currentUser }: Props) {
         isLoadingOlder={chat.isLoadingOlder}
         onLoadOlder={chat.loadOlder}
         onRetry={chat.retryPending}
+        onToggleReaction={chat.toggleReaction}
       />
       {isChatClosed ? (
         <div className="border-t border-border bg-muted/40 px-3 py-3 text-center text-xs text-muted-foreground">

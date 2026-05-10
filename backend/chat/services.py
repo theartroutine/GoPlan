@@ -11,7 +11,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils.dateparse import parse_datetime
 
-from chat.models import ChatMessage
+from chat.models import ALLOWED_REACTION_EMOJIS, ChatMessage, MessageReaction
 from trips.models import MemberStatus, Trip, TripMember, TripStatus
 from trips.services import TripNotFoundError, TripTerminalError
 
@@ -34,6 +34,22 @@ class ChatInvalidContentError(ChatServiceError):
 
 class ChatInvalidCursorError(ChatServiceError):
     error_code = "INVALID_CURSOR"
+
+
+class ChatReactionError(ChatServiceError):
+    error_code = "REACTION_ERROR"
+
+
+class ChatReactionDuplicateError(ChatReactionError):
+    error_code = "REACTION_DUPLICATE"
+
+
+class ChatReactionNotFoundError(ChatReactionError):
+    error_code = "REACTION_NOT_FOUND"
+
+
+class ChatReactionInvalidEmojiError(ChatReactionError):
+    error_code = "INVALID_EMOJI"
 
 
 def _chat_group_name(trip_id) -> str:
@@ -96,6 +112,40 @@ def ensure_user_can_access_trip_chat(user, trip_id) -> None:
     _get_active_chat_trip(trip_id, user)
 
 
+def build_reactions_payload(message: ChatMessage) -> list[dict]:
+    """Aggregate reactions for a message grouped by emoji.
+
+    Uses the Django prefetch cache when available (set by prefetch_related in
+    list queries) to avoid N+1. Falls back to a direct query for single-message
+    mutations where prefetch is not present.
+    """
+    prefetch_cache = getattr(message, "_prefetched_objects_cache", {})
+    if "reactions" in prefetch_cache:
+        reactions_iter = prefetch_cache["reactions"]
+    else:
+        reactions_iter = MessageReaction.objects.filter(message=message)
+
+    grouped: dict[str, list[str]] = {}
+    for reaction in reactions_iter:
+        grouped.setdefault(reaction.emoji, []).append(str(reaction.user_id))
+
+    return [
+        {"emoji": emoji, "count": len(ids), "reacted_by_ids": ids}
+        for emoji, ids in grouped.items()
+    ]
+
+
+def _fresh_reactions_payload(message_id) -> list[dict]:
+    """Query reactions fresh from DB for use inside atomic mutations."""
+    grouped: dict[str, list[str]] = {}
+    for reaction in MessageReaction.objects.filter(message_id=message_id):
+        grouped.setdefault(reaction.emoji, []).append(str(reaction.user_id))
+    return [
+        {"emoji": emoji, "count": len(ids), "reacted_by_ids": ids}
+        for emoji, ids in grouped.items()
+    ]
+
+
 def build_chat_message_payload(message: ChatMessage) -> dict:
     return {
         "id": str(message.id),
@@ -110,6 +160,7 @@ def build_chat_message_payload(message: ChatMessage) -> dict:
             str(message.client_message_id) if message.client_message_id else None
         ),
         "created_at": message.created_at.isoformat(),
+        "reactions": build_reactions_payload(message),
     }
 
 
@@ -232,7 +283,11 @@ def _decode_cursor(cursor: str):
 
 
 def _history_page(trip: Trip, *, cursor: str | None, limit: int) -> dict:
-    queryset = ChatMessage.objects.filter(trip=trip).select_related("sender")
+    queryset = (
+        ChatMessage.objects.filter(trip=trip)
+        .select_related("sender")
+        .prefetch_related("reactions")
+    )
     if cursor:
         created_at, message_id = _decode_cursor(cursor)
         queryset = queryset.filter(
@@ -262,6 +317,7 @@ def _gap_fill_page(trip: Trip, *, since, limit: int) -> dict:
             | Q(created_at=anchor.created_at, id__gt=anchor.id)
         )
         .select_related("sender")
+        .prefetch_related("reactions")
         .order_by("created_at", "id")[: limit + 1]
     )
     page = rows[:limit]
@@ -290,3 +346,88 @@ def list_chat_messages(
 
 def notify_trip_chat_member_removed(*, trip_id, user_id) -> None:
     transaction.on_commit(lambda: _push_chat_kicked(trip_id=trip_id, user_id=user_id))
+
+
+# -------- Reactions --------
+
+def _push_reaction_update(*, message: ChatMessage, reactions: list[dict]) -> None:
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            _chat_group_name(message.trip_id),
+            {
+                "type": "chat_reaction_update_push",
+                "data": {
+                    "type": "chat.reaction_update",
+                    "trip_id": str(message.trip_id),
+                    "message_id": str(message.id),
+                    "reactions": reactions,
+                },
+            },
+        )
+    except Exception:
+        logger.error(
+            "Failed to push reaction update for message %s via WebSocket",
+            message.id,
+            exc_info=True,
+        )
+
+
+def add_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
+    if emoji not in ALLOWED_REACTION_EMOJIS:
+        raise ChatReactionInvalidEmojiError("Unsupported emoji.")
+
+    # Validate membership before entering the lock — avoids holding the row
+    # lock while performing the membership check cross-table.
+    trip = _get_active_chat_trip(trip_id, user)
+
+    with transaction.atomic():
+        try:
+            # Lock message row to serialize concurrent reaction mutations and
+            # ensure the payload snapshot is consistent with what we push.
+            message = ChatMessage.objects.select_for_update().get(
+                pk=message_id, trip=trip
+            )
+        except ChatMessage.DoesNotExist as exc:
+            raise TripNotFoundError("Trip not found.") from exc
+
+        try:
+            MessageReaction.objects.create(message=message, user=user, emoji=emoji)
+        except IntegrityError:
+            raise ChatReactionDuplicateError("You already reacted with this emoji.")
+
+        reactions = _fresh_reactions_payload(message.id)
+        transaction.on_commit(
+            lambda: _push_reaction_update(message=message, reactions=reactions)
+        )
+
+    return reactions
+
+
+def remove_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
+    if emoji not in ALLOWED_REACTION_EMOJIS:
+        raise ChatReactionInvalidEmojiError("Unsupported emoji.")
+
+    trip = _get_active_chat_trip(trip_id, user)
+
+    with transaction.atomic():
+        try:
+            message = ChatMessage.objects.select_for_update().get(
+                pk=message_id, trip=trip
+            )
+        except ChatMessage.DoesNotExist as exc:
+            raise TripNotFoundError("Trip not found.") from exc
+
+        deleted_count, _ = MessageReaction.objects.filter(
+            message=message, user=user, emoji=emoji
+        ).delete()
+
+        if deleted_count == 0:
+            raise ChatReactionNotFoundError("Reaction not found.")
+
+        reactions = _fresh_reactions_payload(message.id)
+        transaction.on_commit(
+            lambda: _push_reaction_update(message=message, reactions=reactions)
+        )
+
+    return reactions

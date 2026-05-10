@@ -9,6 +9,7 @@ import type {
   WsChatError,
   WsChatKicked,
   WsChatMessagePush,
+  WsChatReactionUpdate,
   WsChatSubscribed,
   WsChatUnsubscribed,
 } from "@/features/chat/domain/types";
@@ -19,6 +20,7 @@ type ChatRoomListeners = {
   onError?: (event: WsChatError) => void;
   onSubscribed?: (event: WsChatSubscribed) => void;
   onUnsubscribed?: (event: WsChatUnsubscribed) => void;
+  onReactionUpdate?: (event: WsChatReactionUpdate) => void;
 };
 
 type ChatRoomHandle = {
@@ -72,6 +74,11 @@ function ensureLifecycle(): void {
   wsManager.on(CHAT_WS_MESSAGE_TYPES.UNSUBSCRIBED, (data: WsMessage) => {
     const event = data as unknown as WsChatUnsubscribed;
     rooms.get(event.trip_id)?.listeners.onUnsubscribed?.(event);
+  });
+
+  wsManager.on(CHAT_WS_MESSAGE_TYPES.REACTION_UPDATE, (data: WsMessage) => {
+    const event = data as unknown as WsChatReactionUpdate;
+    rooms.get(event.trip_id)?.listeners.onReactionUpdate?.(event);
   });
 
   wsManager.onStatusChange((status) => {

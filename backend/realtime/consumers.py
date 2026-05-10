@@ -197,6 +197,32 @@ class RealtimeConsumer(BaseConsumer):
 
         await self.send_json(data)
 
+    async def chat_reaction_update_push(self, event):
+        data = event.get("data")
+        if not isinstance(data, dict):
+            logger.warning("chat_reaction_update_push received event without dict data")
+            return
+
+        trip_id = data.get("trip_id")
+        if not isinstance(trip_id, str) or not trip_id:
+            logger.warning("chat_reaction_update_push received event without trip_id")
+            return
+
+        try:
+            await database_sync_to_async(ensure_user_can_access_trip_chat)(
+                self.user,
+                trip_id,
+            )
+        except TripNotFoundError:
+            await self._discard_chat_group(trip_id)
+            await self.send_json({"type": "chat.kicked", "trip_id": trip_id})
+            return
+        except Exception:
+            logger.exception("Failed to verify chat access before reaction push")
+            return
+
+        await self.send_json(data)
+
     async def chat_kicked_push(self, event):
         data = event.get("data")
         if not isinstance(data, dict):

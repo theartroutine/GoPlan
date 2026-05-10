@@ -200,6 +200,31 @@ class ListChatMessagesServiceTests(APITestCase):
         with self.assertRaises(TripNotFoundError):
             list_chat_messages(user=self.other, trip_id=self.trip.id)
 
+    def _assert_reinvited_member_can_read_full_history(self, status):
+        first_membership = TripMember.objects.get(trip=self.trip, user=self.member)
+        first_membership.status = status
+        first_membership.left_at = timezone.now()
+        first_membership.save(update_fields=["status", "left_at"])
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+
+        page = list_chat_messages(user=self.member, trip_id=self.trip.id, limit=10)
+
+        self.assertEqual(
+            [m["content"] for m in page["results"]],
+            ["four", "three", "two", "one"],
+        )
+
+    def test_reinvited_removed_member_can_read_full_chat_history(self):
+        self._assert_reinvited_member_can_read_full_history(MemberStatus.REMOVED)
+
+    def test_reinvited_left_member_can_read_full_chat_history(self):
+        self._assert_reinvited_member_can_read_full_history(MemberStatus.LEFT)
+
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
 class ChatMessagePushTests(TransactionTestCase):

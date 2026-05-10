@@ -7,13 +7,22 @@ from rest_framework.exceptions import Throttled
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from chat.serializers import ChatMessageListQuerySerializer, SendChatMessageSerializer
+from chat.serializers import (
+    AddReactionSerializer,
+    ChatMessageListQuerySerializer,
+    SendChatMessageSerializer,
+)
 from chat.services import (
     ChatInvalidContentError,
     ChatInvalidCursorError,
+    ChatReactionDuplicateError,
+    ChatReactionInvalidEmojiError,
+    ChatReactionNotFoundError,
     ChatServiceError,
+    add_reaction,
     build_chat_message_payload,
     list_chat_messages,
+    remove_reaction,
     send_chat_message,
 )
 from trips.permissions import IsProfileCompleted
@@ -34,7 +43,11 @@ def _map_service_error(exc: Exception) -> tuple[str, int] | None:
         return exc.error_code, status.HTTP_404_NOT_FOUND
     if isinstance(exc, TripTerminalError):
         return exc.error_code, status.HTTP_409_CONFLICT
-    if isinstance(exc, (ChatInvalidContentError, ChatInvalidCursorError)):
+    if isinstance(exc, ChatReactionDuplicateError):
+        return exc.error_code, status.HTTP_409_CONFLICT
+    if isinstance(exc, ChatReactionNotFoundError):
+        return exc.error_code, status.HTTP_404_NOT_FOUND
+    if isinstance(exc, (ChatInvalidContentError, ChatInvalidCursorError, ChatReactionInvalidEmojiError)):
         return exc.error_code, status.HTTP_400_BAD_REQUEST
     if isinstance(exc, (TripServiceError, ChatServiceError)):
         return exc.error_code, status.HTTP_400_BAD_REQUEST
@@ -116,3 +129,54 @@ class TripChatMessagesAPIView(APIView):
             {"message": build_chat_message_payload(message)},
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+class MessageReactionAPIView(APIView):
+    permission_classes = CHAT_PERMISSIONS
+
+    def get_throttles(self):
+        if self.request.method in {"POST", "DELETE"}:
+            self.throttle_scope = "chat_reaction"
+        return super().get_throttles()
+
+    def post(self, request, trip_id, message_id):
+        serializer = AddReactionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return _error_response(
+                "Invalid reaction.",
+                "INVALID_EMOJI",
+                status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            reactions = add_reaction(
+                user=request.user,
+                trip_id=trip_id,
+                message_id=message_id,
+                emoji=serializer.validated_data["emoji"],
+            )
+        except Exception as exc:
+            mapped = _map_service_error(exc)
+            if mapped is None:
+                raise
+            error_code, status_code = mapped
+            return _error_response(str(exc), error_code, status_code)
+
+        return Response({"reactions": reactions}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, trip_id, message_id, emoji):
+        try:
+            reactions = remove_reaction(
+                user=request.user,
+                trip_id=trip_id,
+                message_id=message_id,
+                emoji=emoji,
+            )
+        except Exception as exc:
+            mapped = _map_service_error(exc)
+            if mapped is None:
+                raise
+            error_code, status_code = mapped
+            return _error_response(str(exc), error_code, status_code)
+
+        return Response({"reactions": reactions}, status=status.HTTP_200_OK)

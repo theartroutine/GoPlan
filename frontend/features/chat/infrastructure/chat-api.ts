@@ -4,6 +4,7 @@ import type {
   ChatGapFillResponse,
   ChatHistoryResponse,
   ChatMessage,
+  ReactionSummary,
   SendChatMessageInput,
   SendChatMessageResult,
 } from "@/features/chat/domain/types";
@@ -13,6 +14,10 @@ const GAP_FILL_DEFAULT_LIMIT = 100;
 
 function chatBasePath(tripId: string): string {
   return `/api/trips/${encodeURIComponent(tripId)}/chat/messages`;
+}
+
+function reactionBasePath(tripId: string, messageId: string): string {
+  return `${chatBasePath(tripId)}/${encodeURIComponent(messageId)}/reactions`;
 }
 
 /**
@@ -77,4 +82,27 @@ export async function bffGapFillChatMessages(
     },
   });
   return res.data;
+}
+
+export async function bffAddReaction(
+  tripId: string,
+  messageId: string,
+  emoji: string,
+): Promise<ReactionSummary[]> {
+  const res = await bff.post<{ reactions: ReactionSummary[] }>(
+    reactionBasePath(tripId, messageId),
+    { emoji },
+  );
+  return res.data.reactions;
+}
+
+export async function bffRemoveReaction(
+  tripId: string,
+  messageId: string,
+  emoji: string,
+): Promise<ReactionSummary[]> {
+  const res = await bff.delete<{ reactions: ReactionSummary[] }>(
+    `${reactionBasePath(tripId, messageId)}/${encodeURIComponent(emoji)}`,
+  );
+  return res.data.reactions;
 }

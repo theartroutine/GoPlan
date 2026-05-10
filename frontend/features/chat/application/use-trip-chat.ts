@@ -6,16 +6,20 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { AxiosError } from "axios";
 
 import {
+  bffAddReaction,
   bffGapFillChatMessages,
   bffListChatHistory,
+  bffRemoveReaction,
   bffSendChatMessage,
 } from "@/features/chat/infrastructure/chat-api";
 import { joinChatRoom } from "@/features/chat/infrastructure/chat-ws-bridge";
 
 import type {
   ChatMessage,
+  ReactionSummary,
   WsChatError,
   WsChatMessagePush,
+  WsChatReactionUpdate,
 } from "@/features/chat/domain/types";
 
 const HISTORY_PAGE_SIZE = 30;
@@ -44,6 +48,7 @@ export type UseTripChatResult = {
   loadOlder: () => Promise<void>;
   sendMessage: (content: string) => Promise<SendOutcome>;
   retryPending: (clientMessageId: string) => Promise<SendOutcome>;
+  toggleReaction: (messageId: string, emoji: string) => Promise<void>;
 };
 
 type ChatState = {
@@ -85,7 +90,9 @@ type ChatAction =
   | { type: "SEND_START" }
   | { type: "SEND_END" }
   | { type: "KICKED" }
-  | { type: "WS_ERROR"; errorCode: string };
+  | { type: "WS_ERROR"; errorCode: string }
+  | { type: "CLEAR_ROOM_ERROR" }
+  | { type: "UPDATE_REACTIONS"; messageId: string; reactions: ReactionSummary[] };
 
 function initialState(): ChatState {
   return {
@@ -168,7 +175,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           failed.delete(m.client_message_id);
         }
       }
-      return { ...state, confirmed, pending, failed };
+      return { ...state, confirmed, pending, failed, errorCode: null };
     }
 
     case "ADD_PENDING": {
@@ -231,6 +238,17 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       // Surface the latest error code without tearing the room down — the WS
       // layer keeps the socket; the room may be transiently unreachable.
       return { ...state, errorCode: action.errorCode };
+
+    case "CLEAR_ROOM_ERROR":
+      return { ...state, errorCode: null };
+
+    case "UPDATE_REACTIONS": {
+      const existing = state.confirmed.get(action.messageId);
+      if (!existing) return state;
+      const confirmed = new Map(state.confirmed);
+      confirmed.set(action.messageId, { ...existing, reactions: action.reactions });
+      return { ...state, confirmed };
+    }
 
     default:
       return state;
@@ -394,10 +412,18 @@ export function useTripChat(
       onSubscribed: () => {
         subscriptionAckedRef.current = true;
         pendingPostSubscribeGapFillRef.current = true;
+        dispatch({ type: "CLEAR_ROOM_ERROR" });
         triggerPostSubscribeGapFill();
       },
       onError: (event: WsChatError) => {
         dispatchRecoverableOrAccessLostError(dispatch, event.error_code);
+      },
+      onReactionUpdate: (event: WsChatReactionUpdate) => {
+        dispatch({
+          type: "UPDATE_REACTIONS",
+          messageId: event.message_id,
+          reactions: event.reactions,
+        });
       },
     });
 
@@ -459,6 +485,7 @@ export function useTripChat(
           content,
           client_message_id: clientMessageId,
           created_at: new Date().toISOString(),
+          reactions: [],
         };
         dispatch({ type: "ADD_PENDING", message: optimistic });
       } else {
@@ -512,6 +539,28 @@ export function useTripChat(
     [performSend],
   );
 
+  const toggleReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      const message = stateRef.current.confirmed.get(messageId);
+      if (!message) return;
+
+      const alreadyReacted = message.reactions.some(
+        (r) =>
+          r.emoji === emoji && r.reacted_by_ids.includes(currentUser.id),
+      );
+
+      try {
+        const reactions = alreadyReacted
+          ? await bffRemoveReaction(tripId, messageId, emoji)
+          : await bffAddReaction(tripId, messageId, emoji);
+        dispatch({ type: "UPDATE_REACTIONS", messageId, reactions });
+      } catch {
+        // Silently ignore — WS will eventually sync state, or user can retry.
+      }
+    },
+    [tripId, currentUser.id],
+  );
+
   return {
     status: state.status,
     errorCode: state.errorCode,
@@ -525,6 +574,7 @@ export function useTripChat(
     loadOlder,
     sendMessage,
     retryPending,
+    toggleReaction,
   };
 }
 
@@ -577,4 +627,5 @@ async function runGapFill(
     if (!res.has_more) return;
     since = res.results[res.results.length - 1].id;
   }
+  dispatch({ type: "WS_ERROR", errorCode: "GAP_FILL_INCOMPLETE" });
 }

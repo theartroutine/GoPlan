@@ -15,6 +15,7 @@ type Props = {
   isLoadingOlder: boolean;
   onLoadOlder: () => void;
   onRetry: (clientMessageId: string) => void;
+  onToggleReaction?: (messageId: string, emoji: string) => void;
 };
 
 const SCROLL_STICK_THRESHOLD_PX = 80;
@@ -42,6 +43,7 @@ export function MessageList({
   isLoadingOlder,
   onLoadOlder,
   onRetry,
+  onToggleReaction,
 }: Props) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -139,9 +141,19 @@ export function MessageList({
       ref={scrollerRef}
       className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3 py-3 sm:px-4"
     >
-      {hasMoreOlder && isLoadingOlder && (
-        <div className="flex justify-center py-2">
-          <Spinner />
+      {hasMoreOlder && (
+        <div className="flex justify-center py-1.5">
+          {isLoadingOlder ? (
+            <Spinner />
+          ) : (
+            <button
+              type="button"
+              onClick={onLoadOlder}
+              className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Load earlier
+            </button>
+          )}
         </div>
       )}
       {messages.length === 0 ? (
@@ -170,7 +182,9 @@ export function MessageList({
               showAvatar={!continuesNext && !isOwn}
               showMeta={!continuesNext}
               isGroupContinuation={continuesPrev}
+              currentUserId={currentUserId}
               onRetry={cid ? () => onRetry(cid) : undefined}
+              onToggleReaction={onToggleReaction}
             />
           );
         })

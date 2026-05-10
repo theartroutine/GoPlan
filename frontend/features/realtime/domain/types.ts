@@ -22,6 +22,7 @@ export const CHAT_WS_MESSAGE_TYPES = {
   MESSAGE: "chat.message",
   KICKED: "chat.kicked",
   ERROR: "chat.error",
+  REACTION_UPDATE: "chat.reaction_update",
 } as const;
 
 export type ChatWsMessageType =

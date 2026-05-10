@@ -1,3 +1,22 @@
+export const ALLOWED_REACTION_EMOJIS = [
+  "❤️",
+  "😂",
+  "😮",
+  "😢",
+  "😡",
+  "👍",
+  "👎",
+] as const;
+
+export type AllowedEmoji = (typeof ALLOWED_REACTION_EMOJIS)[number];
+
+export type ReactionSummary = {
+  emoji: string;
+  count: number;
+  /** User IDs who reacted with this emoji — used to derive reacted_by_me client-side. */
+  reacted_by_ids: string[];
+};
+
 export type ChatSender = {
   id: string | null;
   display_name: string;
@@ -11,6 +30,7 @@ export type ChatMessage = {
   content: string;
   client_message_id: string | null;
   created_at: string;
+  reactions: ReactionSummary[];
 };
 
 export type ChatHistoryResponse = {
@@ -80,6 +100,13 @@ export type WsChatError = {
   detail: string;
 };
 
+export type WsChatReactionUpdate = {
+  type: "chat.reaction_update";
+  trip_id: string;
+  message_id: string;
+  reactions: ReactionSummary[];
+};
+
 export type WsChatClientMessage = WsChatSubscribe | WsChatUnsubscribe;
 
 export type WsChatServerMessage =
@@ -87,4 +114,5 @@ export type WsChatServerMessage =
   | WsChatUnsubscribed
   | WsChatMessagePush
   | WsChatKicked
-  | WsChatError;
+  | WsChatError
+  | WsChatReactionUpdate;

@@ -6,7 +6,7 @@ import { ChatRoom } from "@/features/chat/presentation/chat-room";
 const chatMock = vi.hoisted(() => ({
   state: {
     status: "ready" as const,
-    errorCode: null,
+    errorCode: null as string | null,
     messages: [],
     pendingClientIds: new Set<string>(),
     failedClientIds: new Set<string>(),
@@ -17,6 +17,7 @@ const chatMock = vi.hoisted(() => ({
     loadOlder: vi.fn(),
     sendMessage: vi.fn(),
     retryPending: vi.fn(),
+    toggleReaction: vi.fn(),
   },
 }));
 
@@ -81,5 +82,20 @@ describe("ChatRoom", () => {
       screen.getByText("This trip is closed — sending new messages is disabled."),
     ).toBeDefined();
     expect(screen.queryByLabelText("Message")).toBeNull();
+  });
+
+  it("surfaces realtime room errors while keeping the composer available", () => {
+    chatMock.state.errorCode = "SERVER_ERROR";
+
+    render(
+      <ChatRoom
+        tripId="trip-1"
+        isTerminal={false}
+        currentUser={CURRENT_USER}
+      />,
+    );
+
+    expect(screen.getByText("Realtime updates are unavailable.")).toBeDefined();
+    expect(screen.getByLabelText("Message")).toBeDefined();
   });
 });

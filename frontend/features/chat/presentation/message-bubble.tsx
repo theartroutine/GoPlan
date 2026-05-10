@@ -2,6 +2,8 @@
 
 import type { ChatMessage } from "@/features/chat/domain/types";
 import { ChatAvatar } from "@/features/chat/presentation/chat-avatar";
+import { EmojiPickerPopover } from "@/features/chat/presentation/emoji-picker-popover";
+import { ReactionBar } from "@/features/chat/presentation/reaction-bar";
 
 type Props = {
   message: ChatMessage;
@@ -16,7 +18,9 @@ type Props = {
   showMeta: boolean;
   /** Tighten top spacing when this bubble continues a group. */
   isGroupContinuation: boolean;
+  currentUserId: string | null;
   onRetry?: () => void;
+  onToggleReaction?: (messageId: string, emoji: string) => void;
 };
 
 function formatTime(iso: string): string {
@@ -45,9 +49,12 @@ export function MessageBubble({
   showAvatar,
   showMeta,
   isGroupContinuation,
+  currentUserId,
   onRetry,
+  onToggleReaction,
 }: Props) {
   const time = formatTime(message.created_at);
+  const canReact = !isPending && !isFailed && onToggleReaction !== undefined;
 
   if (isOwn) {
     return (
@@ -57,13 +64,33 @@ export function MessageBubble({
         data-message-id={message.id}
       >
         <div className="flex min-w-0 max-w-[78%] flex-col items-end gap-0.5 sm:max-w-[60%]">
-          <div
-            className={`min-w-0 rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm ${
-              isPending ? "opacity-70" : ""
-            }`}
-          >
-            <p className="whitespace-pre-wrap break-all">{message.content}</p>
-          </div>
+          {canReact ? (
+            <EmojiPickerPopover
+              align="right"
+              onSelect={(emoji) => onToggleReaction(message.id, emoji)}
+            >
+              <div
+                className={`min-w-0 rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm ${
+                  isPending ? "opacity-70" : ""
+                }`}
+              >
+                <p className="whitespace-pre-wrap break-all">{message.content}</p>
+              </div>
+            </EmojiPickerPopover>
+          ) : (
+            <div
+              className={`min-w-0 rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm ${
+                isPending ? "opacity-70" : ""
+              }`}
+            >
+              <p className="whitespace-pre-wrap break-all">{message.content}</p>
+            </div>
+          )}
+          <ReactionBar
+            reactions={message.reactions}
+            currentUserId={currentUserId}
+            onToggle={(emoji) => onToggleReaction?.(message.id, emoji)}
+          />
           {(showMeta || isPending || isFailed) && (
             <div className="flex items-center gap-2 px-1 text-[10px] text-muted-foreground">
               {isFailed ? (
@@ -108,9 +135,25 @@ export function MessageBubble({
             {senderLabel(message)}
           </span>
         )}
-        <div className="min-w-0 rounded-2xl bg-muted px-3 py-2 text-sm text-foreground shadow-sm">
-          <p className="whitespace-pre-wrap break-all">{message.content}</p>
-        </div>
+        {canReact ? (
+          <EmojiPickerPopover
+            align="left"
+            onSelect={(emoji) => onToggleReaction(message.id, emoji)}
+          >
+            <div className="min-w-0 rounded-2xl bg-muted px-3 py-2 text-sm text-foreground shadow-sm">
+              <p className="whitespace-pre-wrap break-all">{message.content}</p>
+            </div>
+          </EmojiPickerPopover>
+        ) : (
+          <div className="min-w-0 rounded-2xl bg-muted px-3 py-2 text-sm text-foreground shadow-sm">
+            <p className="whitespace-pre-wrap break-all">{message.content}</p>
+          </div>
+        )}
+        <ReactionBar
+          reactions={message.reactions}
+          currentUserId={currentUserId}
+          onToggle={(emoji) => onToggleReaction?.(message.id, emoji)}
+        />
         {showMeta && (
           <span className="px-1 text-[10px] text-muted-foreground">{time}</span>
         )}

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from chat.models import ALLOWED_REACTION_EMOJIS
+
 
 class SendChatMessageSerializer(serializers.Serializer):
     content = serializers.CharField(
@@ -9,6 +11,15 @@ class SendChatMessageSerializer(serializers.Serializer):
         trim_whitespace=True,
     )
     client_message_id = serializers.UUIDField()
+
+
+class AddReactionSerializer(serializers.Serializer):
+    emoji = serializers.CharField(max_length=8)
+
+    def validate_emoji(self, value):
+        if value not in ALLOWED_REACTION_EMOJIS:
+            raise serializers.ValidationError("Unsupported emoji.")
+        return value
 
 
 class ChatMessageListQuerySerializer(serializers.Serializer):

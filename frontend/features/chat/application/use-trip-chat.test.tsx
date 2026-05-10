@@ -56,6 +56,7 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
     content: "hello",
     client_message_id: null,
     created_at: "2026-05-08T10:00:00Z",
+    reactions: [],
     ...overrides,
   };
 }
@@ -228,6 +229,48 @@ describe("useTripChat", () => {
         "first-after-subscribe",
       ]);
     });
+  });
+
+  it("surfaces an error when reconnect gap-fill reaches its safety cap", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [
+        makeMessage({
+          id: "history-latest",
+          created_at: "2026-05-08T10:00:00Z",
+        }),
+      ],
+      next_cursor: null,
+    });
+    chatApiMock.bffGapFillChatMessages.mockImplementation(async () => {
+      const callNumber = chatApiMock.bffGapFillChatMessages.mock.calls.length;
+      return {
+        results: [
+          makeMessage({
+            id: `gap-${callNumber}`,
+            created_at: `2026-05-08T10:${String(callNumber + 1).padStart(2, "0")}:00Z`,
+          }),
+        ],
+        has_more: true,
+      };
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onSubscribed: (e: unknown) => void;
+      };
+      listeners.onSubscribed({ type: "chat.subscribed", trip_id: TRIP_ID });
+    });
+
+    await waitFor(() => {
+      expect(result.current.errorCode).toBe("GAP_FILL_INCOMPLETE");
+    });
+    expect(chatApiMock.bffGapFillChatMessages).toHaveBeenCalledTimes(50);
   });
 
   it("does not label generic HTTP 400 history errors as invalid message content", async () => {
