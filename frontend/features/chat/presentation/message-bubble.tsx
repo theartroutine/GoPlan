@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, Square, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, CircleDashed, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
@@ -155,40 +155,60 @@ export function MessageBubble({
     setDeleteDialogOpen(false);
   };
 
-  const actionControlsEl = canRemove || canSelect ? (
+  const selectTriggerBtn = canSelect ? (
+    <button
+      type="button"
+      onClick={() => onToggleSelected?.(message.id)}
+      aria-label="Select message"
+      className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <CircleDashed size={14} />
+    </button>
+  ) : null;
+
+  const trashBtn = canRemove ? (
+    <button
+      type="button"
+      onClick={openDeleteDialog}
+      aria-label="Remove message"
+      className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+    >
+      <Trash2 size={15} />
+    </button>
+  ) : null;
+
+  // Hover action controls (hidden in selection mode).
+  // Own: [Select][Trash] so reading right-to-left from bubble → Emoji, Trash, Select.
+  // Other: [Trash][Select] so reading left-to-right from bubble → Emoji, Trash, Select.
+  const actionControlsEl = (canRemove || canSelect) && !isSelectionMode ? (
     <div
       className={`flex shrink-0 items-center gap-0.5 transition-opacity sm:opacity-0 ${
-        isHovered || deleteDialogOpen || isSelectionMode
+        isHovered || deleteDialogOpen
           ? "sm:opacity-100"
           : "sm:pointer-events-none"
       }`}
     >
-      {canSelect && (
-        <button
-          type="button"
-          onClick={() => onToggleSelected?.(message.id)}
-          aria-label="Select message"
-          aria-pressed={isSelected}
-          className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
-            isSelected
-              ? "bg-primary/10 text-primary"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
-          }`}
-        >
-          {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
-        </button>
-      )}
-      {canRemove && !isSelectionMode && (
-        <button
-          type="button"
-          onClick={openDeleteDialog}
-          aria-label="Remove message"
-          className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-        >
-          <Trash2 size={15} />
-        </button>
+      {isOwn ? (
+        <>{selectTriggerBtn}{trashBtn}</>
+      ) : (
+        <>{trashBtn}{selectTriggerBtn}</>
       )}
     </div>
+  ) : null;
+
+  // Circular checkbox shown at edge of the row in selection mode.
+  const edgeCheckboxEl = canSelect && isSelectionMode ? (
+    <button
+      type="button"
+      onClick={() => onToggleSelected?.(message.id)}
+      aria-label="Select message"
+      aria-pressed={isSelected}
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+        isSelected ? "text-primary" : "text-muted-foreground hover:text-foreground"
+      } ${isOwn ? "" : "self-center"}`}
+    >
+      {isSelected ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+    </button>
   ) : null;
 
   const bubbleEl = (
@@ -294,7 +314,7 @@ export function MessageBubble({
       <>
         <div
           {...commonRowProps}
-          className={`flex w-full justify-end ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
+          className={`flex w-full items-center justify-end gap-1 ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
         >
           <div className="flex min-w-0 max-w-[78%] flex-col items-end gap-0.5 sm:max-w-[60%]">
             {/* Smiley trigger sits to the LEFT of the own bubble */}
@@ -326,6 +346,7 @@ export function MessageBubble({
               </div>
             )}
           </div>
+          {edgeCheckboxEl}
         </div>
         {deleteDialogEl}
       </>
@@ -339,6 +360,7 @@ export function MessageBubble({
         {...commonRowProps}
         className={`flex w-full items-end gap-2 ${isGroupContinuation ? "mt-0.5" : "mt-3"}`}
       >
+        {edgeCheckboxEl}
         <div className="w-8 shrink-0">
           {showAvatar && (
             <ChatAvatar
