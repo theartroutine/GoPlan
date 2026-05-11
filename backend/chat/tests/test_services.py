@@ -11,6 +11,7 @@ from rest_framework.test import APITestCase
 from chat.models import ChatMessage
 from chat.services import (
     ChatInvalidContentError,
+    add_reaction,
     list_chat_messages,
     send_chat_message,
 )
@@ -195,6 +196,57 @@ class ListChatMessagesServiceTests(APITestCase):
         )
         self.assertEqual([m["content"] for m in next_page["results"]], ["four"])
         self.assertFalse(next_page["has_more"])
+
+    @patch("chat.services._push_reaction_update")
+    def test_updated_since_returns_existing_message_mutations(self, mock_push):
+        before_update = timezone.now()
+
+        add_reaction(
+            user=self.captain,
+            trip_id=self.trip.id,
+            message_id=self.messages[0].id,
+            emoji="👍",
+        )
+
+        page = list_chat_messages(
+            user=self.member,
+            trip_id=self.trip.id,
+            updated_since=before_update,
+            limit=10,
+        )
+
+        self.assertEqual([m["content"] for m in page["results"]], ["one"])
+        self.assertEqual(page["results"][0]["reactions"][0]["emoji"], "👍")
+        self.assertFalse(page["has_more"])
+
+    def test_updated_since_id_paginates_same_timestamp_mutations(self):
+        same_updated_at = timezone.now()
+        ChatMessage.objects.filter(
+            pk__in=[message.pk for message in self.messages]
+        ).update(updated_at=same_updated_at)
+        before_updates = same_updated_at - timedelta(seconds=1)
+
+        first_page = list_chat_messages(
+            user=self.member,
+            trip_id=self.trip.id,
+            updated_since=before_updates,
+            limit=1,
+        )
+        second_page = list_chat_messages(
+            user=self.member,
+            trip_id=self.trip.id,
+            updated_since=first_page["results"][-1]["updated_at"],
+            updated_since_id=first_page["results"][-1]["id"],
+            limit=10,
+        )
+
+        returned_ids = {
+            first_page["results"][0]["id"],
+            *[message["id"] for message in second_page["results"]],
+        }
+        self.assertEqual(returned_ids, {str(message.id) for message in self.messages})
+        self.assertTrue(first_page["has_more"])
+        self.assertFalse(second_page["has_more"])
 
     def test_non_member_cannot_list(self):
         with self.assertRaises(TripNotFoundError):

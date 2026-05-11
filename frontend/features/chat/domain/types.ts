@@ -30,6 +30,7 @@ export type ChatMessage = {
   content: string;
   client_message_id: string | null;
   created_at: string;
+  updated_at: string;
   is_deleted_for_everyone: boolean;
   deleted_for_everyone_at: string | null;
   deleted_for_everyone_by_id: string | null;
@@ -44,6 +45,11 @@ export type ChatHistoryResponse = {
 };
 
 export type ChatGapFillResponse = {
+  results: ChatMessage[];
+  has_more: boolean;
+};
+
+export type ChatUpdateSyncResponse = {
   results: ChatMessage[];
   has_more: boolean;
 };

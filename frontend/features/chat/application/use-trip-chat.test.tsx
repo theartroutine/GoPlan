@@ -6,6 +6,7 @@ import type { ChatMessage } from "@/features/chat/domain/types";
 const chatApiMock = vi.hoisted(() => ({
   bffListChatHistory: vi.fn(),
   bffGapFillChatMessages: vi.fn(),
+  bffSyncUpdatedChatMessages: vi.fn(),
   bffSendChatMessage: vi.fn(),
   bffAddReaction: vi.fn(),
   bffRemoveReaction: vi.fn(),
@@ -62,6 +63,7 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
     content: "hello",
     client_message_id: null,
     created_at: "2026-05-08T10:00:00Z",
+    updated_at: "2026-05-08T10:00:00Z",
     is_deleted_for_everyone: false,
     deleted_for_everyone_at: null,
     deleted_for_everyone_by_id: null,
@@ -77,6 +79,11 @@ describe("useTripChat", () => {
     vi.clearAllMocks();
     chatApiMock.bffListChatHistory.mockReset();
     chatApiMock.bffGapFillChatMessages.mockReset();
+    chatApiMock.bffSyncUpdatedChatMessages.mockReset();
+    chatApiMock.bffSyncUpdatedChatMessages.mockResolvedValue({
+      results: [],
+      has_more: false,
+    });
     chatApiMock.bffSendChatMessage.mockReset();
     chatApiMock.bffAddReaction.mockReset();
     chatApiMock.bffRemoveReaction.mockReset();
@@ -202,6 +209,141 @@ describe("useTripChat", () => {
       expect(result.current.messages.map((m) => m.id)).toEqual([
         "history-latest",
         "missed-between-history-and-subscribe",
+      ]);
+    });
+  });
+
+  it("syncs existing message mutations after subscribe using the pre-gap-fill watermark", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [
+        makeMessage({
+          id: "existing",
+          content: "before reaction",
+          created_at: "2026-05-08T10:00:00Z",
+          updated_at: "2026-05-08T10:00:00Z",
+        }),
+      ],
+      next_cursor: null,
+    });
+    chatApiMock.bffGapFillChatMessages.mockResolvedValueOnce({
+      results: [
+        makeMessage({
+          id: "new-message",
+          content: "new while offline",
+          created_at: "2026-05-08T10:03:00Z",
+          updated_at: "2026-05-08T10:03:00Z",
+        }),
+      ],
+      has_more: false,
+    });
+    chatApiMock.bffSyncUpdatedChatMessages.mockResolvedValueOnce({
+      results: [
+        makeMessage({
+          id: "existing",
+          content: "before reaction",
+          created_at: "2026-05-08T10:00:00Z",
+          updated_at: "2026-05-08T10:02:00Z",
+          reactions: [{ emoji: "👍", count: 1, reacted_by_ids: ["user-other"] }],
+        }),
+      ],
+      has_more: false,
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onSubscribed: (e: unknown) => void;
+      };
+      listeners.onSubscribed({ type: "chat.subscribed", trip_id: TRIP_ID });
+    });
+
+    await waitFor(() => {
+      expect(chatApiMock.bffSyncUpdatedChatMessages).toHaveBeenCalledWith(
+        TRIP_ID,
+        { updated_since: "2026-05-08T10:00:00Z", limit: 100 },
+      );
+    });
+    await waitFor(() => {
+      expect(result.current.messages.map((m) => m.id)).toEqual([
+        "existing",
+        "new-message",
+      ]);
+      expect(result.current.messages[0].reactions).toEqual([
+        { emoji: "👍", count: 1, reacted_by_ids: ["user-other"] },
+      ]);
+    });
+  });
+
+  it("continues updated sync with the last returned message id when a page has more", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [
+        makeMessage({
+          id: "existing",
+          created_at: "2026-05-08T10:00:00Z",
+          updated_at: "2026-05-08T10:00:00Z",
+        }),
+      ],
+      next_cursor: null,
+    });
+    chatApiMock.bffGapFillChatMessages.mockResolvedValueOnce({
+      results: [],
+      has_more: false,
+    });
+    chatApiMock.bffSyncUpdatedChatMessages
+      .mockResolvedValueOnce({
+        results: [
+          makeMessage({
+            id: "same-time-a",
+            created_at: "2026-05-08T10:01:00Z",
+            updated_at: "2026-05-08T10:02:00Z",
+          }),
+        ],
+        has_more: true,
+      })
+      .mockResolvedValueOnce({
+        results: [
+          makeMessage({
+            id: "same-time-b",
+            created_at: "2026-05-08T10:01:30Z",
+            updated_at: "2026-05-08T10:02:00Z",
+          }),
+        ],
+        has_more: false,
+      });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onSubscribed: (e: unknown) => void;
+      };
+      listeners.onSubscribed({ type: "chat.subscribed", trip_id: TRIP_ID });
+    });
+
+    await waitFor(() => {
+      expect(chatApiMock.bffSyncUpdatedChatMessages).toHaveBeenNthCalledWith(
+        2,
+        TRIP_ID,
+        {
+          updated_since: "2026-05-08T10:02:00Z",
+          updated_since_id: "same-time-a",
+          limit: 100,
+        },
+      );
+    });
+    await waitFor(() => {
+      expect(result.current.messages.map((m) => m.id)).toEqual([
+        "existing",
+        "same-time-a",
+        "same-time-b",
       ]);
     });
   });
@@ -763,5 +905,35 @@ describe("useTripChat", () => {
     });
 
     expect(result.current.errorCode).toBeNull();
+  });
+
+  it("ignores duplicate reaction clicks while a reaction mutation is in flight", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "react-once" })],
+      next_cursor: null,
+    });
+
+    let resolveReaction:
+      | ((value: { emoji: string; count: number; reacted_by_ids: string[] }[]) => void)
+      | null = null;
+    chatApiMock.bffAddReaction.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReaction = resolve;
+      }),
+    );
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    await act(async () => {
+      const first = result.current.toggleReaction("react-once", "👍");
+      const second = result.current.toggleReaction("react-once", "👍");
+      resolveReaction?.([{ emoji: "👍", count: 1, reacted_by_ids: [ME.id] }]);
+      await Promise.all([first, second]);
+    });
+
+    expect(chatApiMock.bffAddReaction).toHaveBeenCalledTimes(1);
   });
 });

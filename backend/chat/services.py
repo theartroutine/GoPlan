@@ -231,6 +231,7 @@ def build_chat_message_payload(message: ChatMessage, *, viewer=None) -> dict:
             str(message.client_message_id) if message.client_message_id else None
         ),
         "created_at": message.created_at.isoformat(),
+        "updated_at": message.updated_at.isoformat(),
         "is_deleted_for_everyone": is_deleted,
         "deleted_for_everyone_at": (
             message.deleted_for_everyone_at.isoformat()
@@ -488,6 +489,42 @@ def _gap_fill_page(trip: Trip, *, user, since, limit: int) -> dict:
     }
 
 
+def _updated_since_page(
+    trip: Trip,
+    *,
+    user,
+    updated_since,
+    updated_since_id=None,
+    limit: int,
+) -> dict:
+    queryset = (
+        ChatMessage.objects
+        .filter(trip=trip)
+        .exclude(hidden_for_users__user=user)
+    )
+    if updated_since_id is not None:
+        queryset = queryset.filter(
+            Q(updated_at__gt=updated_since)
+            | Q(updated_at=updated_since, id__gt=updated_since_id)
+        )
+    else:
+        queryset = queryset.filter(updated_at__gt=updated_since)
+
+    rows = list(
+        queryset
+        .select_related("sender")
+        .prefetch_related("reactions")
+        .order_by("updated_at", "id")[: limit + 1]
+    )
+    page = rows[:limit]
+    return {
+        "results": [
+            build_chat_message_payload(message, viewer=user) for message in page
+        ],
+        "has_more": len(rows) > limit,
+    }
+
+
 def list_chat_messages(
     *,
     user,
@@ -495,8 +532,19 @@ def list_chat_messages(
     cursor: str | None = None,
     limit: int | None = None,
     since=None,
+    updated_since=None,
+    updated_since_id=None,
 ) -> dict:
     trip = _get_active_chat_trip(trip_id, user)
+    if updated_since is not None:
+        resolved_limit = min(limit or GAP_FILL_DEFAULT_LIMIT, GAP_FILL_MAX_LIMIT)
+        return _updated_since_page(
+            trip,
+            user=user,
+            updated_since=updated_since,
+            updated_since_id=updated_since_id,
+            limit=resolved_limit,
+        )
     if since is not None:
         resolved_limit = min(limit or GAP_FILL_DEFAULT_LIMIT, GAP_FILL_MAX_LIMIT)
         return _gap_fill_page(trip, user=user, since=since, limit=resolved_limit)
@@ -580,14 +628,17 @@ def delete_message_for_everyone(*, user, trip_id, message_id) -> ChatMessage:
             )
 
         MessageReaction.objects.filter(message=message).delete()
+        deleted_at = timezone.now()
         message.content = ""
-        message.deleted_for_everyone_at = timezone.now()
+        message.deleted_for_everyone_at = deleted_at
         message.deleted_for_everyone_by = user
+        message.updated_at = deleted_at
         message.save(
             update_fields=[
                 "content",
                 "deleted_for_everyone_at",
                 "deleted_for_everyone_by",
+                "updated_at",
             ]
         )
         transaction.on_commit(lambda: _push_message_deleted(message))
@@ -617,6 +668,11 @@ def _push_reaction_update(*, message: ChatMessage, reactions: list[dict]) -> Non
             message.id,
             exc_info=True,
         )
+
+
+def _touch_message_updated_at(message: ChatMessage) -> None:
+    message.updated_at = timezone.now()
+    ChatMessage.objects.filter(pk=message.pk).update(updated_at=message.updated_at)
 
 
 def add_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
@@ -649,6 +705,7 @@ def add_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
         except IntegrityError:
             raise ChatReactionDuplicateError("You already reacted with this emoji.")
 
+        _touch_message_updated_at(message)
         reactions = _fresh_reactions_payload(message.id)
         transaction.on_commit(
             lambda: _push_reaction_update(message=message, reactions=reactions)
@@ -680,6 +737,7 @@ def remove_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
         if deleted_count == 0:
             raise ChatReactionNotFoundError("Reaction not found.")
 
+        _touch_message_updated_at(message)
         reactions = _fresh_reactions_payload(message.id)
         transaction.on_commit(
             lambda: _push_reaction_update(message=message, reactions=reactions)

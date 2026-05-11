@@ -172,4 +172,30 @@ describe("BFF /api/trips/[tripId]/chat/messages", () => {
       }),
     );
   });
+
+  it("forwards updated_since param on GET mutation sync", async () => {
+    const { GET } = await import(
+      "@/app/api/trips/[tripId]/chat/messages/route"
+    );
+    const lastMessageId = "00000000-0000-4000-8000-000000000123";
+
+    protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
+      ok: true,
+      data: { results: [], has_more: false },
+      status: 200,
+    });
+
+    await GET(
+      buildGetRequest(
+        `?updated_since=2026-05-08T10%3A00%3A00.000Z&updated_since_id=${lastMessageId}&limit=100`,
+      ) as never,
+      { params: Promise.resolve({ tripId: TRIP_ID }) },
+    );
+
+    expect(protectedUpstreamMock.protectedUpstreamCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: `updated_since=2026-05-08T10%3A00%3A00.000Z&updated_since_id=${lastMessageId}&limit=100`,
+      }),
+    );
+  });
 });

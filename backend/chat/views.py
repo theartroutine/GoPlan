@@ -70,14 +70,7 @@ def _map_service_error(exc: Exception) -> tuple[str, int] | None:
     return None
 
 
-class TripChatMessagesAPIView(APIView):
-    permission_classes = CHAT_PERMISSIONS
-
-    def get_throttles(self):
-        if self.request.method == "POST":
-            self.throttle_scope = "chat_send"
-        return super().get_throttles()
-
+class ChatAPIView(APIView):
     def handle_exception(self, exc):
         if isinstance(exc, Throttled):
             response = _error_response(
@@ -89,6 +82,15 @@ class TripChatMessagesAPIView(APIView):
                 response["Retry-After"] = str(math.ceil(exc.wait))
             return response
         return super().handle_exception(exc)
+
+
+class TripChatMessagesAPIView(ChatAPIView):
+    permission_classes = CHAT_PERMISSIONS
+
+    def get_throttles(self):
+        if self.request.method == "POST":
+            self.throttle_scope = "chat_send"
+        return super().get_throttles()
 
     def get(self, request, trip_id):
         serializer = ChatMessageListQuerySerializer(data=request.query_params)
@@ -107,6 +109,8 @@ class TripChatMessagesAPIView(APIView):
                 cursor=data.get("cursor"),
                 limit=data.get("limit"),
                 since=data.get("since"),
+                updated_since=data.get("updated_since"),
+                updated_since_id=data.get("updated_since_id"),
             )
         except Exception as exc:
             mapped = _map_service_error(exc)
@@ -152,7 +156,7 @@ class TripChatMessagesAPIView(APIView):
         )
 
 
-class ChatMessageDeletionAPIView(APIView):
+class ChatMessageDeletionAPIView(ChatAPIView):
     permission_classes = CHAT_PERMISSIONS
 
     def get_throttles(self):
@@ -207,7 +211,7 @@ class ChatMessageDeletionAPIView(APIView):
             return _error_response(str(exc), error_code, status_code)
 
 
-class ChatMessagesBulkHideAPIView(APIView):
+class ChatMessagesBulkHideAPIView(ChatAPIView):
     permission_classes = CHAT_PERMISSIONS
     throttle_scope = "chat_delete"
 
@@ -239,7 +243,7 @@ class ChatMessagesBulkHideAPIView(APIView):
         )
 
 
-class MessageReactionAPIView(APIView):
+class MessageReactionAPIView(ChatAPIView):
     permission_classes = CHAT_PERMISSIONS
 
     def get_throttles(self):

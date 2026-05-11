@@ -8,7 +8,7 @@ import {
 type RouteContext = { params: Promise<{ tripId: string }> };
 
 function buildQuery(searchParams: URLSearchParams): string | undefined {
-  const allowed = ["cursor", "since", "limit"];
+  const allowed = ["cursor", "since", "updated_since", "updated_since_id", "limit"];
   const out = new URLSearchParams();
   for (const key of allowed) {
     const value = searchParams.get(key);

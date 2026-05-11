@@ -4,6 +4,7 @@ import type {
   ChatGapFillResponse,
   ChatHistoryResponse,
   ChatMessage,
+  ChatUpdateSyncResponse,
   DeleteChatMessageMode,
   HideChatMessagesResult,
   ReactionSummary,
@@ -82,6 +83,33 @@ export async function bffGapFillChatMessages(
       since: options.since,
       limit: options.limit ?? GAP_FILL_DEFAULT_LIMIT,
     },
+  });
+  return res.data;
+}
+
+export type SyncUpdatedChatOptions = {
+  updated_since: string;
+  updated_since_id?: string;
+  limit?: number;
+};
+
+/**
+ * `GET .../messages?updated_since=&limit=` — ascending mutation catch-up page.
+ * This covers updates to already-known messages, such as reactions and delete
+ * tombstones, which `since=<message_id>` cannot see.
+ */
+export async function bffSyncUpdatedChatMessages(
+  tripId: string,
+  options: SyncUpdatedChatOptions,
+): Promise<ChatUpdateSyncResponse> {
+  const params: Record<string, string | number> = {
+    updated_since: options.updated_since,
+    limit: options.limit ?? GAP_FILL_DEFAULT_LIMIT,
+  };
+  if (options.updated_since_id) params.updated_since_id = options.updated_since_id;
+
+  const res = await bff.get<ChatUpdateSyncResponse>(chatBasePath(tripId), {
+    params,
   });
   return res.data;
 }

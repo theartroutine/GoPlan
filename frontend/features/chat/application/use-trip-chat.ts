@@ -13,6 +13,7 @@ import {
   bffListChatHistory,
   bffRemoveReaction,
   bffSendChatMessage,
+  bffSyncUpdatedChatMessages,
 } from "@/features/chat/infrastructure/chat-api";
 import { joinChatRoom } from "@/features/chat/infrastructure/chat-ws-bridge";
 
@@ -383,6 +384,7 @@ export function useTripChat(
   const subscriptionAckedRef = useRef(false);
   const pendingPostSubscribeGapFillRef = useRef(false);
   const gapFillInFlightRef = useRef(false);
+  const reactionInFlightRef = useRef<Set<string>>(new Set());
 
   const triggerPostSubscribeGapFill = useCallback(() => {
     if (!subscriptionAckedRef.current) return;
@@ -390,9 +392,15 @@ export function useTripChat(
     if (gapFillInFlightRef.current) return;
     if (stateRef.current.status !== "ready") return;
 
+    const updatedSince = getLatestUpdatedAt(stateRef.current);
     pendingPostSubscribeGapFillRef.current = false;
     gapFillInFlightRef.current = true;
-    void runGapFill(tripIdRef.current, stateRef, dispatch).finally(() => {
+    void runPostSubscribeCatchUp(
+      tripIdRef.current,
+      stateRef,
+      dispatch,
+      updatedSince,
+    ).finally(() => {
       gapFillInFlightRef.current = false;
     });
   }, []);
@@ -405,6 +413,7 @@ export function useTripChat(
     subscriptionAckedRef.current = false;
     pendingPostSubscribeGapFillRef.current = false;
     gapFillInFlightRef.current = false;
+    reactionInFlightRef.current.clear();
     dispatch({ type: "INIT_START" });
 
     bffListChatHistory(tripId, { limit: HISTORY_PAGE_SIZE })
@@ -511,6 +520,7 @@ export function useTripChat(
       }
 
       if (!isRetry) {
+        const now = new Date().toISOString();
         const optimistic: ChatMessage = {
           id: makeOptimisticId(clientMessageId),
           trip_id: tripId,
@@ -521,7 +531,8 @@ export function useTripChat(
           },
           content,
           client_message_id: clientMessageId,
-          created_at: new Date().toISOString(),
+          created_at: now,
+          updated_at: now,
           is_deleted_for_everyone: false,
           deleted_for_everyone_at: null,
           deleted_for_everyone_by_id: null,
@@ -583,8 +594,10 @@ export function useTripChat(
 
   const toggleReaction = useCallback(
     async (messageId: string, emoji: string) => {
+      if (reactionInFlightRef.current.has(messageId)) return;
       const message = stateRef.current.confirmed.get(messageId);
       if (!message) return;
+      reactionInFlightRef.current.add(messageId);
 
       // Each user has at most one reaction per message. Find their current one.
       // If they clicked the same emoji → toggle it off. Otherwise → add/replace.
@@ -601,6 +614,8 @@ export function useTripChat(
       } catch (error) {
         const errorCode = extractErrorCode(error, "REACTION_FAILED");
         dispatchRecoverableOrAccessLostError(dispatch, errorCode);
+      } finally {
+        reactionInFlightRef.current.delete(messageId);
       }
     },
     [tripId, currentUser.id],
@@ -658,6 +673,27 @@ export function useTripChat(
 
 // -------- Internal helpers --------
 
+function getLatestUpdatedAt(state: ChatState): string | null {
+  let latest: string | null = null;
+  for (const m of state.confirmed.values()) {
+    const candidate = m.updated_at || m.created_at;
+    if (latest === null || candidate > latest) latest = candidate;
+  }
+  return latest;
+}
+
+async function runPostSubscribeCatchUp(
+  tripId: string,
+  stateRef: { current: ChatState },
+  dispatch: React.Dispatch<ChatAction>,
+  updatedSince: string | null,
+): Promise<void> {
+  await runGapFill(tripId, stateRef, dispatch);
+  if (updatedSince !== null) {
+    await runUpdatedSync(tripId, updatedSince, dispatch);
+  }
+}
+
 async function runGapFill(
   tripId: string,
   stateRef: { current: ChatState },
@@ -706,4 +742,37 @@ async function runGapFill(
     since = res.results[res.results.length - 1].id;
   }
   dispatch({ type: "WS_ERROR", errorCode: "GAP_FILL_INCOMPLETE" });
+}
+
+async function runUpdatedSync(
+  tripId: string,
+  updatedSince: string,
+  dispatch: React.Dispatch<ChatAction>,
+): Promise<void> {
+  let updatedSinceCursor = updatedSince;
+  let updatedSinceId: string | undefined;
+  for (let page = 0; page < GAP_FILL_MAX_PAGES; page += 1) {
+    let res;
+    try {
+      const options = {
+        updated_since: updatedSinceCursor,
+        limit: GAP_FILL_PAGE_SIZE,
+        ...(updatedSinceId ? { updated_since_id: updatedSinceId } : {}),
+      };
+      res = await bffSyncUpdatedChatMessages(tripId, options);
+    } catch (error) {
+      const errorCode = extractErrorCode(error, "UPDATE_SYNC_FAILED");
+      if (isRoomAccessLostError(errorCode)) {
+        dispatch({ type: "KICKED" });
+      }
+      return;
+    }
+    if (res.results.length === 0) return;
+    dispatch({ type: "UPSERT_CONFIRMED", messages: res.results });
+    if (!res.has_more) return;
+    const last = res.results[res.results.length - 1];
+    updatedSinceCursor = last.updated_at;
+    updatedSinceId = last.id;
+  }
+  dispatch({ type: "WS_ERROR", errorCode: "UPDATE_SYNC_INCOMPLETE" });
 }

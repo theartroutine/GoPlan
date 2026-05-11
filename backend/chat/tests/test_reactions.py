@@ -6,6 +6,7 @@ from uuid import uuid4
 from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework.test import APITestCase
+from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.tokens import AccessToken
 from chat.models import (
@@ -503,6 +504,29 @@ class MessageReactionAPIAddTests(APITestCase):
                 _reaction_detail_url(self.trip.id, self.message.id, emoji),
                 **_auth(self.member),
             )
+
+    def test_reaction_throttle_returns_error_code(self):
+        original_rates = ScopedRateThrottle.THROTTLE_RATES
+        ScopedRateThrottle.THROTTLE_RATES = {"chat_reaction": "1/minute"}
+        self.addCleanup(setattr, ScopedRateThrottle, "THROTTLE_RATES", original_rates)
+        second_message = _make_message(self.trip, self.captain)
+
+        first = self.client.post(
+            self.url,
+            {"emoji": "👍"},
+            format="json",
+            **_auth(self.member),
+        )
+        throttled = self.client.post(
+            _reactions_url(self.trip.id, second_message.id),
+            {"emoji": "😂"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(throttled.status_code, 429)
+        self.assertEqual(throttled.data["error_code"], "THROTTLED")
 
 
 class MessageReactionAPIRemoveTests(APITestCase):

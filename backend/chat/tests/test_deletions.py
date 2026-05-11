@@ -7,6 +7,7 @@ from uuid import uuid4
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
+from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.tokens import AccessToken
 from chat.models import ChatMessage, MessageReaction
@@ -140,6 +141,26 @@ class ChatMessageDeletionServiceTests(APITestCase):
         self.assertEqual(payload["reactions"], [])
         self.assertIsNone(payload["delete_for_everyone_until"])
         self.assertFalse(payload["can_delete_for_everyone"])
+
+    def test_updated_since_returns_delete_tombstone(self):
+        before_delete = timezone.now()
+
+        delete_message_for_everyone(
+            user=self.captain,
+            trip_id=self.trip.id,
+            message_id=self.message.id,
+        )
+
+        page = list_chat_messages(
+            user=self.member,
+            trip_id=self.trip.id,
+            updated_since=before_delete,
+            limit=10,
+        )
+
+        self.assertEqual([m["id"] for m in page["results"]], [str(self.message.id)])
+        self.assertTrue(page["results"][0]["is_deleted_for_everyone"])
+        self.assertEqual(page["results"][0]["content"], "")
 
     def test_payload_exposes_server_delete_window_for_active_message(self):
         payload = build_chat_message_payload(self.message, viewer=self.captain)
@@ -307,6 +328,29 @@ class ChatMessageDeletionAPITests(APITestCase):
             **_auth(self.member),
         )
         self.assertEqual(page.data["results"], [])
+
+    def test_delete_throttle_returns_error_code(self):
+        original_rates = ScopedRateThrottle.THROTTLE_RATES
+        ScopedRateThrottle.THROTTLE_RATES = {"chat_delete": "1/minute"}
+        self.addCleanup(setattr, ScopedRateThrottle, "THROTTLE_RATES", original_rates)
+        second = _make_message(self.trip, self.captain, "Second delete")
+
+        first = self.client.delete(
+            _message_url(self.trip.id, self.message.id),
+            {"mode": "for_me"},
+            format="json",
+            **_auth(self.member),
+        )
+        throttled = self.client.delete(
+            _message_url(self.trip.id, second.id),
+            {"mode": "for_me"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(throttled.status_code, 429)
+        self.assertEqual(throttled.data["error_code"], "THROTTLED")
 
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)

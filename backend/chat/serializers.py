@@ -37,12 +37,21 @@ class BulkHideChatMessagesSerializer(serializers.Serializer):
 class ChatMessageListQuerySerializer(serializers.Serializer):
     cursor = serializers.CharField(required=False)
     since = serializers.UUIDField(required=False)
+    updated_since = serializers.DateTimeField(required=False)
+    updated_since_id = serializers.UUIDField(required=False)
     limit = serializers.IntegerField(required=False)
 
     def validate(self, attrs):
-        if "cursor" in attrs and "since" in attrs:
+        pagination_modes = [
+            name for name in ("cursor", "since", "updated_since") if name in attrs
+        ]
+        if len(pagination_modes) > 1:
             raise serializers.ValidationError(
-                {"detail": "cursor and since are mutually exclusive."}
+                {"detail": "cursor, since, and updated_since are mutually exclusive."}
+            )
+        if "updated_since_id" in attrs and "updated_since" not in attrs:
+            raise serializers.ValidationError(
+                {"detail": "updated_since_id requires updated_since."}
             )
 
         limit = attrs.get("limit")
@@ -52,7 +61,7 @@ class ChatMessageListQuerySerializer(serializers.Serializer):
         if limit < 1:
             raise serializers.ValidationError({"limit": "Limit must be at least 1."})
 
-        max_limit = 200 if "since" in attrs else 100
+        max_limit = 200 if "since" in attrs or "updated_since" in attrs else 100
         if limit > max_limit:
             raise serializers.ValidationError(
                 {"limit": f"Limit must be less than or equal to {max_limit}."}

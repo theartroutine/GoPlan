@@ -37,6 +37,7 @@ class ChatMessage(models.Model):
     content = models.TextField()
     client_message_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     deleted_for_everyone_at = models.DateTimeField(null=True, blank=True)
     deleted_for_everyone_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -50,6 +51,7 @@ class ChatMessage(models.Model):
         ordering = ["-created_at", "-id"]
         indexes = [
             models.Index(fields=["trip", "-created_at", "-id"]),
+            models.Index(fields=["trip", "updated_at", "id"]),
         ]
         constraints = [
             models.UniqueConstraint(
