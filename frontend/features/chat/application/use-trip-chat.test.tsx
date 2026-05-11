@@ -283,6 +283,57 @@ describe("useTripChat", () => {
     });
   });
 
+  it("does not add unloaded history messages from updated sync mutation pages", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [
+        makeMessage({
+          id: "loaded-latest",
+          content: "loaded window",
+          created_at: "2026-05-08T10:00:00Z",
+          updated_at: "2026-05-08T10:00:00Z",
+        }),
+      ],
+      next_cursor: "older-cursor",
+    });
+    chatApiMock.bffGapFillChatMessages.mockResolvedValueOnce({
+      results: [],
+      has_more: false,
+    });
+    chatApiMock.bffSyncUpdatedChatMessages.mockResolvedValueOnce({
+      results: [
+        makeMessage({
+          id: "unloaded-old-message",
+          content: "",
+          created_at: "2026-05-08T09:00:00Z",
+          updated_at: "2026-05-08T10:02:00Z",
+          is_deleted_for_everyone: true,
+          deleted_for_everyone_at: "2026-05-08T10:02:00Z",
+          delete_for_everyone_until: null,
+          can_delete_for_everyone: false,
+        }),
+      ],
+      has_more: false,
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onSubscribed: (e: unknown) => void;
+      };
+      listeners.onSubscribed({ type: "chat.subscribed", trip_id: TRIP_ID });
+    });
+
+    await waitFor(() => {
+      expect(chatApiMock.bffSyncUpdatedChatMessages).toHaveBeenCalled();
+    });
+    expect(result.current.messages.map((m) => m.id)).toEqual(["loaded-latest"]);
+    expect(result.current.hasMoreOlder).toBe(true);
+  });
+
   it("continues updated sync with the last returned message id when a page has more", async () => {
     chatApiMock.bffListChatHistory.mockResolvedValue({
       results: [
@@ -290,6 +341,16 @@ describe("useTripChat", () => {
           id: "existing",
           created_at: "2026-05-08T10:00:00Z",
           updated_at: "2026-05-08T10:00:00Z",
+        }),
+        makeMessage({
+          id: "same-time-b",
+          created_at: "2026-05-08T09:58:00Z",
+          updated_at: "2026-05-08T09:59:00Z",
+        }),
+        makeMessage({
+          id: "same-time-a",
+          created_at: "2026-05-08T09:57:00Z",
+          updated_at: "2026-05-08T09:59:00Z",
         }),
       ],
       next_cursor: null,
@@ -303,8 +364,9 @@ describe("useTripChat", () => {
         results: [
           makeMessage({
             id: "same-time-a",
-            created_at: "2026-05-08T10:01:00Z",
+            created_at: "2026-05-08T09:57:00Z",
             updated_at: "2026-05-08T10:02:00Z",
+            reactions: [{ emoji: "👍", count: 1, reacted_by_ids: ["user-other"] }],
           }),
         ],
         has_more: true,
@@ -313,8 +375,9 @@ describe("useTripChat", () => {
         results: [
           makeMessage({
             id: "same-time-b",
-            created_at: "2026-05-08T10:01:30Z",
+            created_at: "2026-05-08T09:58:00Z",
             updated_at: "2026-05-08T10:02:00Z",
+            reactions: [{ emoji: "😂", count: 1, reacted_by_ids: ["user-other"] }],
           }),
         ],
         has_more: false,
@@ -345,10 +408,12 @@ describe("useTripChat", () => {
     });
     await waitFor(() => {
       expect(result.current.messages.map((m) => m.id)).toEqual([
-        "existing",
         "same-time-a",
         "same-time-b",
+        "existing",
       ]);
+      expect(result.current.messages[0].reactions[0].emoji).toBe("👍");
+      expect(result.current.messages[1].reactions[0].emoji).toBe("😂");
     });
   });
 
@@ -812,6 +877,41 @@ describe("useTripChat", () => {
 
     expect(result.current.messages[0].is_deleted_for_everyone).toBe(true);
     expect(result.current.messages[0].content).toBe("");
+  });
+
+  it("does not add unloaded history messages from message_deleted websocket tombstones", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [makeMessage({ id: "loaded-message", content: "visible" })],
+      next_cursor: "older-cursor",
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onMessageDeleted: (e: unknown) => void;
+      };
+      listeners.onMessageDeleted({
+        type: "chat.message_deleted",
+        trip_id: TRIP_ID,
+        message: makeMessage({
+          id: "unloaded-old-message",
+          content: "",
+          created_at: "2026-05-08T09:00:00Z",
+          updated_at: "2026-05-08T10:02:00Z",
+          is_deleted_for_everyone: true,
+          deleted_for_everyone_at: "2026-05-08T10:02:00Z",
+          delete_for_everyone_until: null,
+          can_delete_for_everyone: false,
+        }),
+      });
+    });
+
+    expect(result.current.messages.map((m) => m.id)).toEqual(["loaded-message"]);
+    expect(result.current.hasMoreOlder).toBe(true);
   });
 
   it("does not resurrect a locally hidden message when a global delete event arrives later", async () => {

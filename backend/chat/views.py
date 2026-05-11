@@ -243,11 +243,11 @@ class ChatMessagesBulkHideAPIView(ChatAPIView):
         )
 
 
-class MessageReactionAPIView(ChatAPIView):
+class MessageReactionCreateAPIView(ChatAPIView):
     permission_classes = CHAT_PERMISSIONS
 
     def get_throttles(self):
-        if self.request.method in {"POST", "DELETE"}:
+        if self.request.method == "POST":
             self.throttle_scope = "chat_reaction"
         return super().get_throttles()
 
@@ -275,6 +275,15 @@ class MessageReactionAPIView(ChatAPIView):
             return _error_response(str(exc), error_code, status_code)
 
         return Response({"reactions": reactions}, status=status.HTTP_201_CREATED)
+
+
+class MessageReactionDetailAPIView(ChatAPIView):
+    permission_classes = CHAT_PERMISSIONS
+
+    def get_throttles(self):
+        if self.request.method == "DELETE":
+            self.throttle_scope = "chat_reaction"
+        return super().get_throttles()
 
     def delete(self, request, trip_id, message_id, emoji):
         try:

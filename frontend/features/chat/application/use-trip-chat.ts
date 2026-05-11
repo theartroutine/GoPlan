@@ -92,6 +92,7 @@ type ChatAction =
     }
   | { type: "LOAD_OLDER_ERROR" }
   | { type: "UPSERT_CONFIRMED"; messages: ChatMessage[] }
+  | { type: "PATCH_CONFIRMED"; messages: ChatMessage[] }
   | { type: "ADD_PENDING"; message: ChatMessage }
   | { type: "CONFIRM_PENDING"; clientMessageId: string; message: ChatMessage }
   | { type: "FAIL_PENDING"; clientMessageId: string }
@@ -190,6 +191,25 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           failed.delete(m.client_message_id);
         }
       }
+      return { ...state, confirmed, pending, failed, errorCode: null };
+    }
+
+    case "PATCH_CONFIRMED": {
+      const confirmed = new Map(state.confirmed);
+      const pending = new Map(state.pending);
+      const failed = new Set(state.failed);
+      let changed = false;
+      for (const m of action.messages) {
+        if (state.hidden.has(m.id)) continue;
+        if (!confirmed.has(m.id)) continue;
+        confirmed.set(m.id, m);
+        changed = true;
+        if (m.client_message_id) {
+          pending.delete(m.client_message_id);
+          failed.delete(m.client_message_id);
+        }
+      }
+      if (!changed) return state;
       return { ...state, confirmed, pending, failed, errorCode: null };
     }
 
@@ -451,7 +471,7 @@ export function useTripChat(
         dispatch({ type: "UPSERT_CONFIRMED", messages: [event.message] });
       },
       onMessageDeleted: (event: WsChatMessageDeleted) => {
-        dispatch({ type: "UPSERT_CONFIRMED", messages: [event.message] });
+        dispatch({ type: "PATCH_CONFIRMED", messages: [event.message] });
       },
       onKicked: () => {
         dispatch({ type: "KICKED" });
@@ -776,7 +796,7 @@ async function runUpdatedSync(
       return;
     }
     if (res.results.length === 0) return;
-    dispatch({ type: "UPSERT_CONFIRMED", messages: res.results });
+    dispatch({ type: "PATCH_CONFIRMED", messages: res.results });
     if (!res.has_more) return;
     const last = res.results[res.results.length - 1];
     updatedSinceCursor = last.updated_at;

@@ -431,6 +431,16 @@ class MessageReactionAPIAddTests(APITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["error_code"], "REACTION_DUPLICATE")
 
+    def test_post_to_reaction_detail_url_returns_405(self):
+        response = self.client.post(
+            _reaction_detail_url(self.trip.id, self.message.id, "👍"),
+            {"emoji": "👍"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 405)
+
     def test_non_member_cannot_react_404(self):
         response = self.client.post(
             self.url,
@@ -563,6 +573,14 @@ class MessageReactionAPIRemoveTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("reactions", response.data)
         self.assertEqual(response.data["reactions"], [])
+
+    def test_delete_to_reaction_collection_url_returns_405(self):
+        response = self.client.delete(
+            _reactions_url(self.trip.id, self.message.id),
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 405)
 
     def test_remove_nonexistent_404(self):
         url = _reaction_detail_url(self.trip.id, self.message.id, "❤️")

@@ -5,7 +5,8 @@ from django.urls import path
 from chat.views import (
     ChatMessageDeletionAPIView,
     ChatMessagesBulkHideAPIView,
-    MessageReactionAPIView,
+    MessageReactionCreateAPIView,
+    MessageReactionDetailAPIView,
     TripChatMessagesAPIView,
 )
 
@@ -21,12 +22,12 @@ urlpatterns = [
     ),
     path(
         "messages/<uuid:message_id>/reactions",
-        MessageReactionAPIView.as_view(),
+        MessageReactionCreateAPIView.as_view(),
         name="reactions",
     ),
     path(
         "messages/<uuid:message_id>/reactions/<str:emoji>",
-        MessageReactionAPIView.as_view(),
+        MessageReactionDetailAPIView.as_view(),
         name="reaction-detail",
     ),
 ]
