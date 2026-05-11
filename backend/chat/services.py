@@ -116,6 +116,11 @@ def _ensure_message_accepts_reactions(message: ChatMessage) -> None:
         raise ChatMessageDeletedError("Deleted messages cannot be reacted to.")
 
 
+def _ensure_message_visible_to_user(message: ChatMessage, user) -> None:
+    if ChatMessageHiddenForUser.objects.filter(message=message, user=user).exists():
+        raise TripNotFoundError("Trip not found.")
+
+
 def _get_active_chat_trip(trip_id, user, *, for_update: bool = False) -> Trip:
     if not _is_profile_completed_for_chat(user):
         raise TripNotFoundError("Trip not found.")
@@ -629,6 +634,7 @@ def add_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
             )
         except ChatMessage.DoesNotExist as exc:
             raise TripNotFoundError("Trip not found.") from exc
+        _ensure_message_visible_to_user(message, user)
         _ensure_message_accepts_reactions(message)
 
         # Enforce one reaction per user per message: atomically replace any
@@ -664,6 +670,7 @@ def remove_reaction(*, user, trip_id, message_id, emoji: str) -> list[dict]:
             )
         except ChatMessage.DoesNotExist as exc:
             raise TripNotFoundError("Trip not found.") from exc
+        _ensure_message_visible_to_user(message, user)
         _ensure_message_accepts_reactions(message)
 
         deleted_count, _ = MessageReaction.objects.filter(

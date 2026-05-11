@@ -8,7 +8,12 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
-from chat.models import ALLOWED_REACTION_EMOJIS, ChatMessage, MessageReaction
+from chat.models import (
+    ALLOWED_REACTION_EMOJIS,
+    ChatMessage,
+    ChatMessageHiddenForUser,
+    MessageReaction,
+)
 from chat.services import (
     ChatReactionDuplicateError,
     ChatServiceError,
@@ -238,6 +243,20 @@ class AddReactionServiceTests(APITestCase):
 
         self.assertEqual(ctx.exception.error_code, "MESSAGE_DELETED")
 
+    def test_add_reaction_rejects_message_hidden_for_user(self):
+        ChatMessageHiddenForUser.objects.create(
+            message=self.message,
+            user=self.member,
+        )
+
+        with self.assertRaises(TripNotFoundError):
+            add_reaction(
+                user=self.member,
+                trip_id=self.trip.id,
+                message_id=self.message.id,
+                emoji="👍",
+            )
+
 
 class RemoveReactionServiceTests(APITestCase):
 
@@ -328,6 +347,25 @@ class RemoveReactionServiceTests(APITestCase):
             )
 
         self.assertEqual(ctx.exception.error_code, "MESSAGE_DELETED")
+
+    def test_remove_reaction_rejects_message_hidden_for_user(self):
+        MessageReaction.objects.create(
+            message=self.message,
+            user=self.member,
+            emoji="👍",
+        )
+        ChatMessageHiddenForUser.objects.create(
+            message=self.message,
+            user=self.member,
+        )
+
+        with self.assertRaises(TripNotFoundError):
+            remove_reaction(
+                user=self.member,
+                trip_id=self.trip.id,
+                message_id=self.message.id,
+                emoji="👍",
+            )
 
 
 # -------- API (view) tests --------
@@ -434,6 +472,22 @@ class MessageReactionAPIAddTests(APITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["error_code"], "MESSAGE_DELETED")
 
+    def test_add_reaction_hidden_message_returns_404(self):
+        ChatMessageHiddenForUser.objects.create(
+            message=self.message,
+            user=self.member,
+        )
+
+        response = self.client.post(
+            self.url,
+            {"emoji": "👍"},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "TRIP_NOT_FOUND")
+
     def test_all_allowed_emojis_accepted(self):
         # Each emoji from a different user or same user sequentially
         for emoji in ALLOWED_REACTION_EMOJIS:
@@ -509,6 +563,24 @@ class MessageReactionAPIRemoveTests(APITestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
+
+    def test_remove_reaction_hidden_message_returns_404(self):
+        self._add_reaction(self.member, "👍")
+        ChatMessageHiddenForUser.objects.create(
+            message=self.message,
+            user=self.member,
+        )
+
+        url = _reaction_detail_url(self.trip.id, self.message.id, "👍")
+        response = self.client.delete(url, **_auth(self.member))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "TRIP_NOT_FOUND")
+        self.assertTrue(MessageReaction.objects.filter(
+            message=self.message,
+            user=self.member,
+            emoji="👍",
+        ).exists())
 
     def test_reactions_in_message_history_payload(self):
         """Reactions must appear in chat history responses."""
