@@ -106,4 +106,44 @@ describe("chat-ws-bridge", () => {
       }),
     );
   });
+
+  it("keeps the latest same-trip subscription active when an older handle leaves", () => {
+    const onFirstMessage = vi.fn();
+    const onSecondMessage = vi.fn();
+
+    const firstHandle = joinChatRoom("trip-1", {
+      onMessage: onFirstMessage,
+    });
+    const secondHandle = joinChatRoom("trip-1", {
+      onMessage: onSecondMessage,
+    });
+    wsManagerMock.send.mockClear();
+
+    firstHandle.leave();
+
+    expect(wsManagerMock.send).not.toHaveBeenCalled();
+
+    wsManagerMock.emit(CHAT_WS_MESSAGE_TYPES.MESSAGE, {
+      type: CHAT_WS_MESSAGE_TYPES.MESSAGE,
+      trip_id: "trip-1",
+      message: { id: "msg-1" },
+    });
+
+    expect(onFirstMessage).not.toHaveBeenCalled();
+    expect(onSecondMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: CHAT_WS_MESSAGE_TYPES.MESSAGE,
+        trip_id: "trip-1",
+      }),
+    );
+
+    wsManagerMock.send.mockClear();
+
+    secondHandle.leave();
+
+    expect(wsManagerMock.send).toHaveBeenCalledWith({
+      type: CHAT_WS_MESSAGE_TYPES.UNSUBSCRIBE,
+      trip_id: "trip-1",
+    });
+  });
 });

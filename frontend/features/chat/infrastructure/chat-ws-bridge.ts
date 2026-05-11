@@ -26,12 +26,13 @@ type ChatRoomListeners = {
 };
 
 type ChatRoomHandle = {
-  /** Idempotent. Stops listening and sends `chat.unsubscribe` if connected. */
+  /** Idempotent. If current, stops listening and sends `chat.unsubscribe` if connected. */
   leave: () => void;
 };
 
 type RoomState = {
   listeners: ChatRoomListeners;
+  owner: symbol;
   /** True after we've sent `chat.subscribe` for the current socket session. */
   sentSubscribe: boolean;
 };
@@ -116,8 +117,8 @@ function ensureLifecycle(): void {
  * Subscribe the current WebSocket session to the chat room of `tripId`.
  *
  * Safe to call multiple times for the same `tripId`; subsequent calls replace
- * the listener set. Returns a handle whose `leave()` is the only correct way
- * to undo the subscription.
+ * the listener set. Older handles become stale, and the latest handle's
+ * `leave()` is the only correct way to undo the subscription.
  *
  * If the socket is not currently OPEN, the subscribe message is queued by way
  * of the active-rooms registry — the bridge will emit `chat.subscribe` as soon
@@ -129,9 +130,11 @@ export function joinChatRoom(
 ): ChatRoomHandle {
   ensureLifecycle();
 
+  const owner = Symbol(tripId);
   const existing = rooms.get(tripId);
   if (existing) {
     existing.listeners = listeners;
+    existing.owner = owner;
     if (!existing.sentSubscribe && wsManager.getStatus() === "connected") {
       existing.sentSubscribe = wsManager.send({
         type: CHAT_WS_MESSAGE_TYPES.SUBSCRIBE,
@@ -145,7 +148,7 @@ export function joinChatRoom(
         type: CHAT_WS_MESSAGE_TYPES.SUBSCRIBE,
         trip_id: tripId,
       });
-    rooms.set(tripId, { listeners, sentSubscribe: Boolean(sent) });
+    rooms.set(tripId, { listeners, owner, sentSubscribe: Boolean(sent) });
   }
 
   let left = false;
@@ -155,6 +158,7 @@ export function joinChatRoom(
       left = true;
       const room = rooms.get(tripId);
       if (!room) return;
+      if (room.owner !== owner) return;
       rooms.delete(tripId);
       if (wsManager.getStatus() === "connected" && room.sentSubscribe) {
         wsManager.send({
