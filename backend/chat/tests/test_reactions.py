@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 from uuid import uuid4
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.test import APITestCase
 from rest_framework.throttling import ScopedRateThrottle
@@ -122,6 +122,21 @@ class BuildReactionsPayloadTests(APITestCase):
         payload = build_reactions_payload(self.message)
         emojis = {r["emoji"] for r in payload}
         self.assertEqual(emojis, {"❤️", "😂"})
+
+    def test_one_user_can_have_only_one_reaction_per_message_at_db_level(self):
+        MessageReaction.objects.create(
+            message=self.message,
+            user=self.member,
+            emoji="❤️",
+        )
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                MessageReaction.objects.create(
+                    message=self.message,
+                    user=self.member,
+                    emoji="😂",
+                )
 
 
 class AddReactionServiceTests(APITestCase):

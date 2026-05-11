@@ -50,8 +50,14 @@ class ChatMessage(models.Model):
     class Meta:
         ordering = ["-created_at", "-id"]
         indexes = [
-            models.Index(fields=["trip", "-created_at", "-id"]),
-            models.Index(fields=["trip", "updated_at", "id"]),
+            models.Index(
+                fields=["trip", "-created_at", "-id"],
+                name="chat_chatme_trip_id_854021_idx",
+            ),
+            models.Index(
+                fields=["trip", "updated_at", "id"],
+                name="chat_chatme_trip_id_d13dbb_idx",
+            ),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -114,8 +120,8 @@ class MessageReaction(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["message", "user", "emoji"],
-                name="chat_unique_message_user_emoji",
+                fields=["message", "user"],
+                name="chat_unique_message_user_reaction",
             )
         ]
 
