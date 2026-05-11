@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from test_helpers import create_completed_user
@@ -61,3 +63,19 @@ class TripChatMembershipHookTests(APITestCase):
             trip_id=self.trip.id,
             user_id=self.member.id,
         )
+
+    def test_leave_trip_locks_trip_before_membership(self):
+        with patch("chat.services.notify_trip_chat_member_removed"):
+            with CaptureQueriesContext(connection) as queries:
+                leave_trip(self.trip.id, self.member)
+
+        lock_queries = [
+            query["sql"]
+            for query in queries.captured_queries
+            if "FOR UPDATE" in query["sql"]
+        ]
+
+        self.assertGreaterEqual(len(lock_queries), 2)
+        self.assertIn('"trips_trip"', lock_queries[0])
+        self.assertNotIn('"trips_tripmember"', lock_queries[0])
+        self.assertIn('"trips_tripmember"', lock_queries[1])

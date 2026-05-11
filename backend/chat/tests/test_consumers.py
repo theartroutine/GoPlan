@@ -15,6 +15,7 @@ from realtime.consumers import RealtimeConsumer
 from realtime.middleware import WebSocketAuthMiddleware
 from realtime.services import issue_ws_ticket
 from test_helpers import create_completed_user, create_verified_user
+from chat.models import ChatMessage, ChatMessageHiddenForUser
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
 TEST_CHANNEL_LAYERS = {
@@ -78,6 +79,22 @@ def _remove_member(trip, user):
         user=user,
         status=MemberStatus.ACTIVE,
     ).update(status=MemberStatus.REMOVED)
+
+
+@database_sync_to_async
+def _make_chat_message(trip, sender, content="Hidden content"):
+    return ChatMessage.objects.create(
+        trip=trip,
+        sender=sender,
+        sender_display_name_snapshot=sender.display_name,
+        sender_identify_tag_snapshot=sender.identify_tag,
+        content=content,
+    )
+
+
+@database_sync_to_async
+def _hide_chat_message_for_user(message, user):
+    return ChatMessageHiddenForUser.objects.create(message=message, user=user)
 
 
 async def _connect(user):
@@ -256,6 +273,41 @@ class ChatConsumerTests(TransactionTestCase):
         self.assertEqual(pushed["type"], "chat.message_deleted")
         self.assertEqual(pushed["message"]["id"], "message-1")
         self.assertTrue(pushed["message"]["is_deleted_for_everyone"])
+
+        await communicator.disconnect()
+
+    async def test_deleted_push_does_not_resurface_message_hidden_for_viewer(self):
+        captain = await _create_user("ws-hide-cap@example.com", "wshcap", "WHC001")
+        member = await _create_user("ws-hide-mem@example.com", "wshmem", "WHM001")
+        trip = await _make_trip(captain)
+        await _add_member(trip, member)
+        message = await _make_chat_message(trip, captain)
+        await _hide_chat_message_for_user(message, member)
+        communicator, connected = await _connect(member)
+        self.assertTrue(connected)
+
+        await communicator.send_json_to(
+            {"type": "chat.subscribe", "trip_id": str(trip.id)}
+        )
+        await communicator.receive_json_from(timeout=1)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"trip_chat_{trip.id}",
+            {
+                "type": "chat_message_deleted_push",
+                "data": {
+                    "type": "chat.message_deleted",
+                    "trip_id": str(trip.id),
+                    "message": {
+                        "id": str(message.id),
+                        "is_deleted_for_everyone": True,
+                    },
+                },
+            },
+        )
+
+        self.assertTrue(await communicator.receive_nothing(timeout=0.2))
 
         await communicator.disconnect()
 

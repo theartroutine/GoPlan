@@ -8,6 +8,7 @@ from django.conf import settings
 
 from chat.services import (
     ensure_user_can_access_trip_chat,
+    is_chat_message_hidden_for_user,
     personalize_chat_event_payload_for_viewer,
 )
 from trips.services import TripNotFoundError
@@ -226,6 +227,15 @@ class RealtimeConsumer(BaseConsumer):
             logger.exception("Failed to verify chat access before deleted-message push")
             return
 
+        message = data.get("message")
+        message_id = message.get("id") if isinstance(message, dict) else None
+        if await database_sync_to_async(is_chat_message_hidden_for_user)(
+            user=self.user,
+            trip_id=trip_id,
+            message_id=message_id,
+        ):
+            return
+
         await self.send_json(
             personalize_chat_event_payload_for_viewer(data, self.user)
         )
@@ -252,6 +262,14 @@ class RealtimeConsumer(BaseConsumer):
             return
         except Exception:
             logger.exception("Failed to verify chat access before reaction push")
+            return
+
+        message_id = data.get("message_id")
+        if await database_sync_to_async(is_chat_message_hidden_for_user)(
+            user=self.user,
+            trip_id=trip_id,
+            message_id=message_id,
+        ):
             return
 
         await self.send_json(data)

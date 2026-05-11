@@ -11,6 +11,7 @@ export type UpstreamCallResult =
       ok: boolean;
       status: number;
       data: unknown;
+      headers?: Headers;
     }
   | {
       kind: "network_error";
@@ -43,6 +44,7 @@ export async function callAuthUpstream(
       ok: response.ok,
       status: response.status,
       data,
+      headers: response.headers,
     };
   } catch {
     return {

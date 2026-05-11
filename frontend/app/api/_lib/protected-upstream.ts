@@ -38,6 +38,19 @@ type ProtectedCallFailure = {
 
 export type ProtectedCallResult = ProtectedCallSuccess | ProtectedCallFailure;
 
+function buildProtectedErrorResponse(
+  data: unknown,
+  status: number,
+  upstreamHeaders?: Headers,
+): NextResponse {
+  const response = NextResponse.json(data, { status });
+  const retryAfter = upstreamHeaders?.get("Retry-After");
+  if (retryAfter) {
+    response.headers.set("Retry-After", retryAfter);
+  }
+  return response;
+}
+
 export async function protectedUpstreamCall(
   options: ProtectedCallOptions,
 ): Promise<ProtectedCallResult> {
@@ -85,12 +98,13 @@ export async function protectedUpstreamCall(
       clearRefreshAuthErrorMarker(jar);
       return {
         ok: false,
-        response: NextResponse.json(
+        response: buildProtectedErrorResponse(
           normalizeErrorPayload(
             upstream.data,
             extractDetail(upstream.data, "Request failed."),
           ),
-          { status: upstream.status },
+          upstream.status,
+          upstream.headers,
         ),
       };
     }
@@ -157,12 +171,13 @@ export async function protectedUpstreamCall(
     clearRefreshAuthErrorMarker(jar);
     return {
       ok: false,
-      response: NextResponse.json(
+      response: buildProtectedErrorResponse(
         normalizeErrorPayload(
           retryUpstream.data,
           extractDetail(retryUpstream.data, "Request failed."),
         ),
-        { status: retryUpstream.status },
+        retryUpstream.status,
+        retryUpstream.headers,
       ),
     };
   }

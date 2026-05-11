@@ -265,7 +265,11 @@ describe("useTripChat", () => {
     await waitFor(() => {
       expect(chatApiMock.bffSyncUpdatedChatMessages).toHaveBeenCalledWith(
         TRIP_ID,
-        { updated_since: "2026-05-08T10:00:00Z", limit: 100 },
+        {
+          updated_since: "2026-05-08T10:00:00Z",
+          updated_since_id: "existing",
+          limit: 100,
+        },
       );
     });
     await waitFor(() => {

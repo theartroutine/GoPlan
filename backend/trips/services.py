@@ -726,11 +726,7 @@ def leave_trip(trip_id, actor) -> TripMember:
     Actor must be an ACTIVE member.
     """
     with transaction.atomic():
-        trip, membership = _get_visible_trip_membership(
-            trip_id,
-            actor,
-            for_update=True,
-        )
+        trip, membership = _get_active_trip_membership_for_update(trip_id, actor)
 
         # Terminal state guard — checked first for consistent ordering with other services
         if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
@@ -756,6 +752,24 @@ def leave_trip(trip_id, actor) -> TripMember:
         )
 
     return membership
+
+
+def _get_active_trip_membership_for_update(trip_id, actor) -> tuple[Trip, TripMember]:
+    try:
+        trip = Trip.objects.select_for_update().get(pk=trip_id)
+    except Trip.DoesNotExist:
+        raise TripNotFoundError("Trip not found.")
+
+    try:
+        membership = TripMember.objects.select_for_update().get(
+            trip=trip,
+            user=actor,
+            status=MemberStatus.ACTIVE,
+        )
+    except TripMember.DoesNotExist:
+        raise TripNotFoundError("Trip not found.")
+
+    return trip, membership
 
 
 def _ensure_captain_can_mutate(trip, actor):

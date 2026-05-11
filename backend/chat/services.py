@@ -121,6 +121,19 @@ def _ensure_message_visible_to_user(message: ChatMessage, user) -> None:
         raise TripNotFoundError("Trip not found.")
 
 
+def is_chat_message_hidden_for_user(*, user, trip_id, message_id) -> bool:
+    try:
+        normalized_message_id = UUID(str(message_id))
+    except (TypeError, ValueError):
+        return False
+
+    return ChatMessageHiddenForUser.objects.filter(
+        message_id=normalized_message_id,
+        message__trip_id=trip_id,
+        user=user,
+    ).exists()
+
+
 def _get_active_chat_trip(trip_id, user, *, for_update: bool = False) -> Trip:
     if not _is_profile_completed_for_chat(user):
         raise TripNotFoundError("Trip not found.")

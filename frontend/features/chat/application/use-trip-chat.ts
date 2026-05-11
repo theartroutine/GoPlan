@@ -36,6 +36,7 @@ export type ChatRoomStatus = "loading" | "ready" | "error" | "kicked";
 type SendLockReason = "terminal";
 
 type SendOutcome = "ok" | "duplicate" | "failed";
+type UpdatedSyncCursor = { updatedAt: string; id: string };
 
 export type UseTripChatResult = {
   status: ChatRoomStatus;
@@ -392,7 +393,7 @@ export function useTripChat(
     if (gapFillInFlightRef.current) return;
     if (stateRef.current.status !== "ready") return;
 
-    const updatedSince = getLatestUpdatedAt(stateRef.current);
+    const updatedSince = getLatestUpdatedCursor(stateRef.current);
     pendingPostSubscribeGapFillRef.current = false;
     gapFillInFlightRef.current = true;
     void runPostSubscribeCatchUp(
@@ -673,11 +674,17 @@ export function useTripChat(
 
 // -------- Internal helpers --------
 
-function getLatestUpdatedAt(state: ChatState): string | null {
-  let latest: string | null = null;
+function getLatestUpdatedCursor(state: ChatState): UpdatedSyncCursor | null {
+  let latest: UpdatedSyncCursor | null = null;
   for (const m of state.confirmed.values()) {
     const candidate = m.updated_at || m.created_at;
-    if (latest === null || candidate > latest) latest = candidate;
+    if (
+      latest === null ||
+      candidate > latest.updatedAt ||
+      (candidate === latest.updatedAt && m.id > latest.id)
+    ) {
+      latest = { updatedAt: candidate, id: m.id };
+    }
   }
   return latest;
 }
@@ -686,11 +693,11 @@ async function runPostSubscribeCatchUp(
   tripId: string,
   stateRef: { current: ChatState },
   dispatch: React.Dispatch<ChatAction>,
-  updatedSince: string | null,
+  updatedSince: UpdatedSyncCursor | null,
 ): Promise<void> {
   await runGapFill(tripId, stateRef, dispatch);
   if (updatedSince !== null) {
-    await runUpdatedSync(tripId, updatedSince, dispatch);
+    await runUpdatedSync(tripId, updatedSince.updatedAt, updatedSince.id, dispatch);
   }
 }
 
@@ -747,10 +754,11 @@ async function runGapFill(
 async function runUpdatedSync(
   tripId: string,
   updatedSince: string,
+  initialUpdatedSinceId: string | undefined,
   dispatch: React.Dispatch<ChatAction>,
 ): Promise<void> {
   let updatedSinceCursor = updatedSince;
-  let updatedSinceId: string | undefined;
+  let updatedSinceId = initialUpdatedSinceId;
   for (let page = 0; page < GAP_FILL_MAX_PAGES; page += 1) {
     let res;
     try {
