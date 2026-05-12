@@ -33,12 +33,23 @@ def _create_user(email="notif@example.com", password="testpass123!"):
     return create_verified_user(email=email, password=password)
 
 
+@database_sync_to_async
+def _issue_ws_ticket(user):
+    return issue_ws_ticket(user)
+
+
+@database_sync_to_async
+def _increment_auth_version(user):
+    user.auth_version += 1
+    user.save(update_fields=["auth_version"])
+
+
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
 class NotificationConsumerTests(TransactionTestCase):
 
     async def test_authenticated_user_joins_notification_group(self):
         user = await _create_user()
-        ticket = issue_ws_ticket(user)
+        ticket = await _issue_ws_ticket(user)
 
         communicator = WebsocketCommunicator(
             _build_application(),
@@ -69,7 +80,7 @@ class NotificationConsumerTests(TransactionTestCase):
 
     async def test_receives_notification_push(self):
         user = await _create_user(email="push@example.com")
-        ticket = issue_ws_ticket(user)
+        ticket = await _issue_ws_ticket(user)
 
         communicator = WebsocketCommunicator(
             _build_application(),
@@ -110,6 +121,35 @@ class NotificationConsumerTests(TransactionTestCase):
         self.assertFalse(response["notification"]["is_read"])
 
         await communicator.disconnect()
+
+    async def test_notification_push_closes_revoked_session(self):
+        user = await _create_user(email="push-revoked@example.com")
+        ticket = await _issue_ws_ticket(user)
+
+        communicator = WebsocketCommunicator(
+            _build_application(),
+            "ws/realtime",
+            subprotocols=[settings.WS_SUBPROTOCOL, ticket],
+        )
+        await communicator.connect()
+
+        await _increment_auth_version(user)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"notifications_{user.id}",
+            {
+                "type": "notification_push",
+                "data": {"type": "notification", "event": "created"},
+            },
+        )
+
+        response = await communicator.receive_json_from(timeout=1)
+        self.assertEqual(response, {"type": "auth_error", "code": "auth_failed"})
+
+        close = await communicator.receive_output()
+        self.assertEqual(close["type"], "websocket.close")
+        self.assertEqual(close["code"], 4001)
 
     async def test_unauthenticated_rejected(self):
         path = "ws/realtime"

@@ -8,6 +8,7 @@ import {
   clearRefreshAuthErrorMarker,
   clearRefreshSession,
   handleRefreshFailure,
+  setNoStoreHeaders,
   setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
 import {
@@ -38,6 +39,17 @@ type ProtectedCallFailure = {
 
 export type ProtectedCallResult = ProtectedCallSuccess | ProtectedCallFailure;
 
+const UNSAFE_PATH_ENCODING_PATTERN = /%(?:00|2f|5c)/i;
+const DOT_SEGMENT_PATTERN = /(?:^|\/)\.{1,2}(?:\/|$)/;
+
+function hasUnsafePathSegment(path: string): boolean {
+  return (
+    !path.startsWith("/api/") ||
+    UNSAFE_PATH_ENCODING_PATTERN.test(path) ||
+    DOT_SEGMENT_PATTERN.test(path)
+  );
+}
+
 function buildProtectedErrorResponse(
   data: unknown,
   status: number,
@@ -60,6 +72,19 @@ export async function protectedUpstreamCall(
   const fullPath = options.query
     ? `${options.path}?${options.query}`
     : options.path;
+
+  if (hasUnsafePathSegment(options.path)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          detail: "Invalid route parameter.",
+          error_code: "INVALID_ROUTE_PARAMETER",
+        },
+        { status: 400 },
+      ),
+    };
+  }
 
   const buildHeaders = (token: string): Record<string, string> => {
     const h: Record<string, string> = { Authorization: `Bearer ${token}` };
@@ -207,6 +232,7 @@ export function buildProtectedResponse(
     : NextResponse.json(data, { status });
   if (refreshedAccessToken) {
     response.headers.set("X-Access-Token", refreshedAccessToken);
+    setNoStoreHeaders(response);
   }
   return response;
 }

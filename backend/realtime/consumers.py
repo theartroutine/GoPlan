@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -11,6 +12,7 @@ from chat.services import (
     is_chat_message_hidden_for_user,
     personalize_chat_event_payload_for_viewer,
 )
+from realtime.services import is_ws_user_session_valid
 from trips.services import TripNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,8 @@ class BaseConsumer(AsyncJsonWebsocketConsumer):
     async def receive_json(self, content, **kwargs):
         if self.scope["user"].is_anonymous:
             return
+        if not await self._ensure_current_session():
+            return
         if content.get("type") == "ping":
             await self.send_json({"type": "pong"})
             return
@@ -57,6 +61,17 @@ class BaseConsumer(AsyncJsonWebsocketConsumer):
     async def handle_message(self, content):
         """Override in subclasses for domain-specific messages."""
         pass
+
+    async def _ensure_current_session(self):
+        is_valid = await database_sync_to_async(is_ws_user_session_valid)(
+            self.scope["user"]
+        )
+        if is_valid:
+            return True
+
+        await self.send_json({"type": "auth_error", "code": "auth_failed"})
+        await self.close(code=settings.WS_CLOSE_CODES["AUTH_FAILED"])
+        return False
 
 
 class RealtimeConsumer(BaseConsumer):
@@ -103,6 +118,9 @@ class RealtimeConsumer(BaseConsumer):
 
     async def notification_push(self, event):
         """Channel layer handler — forward notification to WebSocket client."""
+        if not await self._ensure_current_session():
+            return
+
         data = event.get("data")
         if data is None:
             logger.warning("notification_push received event without 'data' key")
@@ -129,36 +147,59 @@ class RealtimeConsumer(BaseConsumer):
             return
 
         try:
-            await database_sync_to_async(ensure_user_can_access_trip_chat)(
-                self.user,
-                trip_id,
-            )
-        except TripNotFoundError:
+            canonical_trip_id = str(UUID(trip_id))
+        except (TypeError, ValueError):
             await self._send_chat_error(trip_id, "TRIP_NOT_FOUND", "Trip not found.")
             return
-        except Exception:
-            logger.exception("Failed to verify chat access for trip %s", trip_id)
+
+        group_name = self._chat_group_name(canonical_trip_id)
+        if group_name in self._chat_groups:
+            await self.send_json({"type": "chat.subscribed", "trip_id": canonical_trip_id})
+            return
+
+        max_chat_subscriptions = settings.WS_MAX_CHAT_SUBSCRIPTIONS_PER_CONNECTION
+        if len(self._chat_groups) >= max_chat_subscriptions:
             await self._send_chat_error(
-                trip_id,
+                canonical_trip_id,
+                "SUBSCRIPTION_LIMIT_REACHED",
+                "Too many chat subscriptions.",
+            )
+            return
+
+        try:
+            await database_sync_to_async(ensure_user_can_access_trip_chat)(
+                self.user,
+                canonical_trip_id,
+            )
+        except TripNotFoundError:
+            await self._send_chat_error(
+                canonical_trip_id,
+                "TRIP_NOT_FOUND",
+                "Trip not found.",
+            )
+            return
+        except Exception:
+            logger.exception("Failed to verify chat access for trip %s", canonical_trip_id)
+            await self._send_chat_error(
+                canonical_trip_id,
                 "SERVER_ERROR",
                 "Could not join chat.",
             )
             return
 
-        group_name = self._chat_group_name(trip_id)
         try:
             await self.channel_layer.group_add(group_name, self.channel_name)
         except Exception:
             logger.exception("Failed to join chat group %s", group_name)
             await self._send_chat_error(
-                trip_id,
+                canonical_trip_id,
                 "SERVER_ERROR",
                 "Could not join chat.",
             )
             return
 
         self._chat_groups.add(group_name)
-        await self.send_json({"type": "chat.subscribed", "trip_id": trip_id})
+        await self.send_json({"type": "chat.subscribed", "trip_id": canonical_trip_id})
 
     async def _handle_chat_unsubscribe(self, content):
         trip_id = content.get("trip_id")
@@ -176,6 +217,9 @@ class RealtimeConsumer(BaseConsumer):
         await self.send_json({"type": "chat.unsubscribed", "trip_id": trip_id})
 
     async def chat_message_push(self, event):
+        if not await self._ensure_current_session():
+            return
+
         data = event.get("data")
         if not isinstance(data, dict):
             logger.warning("chat_message_push received event without dict data")
@@ -204,6 +248,9 @@ class RealtimeConsumer(BaseConsumer):
         )
 
     async def chat_message_deleted_push(self, event):
+        if not await self._ensure_current_session():
+            return
+
         data = event.get("data")
         if not isinstance(data, dict):
             logger.warning("chat_message_deleted_push received event without dict data")
@@ -241,6 +288,9 @@ class RealtimeConsumer(BaseConsumer):
         )
 
     async def chat_reaction_update_push(self, event):
+        if not await self._ensure_current_session():
+            return
+
         data = event.get("data")
         if not isinstance(data, dict):
             logger.warning("chat_reaction_update_push received event without dict data")
@@ -275,6 +325,9 @@ class RealtimeConsumer(BaseConsumer):
         await self.send_json(data)
 
     async def chat_kicked_push(self, event):
+        if not await self._ensure_current_session():
+            return
+
         data = event.get("data")
         if not isinstance(data, dict):
             logger.warning("chat_kicked_push received event without dict data")

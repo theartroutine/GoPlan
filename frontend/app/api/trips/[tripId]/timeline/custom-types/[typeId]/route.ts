@@ -12,7 +12,7 @@ export async function PATCH(
   const { tripId, typeId } = await params;
   const body = await request.text();
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/timeline/custom-types/${typeId}`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/timeline/custom-types/${encodeURIComponent(typeId)}`,
     method: "PATCH",
     body,
     authorization: request.headers.get("Authorization"),
@@ -27,7 +27,7 @@ export async function DELETE(
 ) {
   const { tripId, typeId } = await params;
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/timeline/custom-types/${typeId}`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/timeline/custom-types/${encodeURIComponent(typeId)}`,
     method: "DELETE",
     authorization: request.headers.get("Authorization"),
   });

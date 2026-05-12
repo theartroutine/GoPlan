@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from uuid import UUID
 
 from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
@@ -98,7 +99,7 @@ def _hide_chat_message_for_user(message, user):
 
 
 async def _connect(user):
-    ticket = issue_ws_ticket(user)
+    ticket = await database_sync_to_async(issue_ws_ticket)(user)
     communicator = WebsocketCommunicator(
         _build_application(),
         "ws/realtime",
@@ -131,6 +132,68 @@ class ChatConsumerTests(TransactionTestCase):
             unsubscribed,
             {"type": "chat.unsubscribed", "trip_id": str(trip.id)},
         )
+
+        await communicator.disconnect()
+
+    async def test_subscribe_uses_canonical_trip_id_for_group(self):
+        captain = await _create_user("ws-canon-cap@example.com", "wscan", "WCN001")
+        trip = await _make_trip(captain)
+        communicator, connected = await _connect(captain)
+        self.assertTrue(connected)
+
+        uppercase_trip_id = str(trip.id).upper()
+        await communicator.send_json_to(
+            {"type": "chat.subscribe", "trip_id": uppercase_trip_id}
+        )
+        subscribed = await communicator.receive_json_from(timeout=1)
+        canonical_trip_id = str(UUID(str(trip.id)))
+        self.assertEqual(
+            subscribed,
+            {"type": "chat.subscribed", "trip_id": canonical_trip_id},
+        )
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"trip_chat_{canonical_trip_id}",
+            {
+                "type": "chat_message_push",
+                "data": {
+                    "type": "chat.message",
+                    "trip_id": canonical_trip_id,
+                    "message": {"id": "canonical-message"},
+                },
+            },
+        )
+
+        pushed = await communicator.receive_json_from(timeout=1)
+        self.assertEqual(pushed["type"], "chat.message")
+        self.assertEqual(pushed["message"]["id"], "canonical-message")
+
+        await communicator.disconnect()
+
+    @override_settings(WS_MAX_CHAT_SUBSCRIPTIONS_PER_CONNECTION=1)
+    async def test_subscribe_enforces_per_connection_cap(self):
+        captain = await _create_user("ws-cap-limit@example.com", "wslimc", "WLC001")
+        member = await _create_user("ws-mem-limit@example.com", "wslimm", "WLM001")
+        trip_one = await _make_trip(captain)
+        trip_two = await _make_trip(captain)
+        await _add_member(trip_one, member)
+        await _add_member(trip_two, member)
+        communicator, connected = await _connect(member)
+        self.assertTrue(connected)
+
+        await communicator.send_json_to(
+            {"type": "chat.subscribe", "trip_id": str(trip_one.id)}
+        )
+        subscribed = await communicator.receive_json_from(timeout=1)
+        self.assertEqual(subscribed["type"], "chat.subscribed")
+
+        await communicator.send_json_to(
+            {"type": "chat.subscribe", "trip_id": str(trip_two.id)}
+        )
+        error = await communicator.receive_json_from(timeout=1)
+        self.assertEqual(error["type"], "chat.error")
+        self.assertEqual(error["error_code"], "SUBSCRIPTION_LIMIT_REACHED")
 
         await communicator.disconnect()
 

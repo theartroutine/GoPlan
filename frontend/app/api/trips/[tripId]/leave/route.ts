@@ -8,7 +8,7 @@ export async function POST(
   const { tripId } = await params;
   const authorization = request.headers.get("Authorization");
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/leave`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/leave`,
     method: "POST",
     authorization,
   });

@@ -13,7 +13,7 @@ export async function DELETE(
   const authorization = request.headers.get("Authorization");
 
   const result = await protectedUpstreamCall({
-    path: `/api/friends/${id}`,
+    path: `/api/friends/${encodeURIComponent(id)}`,
     method: "DELETE",
     authorization,
   });

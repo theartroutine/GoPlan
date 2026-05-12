@@ -12,7 +12,7 @@ export async function GET(
   const { tripId } = await params;
   const authorization = request.headers.get("Authorization");
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}`,
+    path: `/api/trips/${encodeURIComponent(tripId)}`,
     method: "GET",
     authorization,
   });
@@ -28,7 +28,7 @@ export async function PATCH(
   const authorization = request.headers.get("Authorization");
   const body = await request.text();
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}`,
+    path: `/api/trips/${encodeURIComponent(tripId)}`,
     method: "PATCH",
     authorization,
     body,

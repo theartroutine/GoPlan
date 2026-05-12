@@ -13,7 +13,7 @@ export async function POST(
   const authorization = request.headers.get("Authorization");
 
   const result = await protectedUpstreamCall({
-    path: `/api/notifications/${id}/read`,
+    path: `/api/notifications/${encodeURIComponent(id)}/read`,
     method: "POST",
     authorization,
   });

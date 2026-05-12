@@ -57,6 +57,16 @@ export function setRefreshToken(jar: CookieStore, token: string): void {
   });
 }
 
+export function setNoStoreHeaders(response: NextResponse): NextResponse {
+  response.headers.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, private",
+  );
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
 type RefreshResult =
   | { kind: "success"; accessToken: string; refreshToken: string }
   | { kind: "auth_error"; detail: string }

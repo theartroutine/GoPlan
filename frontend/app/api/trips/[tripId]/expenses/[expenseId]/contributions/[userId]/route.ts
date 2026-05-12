@@ -12,7 +12,7 @@ export async function PATCH(
   const { tripId, expenseId, userId } = await params;
   const body = await request.text();
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/expenses/${expenseId}/contributions/${userId}`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/expenses/${encodeURIComponent(expenseId)}/contributions/${encodeURIComponent(userId)}`,
     method: "PATCH",
     body,
     authorization: request.headers.get("Authorization"),

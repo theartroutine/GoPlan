@@ -5,6 +5,7 @@ import { refreshWithSingleFlight } from "@/app/api/auth/_lib/refresh";
 import {
   REFRESH_COOKIE_NAME,
   handleRefreshFailure,
+  setNoStoreHeaders,
   setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
 import { API_BASE_URL } from "@/shared/http/config";
@@ -123,6 +124,7 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json(result.data, { status: result.status });
     if (refreshedAccessToken) {
       response.headers.set("X-Access-Token", refreshedAccessToken);
+      setNoStoreHeaders(response);
     }
     return response;
   } catch {

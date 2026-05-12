@@ -27,7 +27,7 @@ async function parseResponseBody(response: Response): Promise<unknown> {
   try {
     return JSON.parse(raw) as unknown;
   } catch {
-    return { detail: raw };
+    return { detail: DEFAULT_UPSTREAM_ERROR_DETAIL };
   }
 }
 

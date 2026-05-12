@@ -11,7 +11,7 @@ export async function GET(
 ) {
   const { tripId } = await params;
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/expenses`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/expenses`,
     method: "GET",
     authorization: request.headers.get("Authorization"),
   });
@@ -26,7 +26,7 @@ export async function POST(
   const { tripId } = await params;
   const body = await request.text();
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/expenses`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/expenses`,
     method: "POST",
     body,
     authorization: request.headers.get("Authorization"),

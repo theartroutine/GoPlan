@@ -8,6 +8,7 @@ import {
   clearRefreshAuthErrorMarker,
   clearRefreshSession,
   handleRefreshFailure,
+  setNoStoreHeaders,
   setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
 import {
@@ -82,8 +83,8 @@ export async function GET() {
   clearRefreshAuthErrorMarker(jar);
   setRefreshToken(jar, refreshResult.refreshToken);
 
-  return NextResponse.json({
+  return setNoStoreHeaders(NextResponse.json({
     user: userPayload,
     access_token: refreshResult.accessToken,
-  });
+  }));
 }

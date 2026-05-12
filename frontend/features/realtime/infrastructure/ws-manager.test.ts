@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { WsMessage } from "@/features/realtime/domain/types";
-import { WebSocketManager } from "@/features/realtime/infrastructure/ws-manager";
+import {
+  WebSocketManager,
+  resolveWebSocketBaseUrl,
+} from "@/features/realtime/infrastructure/ws-manager";
 
 type TestableWebSocketManager = WebSocketManager & {
   emit: (type: string, data: WsMessage) => void;
@@ -13,6 +16,18 @@ type WebSocketManagerInternals = {
 };
 
 describe("WebSocketManager", () => {
+  it("upgrades non-local ws URLs on secure pages", () => {
+    expect(resolveWebSocketBaseUrl("ws://api.example.com", "https:")).toBe(
+      "wss://api.example.com",
+    );
+  });
+
+  it("allows local ws URLs for development", () => {
+    expect(resolveWebSocketBaseUrl("ws://localhost:8000", "https:")).toBe(
+      "ws://localhost:8000",
+    );
+  });
+
   it("keeps message listeners registered after disconnect", () => {
     const manager = new WebSocketManager();
     const testManager = manager as TestableWebSocketManager;

@@ -11,7 +11,7 @@ export async function GET(
 ) {
   const { tripId, expenseId } = await params;
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/expenses/${expenseId}`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/expenses/${encodeURIComponent(expenseId)}`,
     method: "GET",
     authorization: request.headers.get("Authorization"),
   });
@@ -26,7 +26,7 @@ export async function PATCH(
   const { tripId, expenseId } = await params;
   const body = await request.text();
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/expenses/${expenseId}`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/expenses/${encodeURIComponent(expenseId)}`,
     method: "PATCH",
     body,
     authorization: request.headers.get("Authorization"),
@@ -41,7 +41,7 @@ export async function DELETE(
 ) {
   const { tripId, expenseId } = await params;
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/expenses/${expenseId}`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/expenses/${encodeURIComponent(expenseId)}`,
     method: "DELETE",
     authorization: request.headers.get("Authorization"),
   });

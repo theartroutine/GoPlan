@@ -6,7 +6,7 @@ import {
   bffWsTicket,
 } from "@/features/realtime/infrastructure/realtime-api";
 
-const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
+const DEFAULT_WS_BASE_URL = "ws://localhost:8000";
 const WS_SUBPROTOCOL = "goplan.realtime.v1";
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
@@ -16,6 +16,32 @@ const SOFT_AUTH_ERROR_CODE = "refresh_auth_soft_failed";
 
 type MessageListener = (data: WsMessage) => void;
 type StatusListener = (status: WsConnectionStatus) => void;
+
+function isLocalWebSocketHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized.endsWith(".localhost")
+  );
+}
+
+export function resolveWebSocketBaseUrl(
+  rawUrl = process.env.NEXT_PUBLIC_WS_URL ?? DEFAULT_WS_BASE_URL,
+  pageProtocol =
+    typeof window === "undefined" ? undefined : window.location.protocol,
+): string {
+  const url = new URL(rawUrl);
+  if (
+    url.protocol === "ws:" &&
+    !isLocalWebSocketHost(url.hostname) &&
+    (pageProtocol === "https:" || process.env.NODE_ENV === "production")
+  ) {
+    url.protocol = "wss:";
+  }
+  return url.toString().replace(/\/$/, "");
+}
 
 export class WebSocketManager {
   private ws: WebSocket | null = null;
@@ -177,7 +203,10 @@ export class WebSocketManager {
     }
 
     let socketAuthHandled = false;
-    const ws = new WebSocket(`${WS_BASE_URL}/ws/realtime`, [WS_SUBPROTOCOL, ticket]);
+    const ws = new WebSocket(`${resolveWebSocketBaseUrl()}/ws/realtime`, [
+      WS_SUBPROTOCOL,
+      ticket,
+    ]);
     this.ws = ws;
 
     ws.onopen = () => {

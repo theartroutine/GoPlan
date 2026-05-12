@@ -12,7 +12,7 @@ export async function POST(
   const { tripId } = await params;
   const body = await request.text();
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/timeline/sections`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/timeline/sections`,
     method: "POST",
     body,
     authorization: request.headers.get("Authorization"),
