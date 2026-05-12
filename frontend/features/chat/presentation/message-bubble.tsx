@@ -8,6 +8,7 @@ import type {
   DeleteChatMessageMode,
 } from "@/features/chat/domain/types";
 import { AIMentionToken } from "@/features/chat/presentation/ai-mention-token";
+import { AiMessageContent } from "@/features/chat/presentation/ai-message-content";
 import { ChatAvatar } from "@/features/chat/presentation/chat-avatar";
 import { EmojiPicker } from "@/features/chat/presentation/emoji-picker-popover";
 import { ReactionBar } from "@/features/chat/presentation/reaction-bar";
@@ -69,6 +70,9 @@ function senderLabel(message: ChatMessage): string {
 }
 
 function renderMessageContent(message: ChatMessage, isOwn: boolean) {
+  if (message.sender_kind === "AI") {
+    return <AiMessageContent content={message.content} />;
+  }
   if (message.content.startsWith("@GoPlanAI ")) {
     return (
       <p className="whitespace-pre-wrap break-words">
