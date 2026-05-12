@@ -21,6 +21,8 @@ import type {
   ChatMessage,
   DeleteChatMessageMode,
   ReactionSummary,
+  WsChatAITypingStarted,
+  WsChatAITypingStopped,
   WsChatError,
   WsChatMessageDeleted,
   WsChatMessagePush,
@@ -51,6 +53,7 @@ export type UseTripChatResult = {
   hasMoreOlder: boolean;
   isLoadingOlder: boolean;
   isSending: boolean;
+  isAITyping: boolean;
   loadOlder: () => Promise<void>;
   sendMessage: (content: string) => Promise<SendOutcome>;
   retryPending: (clientMessageId: string) => Promise<SendOutcome>;
@@ -74,6 +77,8 @@ type ChatState = {
   nextOlderCursor: string | null;
   isLoadingOlder: boolean;
   isSending: boolean;
+  activeAIInteractionId: string | null;
+  aiTypingRequestedByUserId: string | null;
 };
 
 type ChatAction =
@@ -104,7 +109,10 @@ type ChatAction =
   | { type: "WS_ERROR"; errorCode: string }
   | { type: "CLEAR_ROOM_ERROR" }
   | { type: "UPDATE_REACTIONS"; messageId: string; reactions: ReactionSummary[] }
-  | { type: "HIDE_MESSAGES"; messageIds: string[] };
+  | { type: "HIDE_MESSAGES"; messageIds: string[] }
+  | { type: "AI_TYPING_STARTED"; interactionId: string; requestedByUserId: string | null }
+  | { type: "AI_TYPING_STOPPED"; interactionId: string }
+  | { type: "DROP_PENDING"; clientMessageId: string };
 
 function initialState(): ChatState {
   return {
@@ -119,6 +127,8 @@ function initialState(): ChatState {
     nextOlderCursor: null,
     isLoadingOlder: false,
     isSending: false,
+    activeAIInteractionId: null,
+    aiTypingRequestedByUserId: null,
   };
 }
 
@@ -297,6 +307,25 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         pending.delete(messageId);
       }
       return { ...state, confirmed, pending, hidden, errorCode: null };
+    }
+
+    case "AI_TYPING_STARTED":
+      return {
+        ...state,
+        activeAIInteractionId: action.interactionId,
+        aiTypingRequestedByUserId: action.requestedByUserId,
+      };
+
+    case "AI_TYPING_STOPPED":
+      if (state.activeAIInteractionId !== action.interactionId) return state;
+      return { ...state, activeAIInteractionId: null, aiTypingRequestedByUserId: null };
+
+    case "DROP_PENDING": {
+      const pending = new Map(state.pending);
+      const failed = new Set(state.failed);
+      pending.delete(action.clientMessageId);
+      failed.delete(action.clientMessageId);
+      return { ...state, pending, failed };
     }
 
     default:
@@ -492,6 +521,19 @@ export function useTripChat(
           reactions: event.reactions,
         });
       },
+      onAITypingStarted: (event: WsChatAITypingStarted) => {
+        dispatch({
+          type: "AI_TYPING_STARTED",
+          interactionId: event.interaction_id,
+          requestedByUserId: event.requested_by_user_id,
+        });
+      },
+      onAITypingStopped: (event: WsChatAITypingStopped) => {
+        dispatch({
+          type: "AI_TYPING_STOPPED",
+          interactionId: event.interaction_id,
+        });
+      },
     });
 
     return () => {
@@ -550,6 +592,8 @@ export function useTripChat(
             display_name: currentUser.display_name,
             identify_tag: currentUser.identify_tag,
           },
+          sender_kind: "USER",
+          ai_status: null,
           content,
           client_message_id: clientMessageId,
           created_at: now,
@@ -582,6 +626,11 @@ export function useTripChat(
         const errorCode = extractErrorCode(error, "SEND_FAILED");
         if (errorCode === "TRIP_TERMINAL") {
           dispatch({ type: "LOCK_SEND_TERMINAL", clientMessageId });
+          return "failed";
+        }
+        if (errorCode === "AI_BUSY" || errorCode === "INVALID_AI_PROMPT") {
+          dispatch({ type: "DROP_PENDING", clientMessageId });
+          dispatch({ type: "WS_ERROR", errorCode });
           return "failed";
         }
         dispatch({ type: "FAIL_PENDING", clientMessageId });
@@ -683,6 +732,7 @@ export function useTripChat(
     hasMoreOlder: state.hasMoreOlder,
     isLoadingOlder: state.isLoadingOlder,
     isSending: state.isSending,
+    isAITyping: state.activeAIInteractionId !== null,
     loadOlder,
     sendMessage,
     retryPending,

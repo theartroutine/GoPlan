@@ -24,6 +24,8 @@ export const CHAT_WS_MESSAGE_TYPES = {
   KICKED: "chat.kicked",
   ERROR: "chat.error",
   REACTION_UPDATE: "chat.reaction_update",
+  AI_TYPING_STARTED: "chat.ai_typing_started",
+  AI_TYPING_STOPPED: "chat.ai_typing_stopped",
 } as const;
 
 export type ChatWsMessageType =

@@ -11,3 +11,9 @@ daphne==4.1.2
 channels==4.3.2
 channels-redis==4.3.0
 PyJWT==2.12.1
+
+# -------- Async Task Worker --------
+celery==5.5.3
+
+# -------- AI Provider SDK --------
+openai==2.9.0

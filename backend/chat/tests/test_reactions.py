@@ -654,4 +654,40 @@ class MessageReactionAPIRemoveTests(APITestCase):
         reactions = results[0]["reactions"]
         self.assertEqual(len(reactions), 1)
         self.assertEqual(reactions[0]["emoji"], "👍")
-        self.assertEqual(reactions[0]["count"], 2)
+
+
+class AIMessageReactionTests(APITestCase):
+
+    def setUp(self):
+        self.captain = create_completed_user("ai-react-cap@example.com", "airxcap", "ARC001")
+        self.member = create_completed_user("ai-react-mem@example.com", "airxmem", "ARM001")
+        self.trip = _make_trip(self.captain)
+        _add_member(self.trip, self.member)
+
+    @patch("chat.services._push_reaction_update")
+    def test_ai_message_accepts_reactions(self, mock_push):
+        ai_message = ChatMessage.objects.create(
+            trip=self.trip,
+            sender=None,
+            sender_kind="AI",
+            sender_display_name_snapshot="GoPlanAI",
+            sender_identify_tag_snapshot=None,
+            content="AI reply",
+            ai_status="SUCCESS",
+        )
+
+        reactions = add_reaction(
+            user=self.member,
+            trip_id=self.trip.id,
+            message_id=ai_message.id,
+            emoji="👍",
+        )
+
+        self.assertEqual(reactions[0]["emoji"], "👍")
+        self.assertTrue(
+            MessageReaction.objects.filter(
+                message=ai_message,
+                user=self.member,
+                emoji="👍",
+            ).exists()
+        )

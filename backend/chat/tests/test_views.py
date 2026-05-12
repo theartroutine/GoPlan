@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import uuid4
 
 from rest_framework.test import APITestCase
 from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.tokens import AccessToken
+from ai.models import AIInteraction
 from chat.models import ChatMessage
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
@@ -237,3 +239,124 @@ class TripChatThrottleTests(APITestCase):
 
         self.assertEqual(throttled.status_code, 429)
         self.assertEqual(throttled.data["error_code"], "THROTTLED")
+
+
+class TripChatAIPromptAPITests(APITestCase):
+
+    def setUp(self):
+        self.captain = create_completed_user("ai-api-cap@example.com", "aicap", "AAC001")
+        self.member = create_completed_user("ai-api-mem@example.com", "aimem", "AAM001")
+        self.trip = Trip.objects.create(
+            created_by=self.captain,
+            name="AI Prompt Trip",
+            destination="Da Nang",
+            start_date="2026-06-01",
+            end_date="2026-06-05",
+        )
+        from trips.models import TripMember
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.captain,
+            role="CAPTAIN",
+            status="ACTIVE",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.member,
+            role="MEMBER",
+            status="ACTIVE",
+        )
+
+    @patch("chat.services.enqueue_ai_interaction_after_commit")
+    def test_post_ai_prompt_creates_message_and_interaction(self, mock_enqueue):
+        response = self.client.post(
+            _messages_url(self.trip.id),
+            {"content": "Plan day 1 @GoPlanAI", "client_message_id": str(uuid4())},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["message"]["content"], "@GoPlanAI Plan day 1")
+        interaction = AIInteraction.objects.get()
+        self.assertEqual(interaction.prompt, "Plan day 1")
+        self.assertEqual(
+            str(interaction.prompt_message_id), response.data["message"]["id"]
+        )
+        mock_enqueue.assert_called_once()
+
+    def test_post_empty_ai_prompt_returns_400_without_message(self):
+        response = self.client.post(
+            _messages_url(self.trip.id),
+            {"content": "@GoPlanAI", "client_message_id": str(uuid4())},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error_code"], "INVALID_AI_PROMPT")
+        self.assertEqual(ChatMessage.objects.count(), 0)
+
+    @patch("chat.services.enqueue_ai_interaction_after_commit")
+    def test_post_ai_busy_returns_409_without_prompt_message(self, mock_enqueue):
+        first = self.client.post(
+            _messages_url(self.trip.id),
+            {"content": "@GoPlanAI first", "client_message_id": str(uuid4())},
+            format="json",
+            **_auth(self.member),
+        )
+        self.assertEqual(first.status_code, 201)
+
+        second = self.client.post(
+            _messages_url(self.trip.id),
+            {"content": "@GoPlanAI second", "client_message_id": str(uuid4())},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(second.data["error_code"], "AI_BUSY")
+        self.assertEqual(ChatMessage.objects.count(), 1)
+
+    @patch("chat.services.enqueue_ai_interaction_after_commit")
+    def test_post_ai_busy_does_not_block_normal_chat_message(self, mock_enqueue):
+        first = self.client.post(
+            _messages_url(self.trip.id),
+            {"content": "@GoPlanAI first", "client_message_id": str(uuid4())},
+            format="json",
+            **_auth(self.member),
+        )
+        self.assertEqual(first.status_code, 201)
+
+        normal = self.client.post(
+            _messages_url(self.trip.id),
+            {"content": "normal message", "client_message_id": str(uuid4())},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(normal.status_code, 201)
+        self.assertEqual(normal.data["message"]["content"], "normal message")
+        self.assertEqual(ChatMessage.objects.count(), 2)
+
+    @patch("chat.services.enqueue_ai_interaction_after_commit")
+    def test_post_ai_prompt_idempotent_retry_returns_existing_message(self, mock_enqueue):
+        client_message_id = str(uuid4())
+        first = self.client.post(
+            _messages_url(self.trip.id),
+            {"content": "@GoPlanAI first", "client_message_id": client_message_id},
+            format="json",
+            **_auth(self.member),
+        )
+        second = self.client.post(
+            _messages_url(self.trip.id),
+            {"content": "@GoPlanAI first", "client_message_id": client_message_id},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["message"]["id"], first.data["message"]["id"])
+        self.assertEqual(ChatMessage.objects.count(), 1)
+        self.assertEqual(AIInteraction.objects.count(), 1)

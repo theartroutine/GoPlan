@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'friends',
     'trips',
     'expenses',
+    'ai.apps.AIConfig',
     'chat',
     'media',
 
@@ -193,6 +194,7 @@ REST_FRAMEWORK = {
         'expenses_detail': '120/hour',
         'expenses_contributions': '240/hour',
         'chat_send': '60/minute',
+        'chat_ai_prompt': '20/hour',
         'chat_reaction': '120/minute',
         'chat_delete': '60/minute',
         'settlement_finalize': '30/hour',
@@ -240,6 +242,30 @@ FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:3000')
 # MongoDB Integration
 # MONGO_URL = os.environ.get('MONGO_URL')
 # MONGO_DB = os.environ.get('MONGO_DB')
+
+# -------- Celery Configuration --------
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/1")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "120"))
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "90"))
+
+# -------- DeepSeek AI Configuration --------
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+DEEPSEEK_TIMEOUT_SECONDS = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60"))
+DEEPSEEK_MAX_OUTPUT_TOKENS = int(os.environ.get("DEEPSEEK_MAX_OUTPUT_TOKENS", "800"))
+GOPLAN_AI_LOCK_TTL_SECONDS = int(os.environ.get("GOPLAN_AI_LOCK_TTL_SECONDS", "120"))
+GOPLAN_AI_MAX_ATTEMPTS = int(os.environ.get("GOPLAN_AI_MAX_ATTEMPTS", "3"))
+GOPLAN_AI_SYSTEM_PROMPT = (
+    "You are GoPlanAI, a concise assistant inside a group trip planning chat. "
+    "Answer the user's prompt helpfully. Do not claim access to trip data, "
+    "chat history, expenses, itinerary, or members unless they are provided "
+    "in the prompt."
+)
 
 # -------- Channels Configuration --------
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')

@@ -60,6 +60,8 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
     id: "m-1",
     trip_id: TRIP_ID,
     sender: { id: "user-other", display_name: "Other", identify_tag: null },
+    sender_kind: "USER",
+    ai_status: null,
     content: "hello",
     client_message_id: null,
     created_at: "2026-05-08T10:00:00Z",
@@ -1009,6 +1011,24 @@ describe("useTripChat", () => {
     });
 
     expect(result.current.errorCode).toBeNull();
+  });
+
+  it("drops optimistic AI prompt when backend returns AI_BUSY", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({ results: [], next_cursor: null });
+    chatApiMock.bffSendChatMessage.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 409, data: { error_code: "AI_BUSY" } },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    await act(async () => {
+      await result.current.sendMessage("@GoPlanAI hello");
+    });
+
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.errorCode).toBe("AI_BUSY");
   });
 
   it("ignores duplicate reaction clicks while a reaction mutation is in flight", async () => {

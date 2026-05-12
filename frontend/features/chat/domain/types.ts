@@ -27,6 +27,8 @@ export type ChatMessage = {
   id: string;
   trip_id: string;
   sender: ChatSender;
+  sender_kind: "USER" | "AI";
+  ai_status: "SUCCESS" | "ERROR" | null;
   content: string;
   client_message_id: string | null;
   created_at: string;
@@ -130,6 +132,19 @@ export type WsChatReactionUpdate = {
   reactions: ReactionSummary[];
 };
 
+export type WsChatAITypingStarted = {
+  type: "chat.ai_typing_started";
+  trip_id: string;
+  interaction_id: string;
+  requested_by_user_id: string | null;
+};
+
+export type WsChatAITypingStopped = {
+  type: "chat.ai_typing_stopped";
+  trip_id: string;
+  interaction_id: string;
+};
+
 export type WsChatClientMessage = WsChatSubscribe | WsChatUnsubscribe;
 
 export type WsChatServerMessage =
@@ -139,4 +154,6 @@ export type WsChatServerMessage =
   | WsChatMessageDeleted
   | WsChatKicked
   | WsChatError
-  | WsChatReactionUpdate;
+  | WsChatReactionUpdate
+  | WsChatAITypingStarted
+  | WsChatAITypingStopped;

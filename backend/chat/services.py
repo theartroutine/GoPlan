@@ -13,10 +13,18 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from ai.services import (
+    AIInvalidPromptError,
+    create_pending_interaction,
+    enqueue_ai_interaction_after_commit,
+    ensure_ai_prompt_available,
+)
+from chat.mentions import extract_goplan_ai_prompt
 from chat.models import (
     ALLOWED_REACTION_EMOJIS,
     ChatMessage,
     ChatMessageHiddenForUser,
+    ChatMessageSenderKind,
     MessageReaction,
 )
 from trips.models import MemberStatus, Trip, TripMember, TripStatus
@@ -219,6 +227,8 @@ def _fresh_reactions_payload(message_id) -> list[dict]:
 def _can_viewer_delete_for_everyone(message: ChatMessage, viewer) -> bool:
     if viewer is None:
         return False
+    if message.sender_kind != ChatMessageSenderKind.USER:
+        return False
     if message.sender_id != getattr(viewer, "id", None):
         return False
     if message.deleted_for_everyone_at is not None:
@@ -263,6 +273,8 @@ def build_chat_message_payload(message: ChatMessage, *, viewer=None) -> dict:
         ),
         "can_delete_for_everyone": _can_viewer_delete_for_everyone(message, viewer),
         "reactions": [] if is_deleted else build_reactions_payload(message),
+        "sender_kind": message.sender_kind,
+        "ai_status": message.ai_status,
     }
 
 
@@ -324,7 +336,7 @@ def build_message_deleted_ws_payload(message: ChatMessage) -> dict:
     }
 
 
-def _push_chat_message(message: ChatMessage) -> None:
+def push_chat_message(message: ChatMessage) -> None:
     try:
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
@@ -404,6 +416,14 @@ def send_chat_message(
 
         _ensure_trip_is_mutable(trip)
 
+        has_ai_mention, ai_prompt, display_content = extract_goplan_ai_prompt(
+            normalized_content
+        )
+        if has_ai_mention:
+            if not ai_prompt:
+                raise AIInvalidPromptError("AI prompt is required.")
+            ensure_ai_prompt_available(trip)
+
         try:
             with transaction.atomic():
                 message = ChatMessage.objects.create(
@@ -411,9 +431,18 @@ def send_chat_message(
                     sender=user,
                     sender_display_name_snapshot=user.display_name,
                     sender_identify_tag_snapshot=user.identify_tag,
-                    content=normalized_content,
+                    content=display_content if has_ai_mention else normalized_content,
                     client_message_id=client_message_id,
                 )
+
+                if has_ai_mention:
+                    interaction = create_pending_interaction(
+                        trip=trip,
+                        requested_by=user,
+                        prompt_message=message,
+                        prompt=ai_prompt,
+                    )
+                    enqueue_ai_interaction_after_commit(interaction)
         except IntegrityError:
             existing_message = ChatMessage.objects.filter(
                 trip=trip,
@@ -422,7 +451,7 @@ def send_chat_message(
             ).select_related("sender").get()
             return existing_message, False
 
-        transaction.on_commit(lambda: _push_chat_message(message))
+        transaction.on_commit(lambda: push_chat_message(message))
         return message, True
 
 
@@ -628,6 +657,9 @@ def delete_message_for_everyone(*, user, trip_id, message_id) -> ChatMessage:
             )
         except ChatMessage.DoesNotExist as exc:
             raise TripNotFoundError("Trip not found.") from exc
+
+        if message.sender_kind != ChatMessageSenderKind.USER:
+            raise ChatDeleteForbiddenError("You can only remove your own message.")
 
         if message.sender_id != user.id:
             raise ChatDeleteForbiddenError("You can only remove your own message.")

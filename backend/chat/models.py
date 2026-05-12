@@ -9,6 +9,16 @@ from django.db.models import Q
 ALLOWED_REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍", "👎"]
 
 
+class ChatMessageSenderKind(models.TextChoices):
+    USER = "USER", "User"
+    AI = "AI", "AI"
+
+
+class ChatMessageAIStatus(models.TextChoices):
+    SUCCESS = "SUCCESS", "Success"
+    ERROR = "ERROR", "Error"
+
+
 class ChatMessage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     trip = models.ForeignKey(
@@ -33,6 +43,17 @@ class ChatMessage(models.Model):
         null=True,
         blank=True,
         default=None,
+    )
+    sender_kind = models.CharField(
+        max_length=8,
+        choices=ChatMessageSenderKind.choices,
+        default=ChatMessageSenderKind.USER,
+    )
+    ai_status = models.CharField(
+        max_length=8,
+        choices=ChatMessageAIStatus.choices,
+        null=True,
+        blank=True,
     )
     content = models.TextField()
     client_message_id = models.UUIDField(null=True, blank=True)

@@ -11,6 +11,8 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     id: "m-1",
     trip_id: "trip-1",
     sender: { id: CURRENT_USER_ID, display_name: "Me", identify_tag: null },
+    sender_kind: "USER",
+    ai_status: null,
     content: "hello",
     client_message_id: null,
     created_at: "2026-05-08T10:00:00Z",
@@ -424,6 +426,56 @@ describe("MessageList", () => {
     fireEvent.mouseMove(getMessageListForMessage("one"));
 
     expect(queryReactionTriggerForMessage("one")).toBeNull();
+  });
+
+  it("renders GoPlanAI mention as a token in user prompt messages", () => {
+    render(
+      <MessageList
+        messages={[makeMessage({ content: "@GoPlanAI plan day 1" })]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("@GoPlanAI").className).toContain(
+      "text-primary-foreground",
+    );
+    expect(screen.getByText(/plan day 1/)).toBeDefined();
+  });
+
+  it("renders AI messages as GoPlanAI sender and hides everyone-delete", () => {
+    render(
+      <MessageList
+        messages={[
+          makeMessage({
+            id: "ai-1",
+            sender_kind: "AI",
+            ai_status: "SUCCESS",
+            sender: { id: null, display_name: "GoPlanAI", identify_tag: null },
+            content: "AI reply",
+            can_delete_for_everyone: false,
+          }),
+        ]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("GoPlanAI")).toBeDefined();
+    fireEvent.mouseEnter(screen.getByText("AI reply").parentElement as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "Remove message" }));
+    expect(screen.queryByLabelText(/Thu hồi với mọi người/)).toBeNull();
   });
 
   it("centers hover controls beside multiline message bubbles", () => {

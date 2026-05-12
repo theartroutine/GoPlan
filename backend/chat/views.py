@@ -7,6 +7,8 @@ from rest_framework.exceptions import Throttled
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ai.services import AIBusyError, AIInvalidPromptError
+from chat.mentions import extract_goplan_ai_prompt
 from chat.serializers import (
     AddReactionSerializer,
     BulkHideChatMessagesSerializer,
@@ -47,6 +49,10 @@ def _error_response(detail: str, error_code: str, status_code: int) -> Response:
 
 
 def _map_service_error(exc: Exception) -> tuple[str, int] | None:
+    if isinstance(exc, AIBusyError):
+        return exc.error_code, status.HTTP_409_CONFLICT
+    if isinstance(exc, AIInvalidPromptError):
+        return exc.error_code, status.HTTP_400_BAD_REQUEST
     if isinstance(exc, TripNotFoundError):
         return exc.error_code, status.HTTP_404_NOT_FOUND
     if isinstance(exc, TripTerminalError):
@@ -89,7 +95,15 @@ class TripChatMessagesAPIView(ChatAPIView):
 
     def get_throttles(self):
         if self.request.method == "POST":
-            self.throttle_scope = "chat_send"
+            content = ""
+            try:
+                request_data = self.request.data
+            except Exception:
+                request_data = {}
+            if isinstance(request_data, dict):
+                content = str(request_data.get("content", ""))
+            has_ai_mention, _, _ = extract_goplan_ai_prompt(content)
+            self.throttle_scope = "chat_ai_prompt" if has_ai_mention else "chat_send"
         return super().get_throttles()
 
     def get(self, request, trip_id):
