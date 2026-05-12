@@ -213,6 +213,15 @@ export function MessageList({
     }
   }, [messages]);
 
+  // Auto-scroll to bottom when the AI typing indicator appears so the user
+  // can see it — the indicator is not a message so the effect above won't fire.
+  useEffect(() => {
+    if (!isAITyping) return;
+    const el = scrollerRef.current;
+    if (!el || !wasNearBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [isAITyping]);
+
   // After older messages are prepended, anchor scroll position so the user's
   // current view doesn't jump.
   useLayoutEffect(() => {
