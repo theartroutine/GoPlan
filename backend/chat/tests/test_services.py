@@ -136,6 +136,30 @@ class SendChatMessageServiceTests(APITestCase):
                 client_message_id=uuid4(),
             )
 
+    def test_idempotent_retry_after_terminal_returns_existing_message(self):
+        client_message_id = uuid4()
+        first, first_created = send_chat_message(
+            user=self.member,
+            trip_id=self.trip.id,
+            content="Sent before terminal",
+            client_message_id=client_message_id,
+        )
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        second, second_created = send_chat_message(
+            user=self.member,
+            trip_id=self.trip.id,
+            content="Retry after terminal",
+            client_message_id=client_message_id,
+        )
+
+        self.assertTrue(first_created)
+        self.assertFalse(second_created)
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(second.content, "Sent before terminal")
+        self.assertEqual(ChatMessage.objects.count(), 1)
+
     def test_blank_content_rejected(self):
         with self.assertRaises(ChatInvalidContentError):
             send_chat_message(
@@ -325,6 +349,33 @@ class ChatMessagePushTests(TransactionTestCase):
                 user=member,
                 trip_id=trip.id,
                 content="Retry",
+                client_message_id=client_message_id,
+            )
+
+        self.assertFalse(created)
+        mock_async_to_sync.assert_not_called()
+
+    def test_idempotent_retry_after_terminal_does_not_push_again(self):
+        captain = create_completed_user("retry-term-cap@example.com", "rtcap", "RTC001")
+        member = create_completed_user("retry-term-mem@example.com", "rtmem", "RTM001")
+        trip = _make_trip(captain)
+        _add_member(trip, member)
+        client_message_id = uuid4()
+
+        send_chat_message(
+            user=member,
+            trip_id=trip.id,
+            content="Created before terminal",
+            client_message_id=client_message_id,
+        )
+        trip.status = TripStatus.COMPLETED
+        trip.save(update_fields=["status"])
+
+        with patch("chat.services.async_to_sync") as mock_async_to_sync:
+            _message, created = send_chat_message(
+                user=member,
+                trip_id=trip.id,
+                content="Retry after terminal",
                 client_message_id=client_message_id,
             )
 

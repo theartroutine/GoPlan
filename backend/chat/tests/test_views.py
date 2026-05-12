@@ -118,6 +118,37 @@ class TripChatMessagesAPITests(APITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["error_code"], "TRIP_TERMINAL")
 
+    def test_post_idempotent_retry_after_terminal_returns_existing_200(self):
+        client_message_id = uuid4()
+        payload = {
+            "content": "Created before terminal",
+            "client_message_id": str(client_message_id),
+        }
+        first = self.client.post(
+            _messages_url(self.trip.id),
+            payload,
+            format="json",
+            **_auth(self.member),
+        )
+        self.trip.status = TripStatus.COMPLETED
+        self.trip.save(update_fields=["status"])
+
+        second = self.client.post(
+            _messages_url(self.trip.id),
+            {
+                "content": "Retry after terminal",
+                "client_message_id": str(client_message_id),
+            },
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.data["message"]["id"], second.data["message"]["id"])
+        self.assertEqual(second.data["message"]["content"], "Created before terminal")
+        self.assertEqual(ChatMessage.objects.count(), 1)
+
     def test_post_invalid_content_returns_400(self):
         response = self.client.post(
             _messages_url(self.trip.id),
