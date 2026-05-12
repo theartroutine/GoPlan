@@ -11,6 +11,15 @@ const refreshMock = vi.hoisted(() => ({
 const sessionStateMock = vi.hoisted(() => ({
   REFRESH_COOKIE_NAME: "refresh_token",
   handleRefreshFailure: vi.fn(),
+  setNoStoreHeaders: vi.fn((response: Response) => {
+    response.headers.set(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, private",
+    );
+    response.headers.set("Pragma", "no-cache");
+    response.headers.set("Expires", "0");
+    return response;
+  }),
   setRefreshToken: vi.fn(),
 }));
 
@@ -180,6 +189,9 @@ describe("POST /api/trips/cover-upload", () => {
     expect(sessionStateMock.setRefreshToken).toHaveBeenCalledWith(jar, "fresh-refresh-token");
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Access-Token")).toBe("fresh-access-token");
+    expect(response.headers.get("Cache-Control")).toBe(
+      "no-store, no-cache, must-revalidate, private",
+    );
     await expect(response.json()).resolves.toEqual({
       url: "https://cdn.example.com/cover.jpg",
     });

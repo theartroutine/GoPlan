@@ -11,6 +11,7 @@ export type UpstreamCallResult =
       ok: boolean;
       status: number;
       data: unknown;
+      headers?: Headers;
     }
   | {
       kind: "network_error";
@@ -26,7 +27,7 @@ async function parseResponseBody(response: Response): Promise<unknown> {
   try {
     return JSON.parse(raw) as unknown;
   } catch {
-    return { detail: raw };
+    return { detail: DEFAULT_UPSTREAM_ERROR_DETAIL };
   }
 }
 
@@ -43,6 +44,7 @@ export async function callAuthUpstream(
       ok: response.ok,
       status: response.status,
       data,
+      headers: response.headers,
     };
   } catch {
     return {

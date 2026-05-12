@@ -1,7 +1,11 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { clearRefreshAuthErrorMarker, setRefreshToken } from "@/app/api/auth/_lib/session-state";
+import {
+  clearRefreshAuthErrorMarker,
+  setNoStoreHeaders,
+  setRefreshToken,
+} from "@/app/api/auth/_lib/session-state";
 import {
   asObject,
   callAuthUpstream,
@@ -57,8 +61,8 @@ export async function POST(request: NextRequest) {
   clearRefreshAuthErrorMarker(jar);
   setRefreshToken(jar, refreshTokenValue);
 
-  return NextResponse.json({
+  return setNoStoreHeaders(NextResponse.json({
     user: userPayload,
     access_token: accessToken,
-  });
+  }));
 }

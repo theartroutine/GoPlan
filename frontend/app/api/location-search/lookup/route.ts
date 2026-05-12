@@ -7,6 +7,7 @@ import {
 import {
   consumeHereLocationSearchSlot,
   getHereLocationSearchAvailability,
+  getHereLocationSearchFetchTimeoutMs,
   getHereLocationSearchLookupCacheTtlMs,
   readHereLocationSearchCache,
   writeHereLocationSearchCache,
@@ -14,6 +15,7 @@ import {
 
 const HERE_API_KEY = process.env.HERE_API_KEY;
 const HERE_LOOKUP_URL = "https://lookup.search.hereapi.com/v1/lookup";
+const MAX_PROVIDER_ID_LENGTH = 256;
 
 const viRegionNames = new Intl.DisplayNames(["vi-VN"], { type: "region" });
 const localizedCountryNameToAlpha2 = new Map<string, string>();
@@ -49,6 +51,36 @@ function toAlpha2CountryCode(address?: HereLookupItem["address"]): string {
   return localizedCountryNameToAlpha2.get(localizedName) ?? "";
 }
 
+function asObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getAuthenticatedUserId(data: unknown): string | null {
+  const payload = asObject(data);
+  const user = asObject(payload?.user);
+  const id = user?.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+async function fetchHere(url: URL): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    getHereLocationSearchFetchTimeoutMs(),
+  );
+
+  try {
+    return await fetch(url.toString(), {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function GET(request: NextRequest) {
   const availability = getHereLocationSearchAvailability();
   if (!availability.enabled) {
@@ -67,11 +99,26 @@ export async function GET(request: NextRequest) {
   if (!authResult.ok) {
     return authResult.response;
   }
+  const userId = getAuthenticatedUserId(authResult.data);
+  if (!userId) {
+    return buildProtectedResponse(
+      { detail: "Invalid authenticated user payload." },
+      authResult.refreshedAccessToken,
+      502,
+    );
+  }
 
   const providerId = request.nextUrl.searchParams.get("id")?.trim() ?? "";
   if (!providerId) {
     return buildProtectedResponse(
       { detail: "id is required." },
+      authResult.refreshedAccessToken,
+      400,
+    );
+  }
+  if (providerId.length > MAX_PROVIDER_ID_LENGTH) {
+    return buildProtectedResponse(
+      { detail: "Location id is too long." },
       authResult.refreshedAccessToken,
       400,
     );
@@ -91,7 +138,7 @@ export async function GET(request: NextRequest) {
     return buildProtectedResponse(cachedLocation, authResult.refreshedAccessToken);
   }
 
-  const rateLimit = consumeHereLocationSearchSlot();
+  const rateLimit = consumeHereLocationSearchSlot({ bucketKey: userId });
   if (!rateLimit.allowed) {
     const response = buildProtectedResponse(
       { detail: "HERE location lookup is temporarily rate limited." },
@@ -109,7 +156,7 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("politicalView", "VNM");
 
   try {
-    const res = await fetch(url.toString(), { cache: "no-store" });
+    const res = await fetchHere(url);
     if (!res.ok) {
       return buildProtectedResponse(
         { detail: "Location lookup failed." },

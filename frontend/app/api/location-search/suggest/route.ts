@@ -7,6 +7,7 @@ import {
 import {
   consumeHereLocationSearchSlot,
   getHereLocationSearchAvailability,
+  getHereLocationSearchFetchTimeoutMs,
   getHereLocationSearchSuggestCacheTtlMs,
   readHereLocationSearchCache,
   writeHereLocationSearchCache,
@@ -15,6 +16,7 @@ import {
 const HERE_API_KEY = process.env.HERE_API_KEY;
 const HERE_AUTOSUGGEST_URL = "https://geocode.search.hereapi.com/v1/autosuggest";
 const VIETNAM_BIAS_AT = "16.047079,108.206230";
+const MAX_QUERY_LENGTH = 120;
 
 type HereSuggestItem = {
   id?: string;
@@ -58,6 +60,36 @@ function getResultTypeRank(item: HereSuggestItem): number {
   }
 }
 
+function asObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getAuthenticatedUserId(data: unknown): string | null {
+  const payload = asObject(data);
+  const user = asObject(payload?.user);
+  const id = user?.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+async function fetchHere(url: URL): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    getHereLocationSearchFetchTimeoutMs(),
+  );
+
+  try {
+    return await fetch(url.toString(), {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function GET(request: NextRequest) {
   const availability = getHereLocationSearchAvailability();
   if (!availability.enabled) {
@@ -76,10 +108,25 @@ export async function GET(request: NextRequest) {
   if (!authResult.ok) {
     return authResult.response;
   }
+  const userId = getAuthenticatedUserId(authResult.data);
+  if (!userId) {
+    return buildProtectedResponse(
+      { detail: "Invalid authenticated user payload." },
+      authResult.refreshedAccessToken,
+      502,
+    );
+  }
 
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
   if (query.length < 2) {
     return buildProtectedResponse({ suggestions: [] }, authResult.refreshedAccessToken);
+  }
+  if (query.length > MAX_QUERY_LENGTH) {
+    return buildProtectedResponse(
+      { detail: "Search query is too long." },
+      authResult.refreshedAccessToken,
+      400,
+    );
   }
 
   const cacheKey = `suggest:${query.toLocaleLowerCase("vi-VN")}`;
@@ -99,7 +146,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const rateLimit = consumeHereLocationSearchSlot();
+  const rateLimit = consumeHereLocationSearchSlot({ bucketKey: userId });
   if (!rateLimit.allowed) {
     const response = buildProtectedResponse(
       { detail: "HERE location search is temporarily rate limited." },
@@ -121,7 +168,7 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("limit", "8");
 
   try {
-    const res = await fetch(url.toString(), { cache: "no-store" });
+    const res = await fetchHere(url);
     if (!res.ok) {
       return buildProtectedResponse(
         { detail: "Location service unavailable." },

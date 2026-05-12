@@ -1,6 +1,8 @@
 type HereLocationSearchEnv = Partial<{
   ENABLE_HERE_LOCATION_SEARCH: string;
   HERE_API_KEY: string;
+  HERE_LOCATION_SEARCH_CACHE_MAX_ENTRIES: string;
+  HERE_LOCATION_SEARCH_FETCH_TIMEOUT_MS: string;
   HERE_LOCATION_SEARCH_LOOKUP_CACHE_TTL_MS: string;
   HERE_LOCATION_SEARCH_MAX_REQUESTS_PER_MINUTE: string;
   HERE_LOCATION_SEARCH_SUGGEST_CACHE_TTL_MS: string;
@@ -13,6 +15,7 @@ type CacheEntry<T> = {
 };
 
 type ConsumeHereLocationSearchSlotArgs = {
+  bucketKey?: string;
   env?: HereLocationSearchEnv;
   now?: number;
 };
@@ -30,13 +33,15 @@ type ReadHereLocationSearchCacheArgs = {
 };
 
 const DEFAULT_LOOKUP_CACHE_TTL_MS = 5 * 60_000;
+const DEFAULT_CACHE_MAX_ENTRIES = 500;
+const DEFAULT_FETCH_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_REQUESTS_PER_MINUTE = 30;
 const DEFAULT_SUGGEST_CACHE_TTL_MS = 60_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const WARN_THRESHOLD = 0.8;
 
 const hereLocationSearchCache = new Map<string, CacheEntry<unknown>>();
-const hereLocationSearchRequests: number[] = [];
+const hereLocationSearchRequestsByBucket = new Map<string, number[]>();
 
 function isTruthy(value: string | undefined): boolean {
   return value?.toLowerCase() === "true";
@@ -56,11 +61,17 @@ function pruneExpiredCache(now: number) {
 }
 
 function pruneRateLimitWindow(now: number) {
-  while (
-    hereLocationSearchRequests.length > 0 &&
-    now - hereLocationSearchRequests[0] >= RATE_LIMIT_WINDOW_MS
-  ) {
-    hereLocationSearchRequests.shift();
+  for (const [bucketKey, requests] of hereLocationSearchRequestsByBucket) {
+    while (
+      requests.length > 0 &&
+      now - requests[0] >= RATE_LIMIT_WINDOW_MS
+    ) {
+      requests.shift();
+    }
+
+    if (requests.length === 0) {
+      hereLocationSearchRequestsByBucket.delete(bucketKey);
+    }
   }
 }
 
@@ -110,22 +121,43 @@ export function getHereLocationSearchLookupCacheTtlMs(
   );
 }
 
+export function getHereLocationSearchFetchTimeoutMs(
+  env: HereLocationSearchEnv = process.env,
+): number {
+  return parsePositiveInteger(
+    env.HERE_LOCATION_SEARCH_FETCH_TIMEOUT_MS,
+    DEFAULT_FETCH_TIMEOUT_MS,
+  );
+}
+
+function getHereLocationSearchCacheMaxEntries(
+  env: HereLocationSearchEnv = process.env,
+): number {
+  return parsePositiveInteger(
+    env.HERE_LOCATION_SEARCH_CACHE_MAX_ENTRIES,
+    DEFAULT_CACHE_MAX_ENTRIES,
+  );
+}
+
 export function consumeHereLocationSearchSlot({
+  bucketKey = "anonymous",
   env = process.env,
   now = Date.now(),
 }: ConsumeHereLocationSearchSlotArgs = {}) {
   pruneRateLimitWindow(now);
+  const requests = hereLocationSearchRequestsByBucket.get(bucketKey) ?? [];
+  hereLocationSearchRequestsByBucket.set(bucketKey, requests);
 
   const maxRequests = parsePositiveInteger(
     env.HERE_LOCATION_SEARCH_MAX_REQUESTS_PER_MINUTE,
     DEFAULT_MAX_REQUESTS_PER_MINUTE,
   );
 
-  if (hereLocationSearchRequests.length >= maxRequests) {
-    const retryAfterMs = RATE_LIMIT_WINDOW_MS - (now - hereLocationSearchRequests[0]);
+  if (requests.length >= maxRequests) {
+    const retryAfterMs = RATE_LIMIT_WINDOW_MS - (now - requests[0]);
 
     console.warn(
-      `[HERE] blocked request after reaching ${maxRequests} requests in the last minute.`,
+      `[HERE] blocked request for ${bucketKey} after reaching ${maxRequests} requests in the last minute.`,
     );
 
     return {
@@ -135,17 +167,17 @@ export function consumeHereLocationSearchSlot({
     };
   }
 
-  hereLocationSearchRequests.push(now);
+  requests.push(now);
 
-  if (hereLocationSearchRequests.length >= Math.ceil(maxRequests * WARN_THRESHOLD)) {
+  if (requests.length >= Math.ceil(maxRequests * WARN_THRESHOLD)) {
     console.warn(
-      `[HERE] local usage is high: ${hereLocationSearchRequests.length}/${maxRequests} requests in the last minute.`,
+      `[HERE] local usage is high for ${bucketKey}: ${requests.length}/${maxRequests} requests in the last minute.`,
     );
   }
 
   return {
     allowed: true,
-    remaining: Math.max(0, maxRequests - hereLocationSearchRequests.length),
+    remaining: Math.max(0, maxRequests - requests.length),
     retryAfterSeconds: 0,
   };
 }
@@ -170,6 +202,14 @@ export function writeHereLocationSearchCache<T>({
   ttlMs,
   value,
 }: WriteHereLocationSearchCacheArgs<T>) {
+  pruneExpiredCache(now);
+  const maxEntries = getHereLocationSearchCacheMaxEntries();
+  while (hereLocationSearchCache.size >= maxEntries) {
+    const oldestKey = hereLocationSearchCache.keys().next().value;
+    if (!oldestKey) break;
+    hereLocationSearchCache.delete(oldestKey);
+  }
+
   hereLocationSearchCache.set(key, {
     expiresAt: now + ttlMs,
     value,
@@ -178,5 +218,5 @@ export function writeHereLocationSearchCache<T>({
 
 export function resetHereLocationSearchStateForTests() {
   hereLocationSearchCache.clear();
-  hereLocationSearchRequests.length = 0;
+  hereLocationSearchRequestsByBucket.clear();
 }

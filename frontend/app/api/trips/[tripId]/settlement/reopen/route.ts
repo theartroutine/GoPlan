@@ -11,7 +11,7 @@ export async function POST(
 ) {
   const { tripId } = await params;
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/settlement/reopen`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/settlement/reopen`,
     method: "POST",
     authorization: request.headers.get("Authorization"),
   });

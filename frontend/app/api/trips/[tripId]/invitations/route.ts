@@ -12,7 +12,7 @@ export async function GET(
   const { tripId } = await params;
   const authorization = request.headers.get("Authorization");
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/invitations`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/invitations`,
     method: "GET",
     authorization,
   });
@@ -28,7 +28,7 @@ export async function POST(
   const authorization = request.headers.get("Authorization");
   const body = await request.text();
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/invitations`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/invitations`,
     method: "POST",
     authorization,
     body,

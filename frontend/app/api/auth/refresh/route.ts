@@ -6,6 +6,7 @@ import {
   REFRESH_COOKIE_NAME,
   clearRefreshAuthErrorMarker,
   handleRefreshFailure,
+  setNoStoreHeaders,
   setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
 
@@ -31,5 +32,7 @@ export async function POST() {
   clearRefreshAuthErrorMarker(jar);
   setRefreshToken(jar, refreshResult.refreshToken);
 
-  return NextResponse.json({ access_token: refreshResult.accessToken });
+  return setNoStoreHeaders(
+    NextResponse.json({ access_token: refreshResult.accessToken }),
+  );
 }

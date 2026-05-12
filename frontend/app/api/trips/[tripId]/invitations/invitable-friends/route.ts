@@ -12,7 +12,7 @@ export async function GET(
   const { tripId } = await params;
   const authorization = request.headers.get("Authorization");
   const result = await protectedUpstreamCall({
-    path: `/api/trips/${tripId}/invitations/invitable-friends`,
+    path: `/api/trips/${encodeURIComponent(tripId)}/invitations/invitable-friends`,
     method: "GET",
     authorization,
   });

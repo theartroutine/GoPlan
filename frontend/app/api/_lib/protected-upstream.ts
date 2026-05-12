@@ -8,6 +8,7 @@ import {
   clearRefreshAuthErrorMarker,
   clearRefreshSession,
   handleRefreshFailure,
+  setNoStoreHeaders,
   setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
 import {
@@ -27,6 +28,7 @@ type ProtectedCallOptions = {
 type ProtectedCallSuccess = {
   ok: true;
   data: unknown;
+  status: number;
   refreshedAccessToken?: string;
 };
 
@@ -37,6 +39,30 @@ type ProtectedCallFailure = {
 
 export type ProtectedCallResult = ProtectedCallSuccess | ProtectedCallFailure;
 
+const UNSAFE_PATH_ENCODING_PATTERN = /%(?:00|2f|5c)/i;
+const DOT_SEGMENT_PATTERN = /(?:^|\/)\.{1,2}(?:\/|$)/;
+
+function hasUnsafePathSegment(path: string): boolean {
+  return (
+    !path.startsWith("/api/") ||
+    UNSAFE_PATH_ENCODING_PATTERN.test(path) ||
+    DOT_SEGMENT_PATTERN.test(path)
+  );
+}
+
+function buildProtectedErrorResponse(
+  data: unknown,
+  status: number,
+  upstreamHeaders?: Headers,
+): NextResponse {
+  const response = NextResponse.json(data, { status });
+  const retryAfter = upstreamHeaders?.get("Retry-After");
+  if (retryAfter) {
+    response.headers.set("Retry-After", retryAfter);
+  }
+  return response;
+}
+
 export async function protectedUpstreamCall(
   options: ProtectedCallOptions,
 ): Promise<ProtectedCallResult> {
@@ -46,6 +72,19 @@ export async function protectedUpstreamCall(
   const fullPath = options.query
     ? `${options.path}?${options.query}`
     : options.path;
+
+  if (hasUnsafePathSegment(options.path)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          detail: "Invalid route parameter.",
+          error_code: "INVALID_ROUTE_PARAMETER",
+        },
+        { status: 400 },
+      ),
+    };
+  }
 
   const buildHeaders = (token: string): Record<string, string> => {
     const h: Record<string, string> = { Authorization: `Bearer ${token}` };
@@ -66,7 +105,7 @@ export async function protectedUpstreamCall(
 
     if (upstream.kind !== "network_error" && upstream.ok) {
       clearRefreshAuthErrorMarker(jar);
-      return { ok: true, data: upstream.data };
+      return { ok: true, data: upstream.data, status: upstream.status };
     }
 
     if (upstream.kind === "network_error") {
@@ -84,12 +123,13 @@ export async function protectedUpstreamCall(
       clearRefreshAuthErrorMarker(jar);
       return {
         ok: false,
-        response: NextResponse.json(
+        response: buildProtectedErrorResponse(
           normalizeErrorPayload(
             upstream.data,
             extractDetail(upstream.data, "Request failed."),
           ),
-          { status: upstream.status },
+          upstream.status,
+          upstream.headers,
         ),
       };
     }
@@ -156,12 +196,13 @@ export async function protectedUpstreamCall(
     clearRefreshAuthErrorMarker(jar);
     return {
       ok: false,
-      response: NextResponse.json(
+      response: buildProtectedErrorResponse(
         normalizeErrorPayload(
           retryUpstream.data,
           extractDetail(retryUpstream.data, "Request failed."),
         ),
-        { status: retryUpstream.status },
+        retryUpstream.status,
+        retryUpstream.headers,
       ),
     };
   }
@@ -170,6 +211,7 @@ export async function protectedUpstreamCall(
   return {
     ok: true,
     data: retryUpstream.data,
+    status: retryUpstream.status,
     refreshedAccessToken: refreshResult.accessToken,
   };
 }
@@ -190,6 +232,7 @@ export function buildProtectedResponse(
     : NextResponse.json(data, { status });
   if (refreshedAccessToken) {
     response.headers.set("X-Access-Token", refreshedAccessToken);
+    setNoStoreHeaders(response);
   }
   return response;
 }

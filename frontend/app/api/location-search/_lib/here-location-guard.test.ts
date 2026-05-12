@@ -11,6 +11,7 @@ import {
 describe("here-location-guard", () => {
   beforeEach(() => {
     resetHereLocationSearchStateForTests();
+    delete process.env.HERE_LOCATION_SEARCH_CACHE_MAX_ENTRIES;
   });
 
   it("disables HERE search when the feature flag is off", () => {
@@ -49,6 +50,25 @@ describe("here-location-guard", () => {
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
   });
 
+  it("applies the minute budget per authenticated bucket", () => {
+    const env = {
+      HERE_LOCATION_SEARCH_MAX_REQUESTS_PER_MINUTE: "1",
+    };
+
+    expect(
+      consumeHereLocationSearchSlot({ bucketKey: "user-a", env, now: 1_000 })
+        .allowed,
+    ).toBe(true);
+    expect(
+      consumeHereLocationSearchSlot({ bucketKey: "user-a", env, now: 2_000 })
+        .allowed,
+    ).toBe(false);
+    expect(
+      consumeHereLocationSearchSlot({ bucketKey: "user-b", env, now: 3_000 })
+        .allowed,
+    ).toBe(true);
+  });
+
   it("returns cached values until the ttl expires", () => {
     writeHereLocationSearchCache({
       key: "suggest:hanoi",
@@ -70,5 +90,35 @@ describe("here-location-guard", () => {
         now: 11_500,
       }),
     ).toBeNull();
+  });
+
+  it("evicts old cache entries when the cache entry budget is full", () => {
+    process.env.HERE_LOCATION_SEARCH_CACHE_MAX_ENTRIES = "1";
+
+    writeHereLocationSearchCache({
+      key: "suggest:first",
+      ttlMs: 10_000,
+      value: [{ title: "First" }],
+      now: 10_000,
+    });
+    writeHereLocationSearchCache({
+      key: "suggest:second",
+      ttlMs: 10_000,
+      value: [{ title: "Second" }],
+      now: 11_000,
+    });
+
+    expect(
+      readHereLocationSearchCache<{ title: string }[]>({
+        key: "suggest:first",
+        now: 11_500,
+      }),
+    ).toBeNull();
+    expect(
+      readHereLocationSearchCache<{ title: string }[]>({
+        key: "suggest:second",
+        now: 11_500,
+      }),
+    ).toEqual([{ title: "Second" }]);
   });
 });

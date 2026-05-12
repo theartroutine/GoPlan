@@ -65,6 +65,7 @@ describe("GET /api/location-search/suggest", () => {
     protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
       ok: true,
       data: { user: { id: "user-1" } },
+      status: 200,
       refreshedAccessToken: "fresh-access-token",
     });
 
@@ -94,6 +95,12 @@ describe("GET /api/location-search/suggest", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Access-Token")).toBe("fresh-access-token");
+    expect(vi.mocked(fetch).mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        cache: "no-store",
+        signal: expect.any(AbortSignal),
+      }),
+    );
     await expect(response.json()).resolves.toEqual({
       suggestions: [
         {
@@ -104,5 +111,25 @@ describe("GET /api/location-search/suggest", () => {
         },
       ],
     });
+  });
+
+  it("rejects overlong queries before calling HERE", async () => {
+    const { GET } = await import("@/app/api/location-search/suggest/route");
+
+    protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
+      ok: true,
+      data: { user: { id: "user-1" } },
+      status: 200,
+    });
+
+    const response = await GET({
+      headers: new Headers(),
+      nextUrl: new URL(
+        `http://localhost/api/location-search/suggest?q=${"a".repeat(121)}`,
+      ),
+    } as never);
+
+    expect(response.status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -49,6 +49,7 @@ def _create_user(email="test@example.com", password="testpass123!", **kwargs):
     return create_verified_user(email=email, password=password, **kwargs)
 
 
+@database_sync_to_async
 def _issue_ws_ticket(user):
     return issue_ws_ticket(user)
 
@@ -83,7 +84,7 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
     async def test_valid_ticket_connects(self):
         user = await _create_user()
-        ticket = _issue_ws_ticket(user)
+        ticket = await _issue_ws_ticket(user)
 
         communicator = _make_communicator(ticket=ticket)
         connected, _ = await communicator.connect()
@@ -127,7 +128,7 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
     async def test_revoked_auth_version_closes_4001(self):
         user = await _create_user(email="revoked@example.com")
-        ticket = _issue_ws_ticket(user)
+        ticket = await _issue_ws_ticket(user)
 
         # Simulate password change — increment auth_version
         @database_sync_to_async
@@ -193,7 +194,7 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
     async def test_nonexistent_user_closes_4001(self):
         user = await _create_user(email="deleted@example.com")
-        ticket = _issue_ws_ticket(user)
+        ticket = await _issue_ws_ticket(user)
 
         # Delete the user after issuing token
         await database_sync_to_async(user.delete)()
@@ -213,7 +214,7 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
 
     async def test_inactive_user_closes_4001(self):
         user = await _create_user(email="inactive@example.com", is_active=False)
-        ticket = _issue_ws_ticket(user)
+        ticket = await _issue_ws_ticket(user)
 
         communicator = _make_communicator(ticket=ticket)
         connected, _ = await communicator.connect()
@@ -227,3 +228,25 @@ class WebSocketAuthMiddlewareTests(TransactionTestCase):
         close = await communicator.receive_output()
         self.assertEqual(close["type"], "websocket.close")
         self.assertEqual(close["code"], 4001)
+
+    async def test_ticket_replay_closes_4001(self):
+        user = await _create_user(email="replay@example.com")
+        ticket = await _issue_ws_ticket(user)
+
+        first = _make_communicator(ticket=ticket)
+        connected, _ = await first.connect()
+        self.assertTrue(connected)
+
+        second = _make_communicator(ticket=ticket)
+        connected, _ = await second.connect()
+        self.assertTrue(connected)
+
+        response = await second.receive_json_from()
+        self.assertEqual(response["type"], "auth_error")
+        self.assertEqual(response["code"], "auth_failed")
+
+        close = await second.receive_output()
+        self.assertEqual(close["type"], "websocket.close")
+        self.assertEqual(close["code"], 4001)
+
+        await first.disconnect()
