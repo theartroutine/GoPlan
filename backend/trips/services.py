@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Prefetch, Q, Subquery
 from django.utils import timezone
@@ -1359,6 +1360,78 @@ def delete_timeline_activity(trip_id, activity_id, *, actor) -> None:
         activity.delete()
 
 
+def _assert_activity_status_update_allowed(
+    activity: TimelineActivity,
+    *,
+    membership: TripMember,
+    actor,
+    status: str,
+) -> None:
+    if membership.role == TripRole.CAPTAIN:
+        if status == activity.status:
+            return
+        allowed_targets = _CAPTAIN_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
+        if status not in allowed_targets:
+            raise StatusTransitionError("This activity status transition is not allowed.")
+        return
+
+    actor_is_assigned = (
+        activity.assignee_scope == TimelineActivityAssigneeScope.EVERYONE
+        or (
+            activity.assignee_scope == TimelineActivityAssigneeScope.USER
+            and activity.assignee_user_id == actor.id
+        )
+    )
+    if not actor_is_assigned:
+        raise TripPermissionError(
+            "Only the captain or assigned member can update this activity status."
+        )
+    if status == activity.status:
+        return
+    allowed_targets = _ASSIGNEE_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
+    if status not in allowed_targets:
+        raise TripPermissionError(
+            "Assigned members cannot perform this activity status transition."
+        )
+
+
+def can_update_timeline_activity_status(
+    *,
+    trip_id,
+    activity_id,
+    actor,
+    status: str,
+) -> bool:
+    if actor is None or not getattr(actor, "is_authenticated", False):
+        return False
+    if not activity_id or not status:
+        return False
+
+    try:
+        trip, membership = _get_visible_trip_membership(trip_id, actor)
+    except TripNotFoundError:
+        return False
+
+    if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
+        return False
+
+    try:
+        activity = TimelineActivity.objects.get(pk=activity_id, trip=trip)
+    except (TimelineActivity.DoesNotExist, TypeError, ValueError, ValidationError):
+        return False
+
+    try:
+        _assert_activity_status_update_allowed(
+            activity,
+            membership=membership,
+            actor=actor,
+            status=status,
+        )
+    except TripServiceError:
+        return False
+    return True
+
+
 def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str) -> TimelineActivity:
     """Update operational activity status. Captain follows full state machine; assignee has limited transitions."""
     with transaction.atomic():
@@ -1376,27 +1449,15 @@ def update_timeline_activity_status(trip_id, activity_id, *, actor, status: str)
         except TimelineActivity.DoesNotExist:
             raise TimelineActivityNotFoundError("Activity not found.")
 
-        if membership.role == TripRole.CAPTAIN:
-            if status == activity.status:
-                return activity
-            allowed_targets = _CAPTAIN_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
-            if status not in allowed_targets:
-                raise StatusTransitionError("This activity status transition is not allowed.")
-        else:
-            actor_is_assigned = (
-                activity.assignee_scope == TimelineActivityAssigneeScope.EVERYONE
-                or (
-                    activity.assignee_scope == TimelineActivityAssigneeScope.USER
-                    and activity.assignee_user_id == actor.id
-                )
-            )
-            if not actor_is_assigned:
-                raise TripPermissionError("Only the captain or assigned member can update this activity status.")
-            if status == activity.status:
-                return activity
-            allowed_targets = _ASSIGNEE_ACTIVITY_STATUS_TARGETS.get(activity.status, set())
-            if status not in allowed_targets:
-                raise TripPermissionError("Assigned members cannot perform this activity status transition.")
+        _assert_activity_status_update_allowed(
+            activity,
+            membership=membership,
+            actor=actor,
+            status=status,
+        )
+
+        if status == activity.status:
+            return activity
 
         activity.status = status
         activity.updated_by = actor

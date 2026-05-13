@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from ai.models import AIInteraction, AIInteractionStatus
+from ai.models import AIActionDraft, AIActionDraftStatus, AIInteraction, AIInteractionStatus
 from ai.services import (
     AI_LOCK_TTL,
     GENERIC_AI_ERROR_MESSAGE,
@@ -78,7 +81,13 @@ def claim_interaction_for_run(interaction_id):
     return interaction
 
 
-def finish_interaction_success(*, interaction, content: str, usage) -> ChatMessage:
+def finish_interaction_success(
+    *,
+    interaction,
+    content: str,
+    usage,
+    drafts=None,
+) -> ChatMessage:
     now = timezone.now()
     with transaction.atomic():
         interaction = AIInteraction.objects.select_for_update().get(pk=interaction.pk)
@@ -93,12 +102,39 @@ def finish_interaction_success(*, interaction, content: str, usage) -> ChatMessa
             content=content,
             ai_status=ChatMessageAIStatus.SUCCESS,
         )
+        draft_specs = drafts or []
+        expires_at = now + timedelta(
+            seconds=settings.GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS
+        )
+        AIActionDraft.objects.bulk_create(
+            [
+                AIActionDraft(
+                    trip=interaction.trip,
+                    interaction=interaction,
+                    response_message=message,
+                    requested_by=interaction.requested_by,
+                    action_type=draft.action_type,
+                    status=(
+                        draft.status
+                        if draft.status
+                        else AIActionDraftStatus.NEEDS_INFO
+                    ),
+                    payload=draft.payload,
+                    preview=draft.preview,
+                    missing_fields=draft.missing_fields,
+                    preconditions=draft.preconditions,
+                    required_confirmation=draft.required_confirmation,
+                    expires_at=expires_at,
+                )
+                for draft in draft_specs
+            ]
+        )
         interaction.response_message = message
         interaction.status = AIInteractionStatus.SUCCEEDED
         interaction.error_code = None
-        interaction.input_tokens = usage.input_tokens
-        interaction.output_tokens = usage.output_tokens
-        interaction.total_tokens = usage.total_tokens
+        interaction.input_tokens = getattr(usage, "input_tokens", None)
+        interaction.output_tokens = getattr(usage, "output_tokens", None)
+        interaction.total_tokens = getattr(usage, "total_tokens", None)
         interaction.completed_at = now
         interaction.lock_expires_at = now
         interaction.save()

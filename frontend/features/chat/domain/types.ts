@@ -1,3 +1,5 @@
+import type { AIActionDraft } from "@/features/chat/domain/ai-action-drafts";
+
 export const ALLOWED_REACTION_EMOJIS = [
   "❤️",
   "😂",
@@ -39,6 +41,7 @@ export type ChatMessage = {
   delete_for_everyone_until: string | null;
   can_delete_for_everyone: boolean;
   reactions: ReactionSummary[];
+  action_drafts: AIActionDraft[];
 };
 
 export type ChatHistoryResponse = {

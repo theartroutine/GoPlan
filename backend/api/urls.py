@@ -9,6 +9,7 @@ urlpatterns = [
     path("trips/", include("trips.urls")),
     path("trips/", include("expenses.urls")),
     path("trips/<uuid:trip_id>/chat/", include("chat.urls")),
+    path("trips/<uuid:trip_id>/ai/", include("ai.urls")),
     path("invitations/", include("trips.invitation_urls")),
     path("media/", include("media.urls")),
 ]

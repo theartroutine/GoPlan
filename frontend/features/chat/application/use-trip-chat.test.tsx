@@ -74,6 +74,7 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
     delete_for_everyone_until: "2026-05-08T10:05:00Z",
     can_delete_for_everyone: true,
     reactions: [],
+    action_drafts: [],
     ...overrides,
   };
 }
@@ -167,6 +168,70 @@ describe("useTripChat", () => {
       "history-old",
       "ws-first",
     ]);
+  });
+
+  it("replaces action drafts from websocket message updates", async () => {
+    const readyDraft = {
+      id: "draft-1",
+      action_type: "expense.create",
+      status: "READY" as const,
+      required_confirmation: "CAPTAIN" as const,
+      can_confirm: true,
+      can_cancel: true,
+      preview: { title: "Dinner" },
+      missing_fields: [],
+      result: {},
+      error_code: "",
+      error_detail: "",
+      expires_at: "2026-06-01T00:00:00Z",
+      created_at: "2026-05-13T00:00:00Z",
+      updated_at: "2026-05-13T00:00:00Z",
+    };
+    chatApiMock.bffListChatHistory.mockResolvedValue({
+      results: [
+        makeMessage({
+          id: "ai-message",
+          sender_kind: "AI",
+          ai_status: "SUCCESS",
+          action_drafts: [readyDraft],
+        }),
+      ],
+      next_cursor: null,
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
+    });
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onMessage: (e: unknown) => void;
+      };
+      listeners.onMessage({
+        type: "chat.message",
+        trip_id: TRIP_ID,
+        message: makeMessage({
+          id: "ai-message",
+          sender_kind: "AI",
+          ai_status: "SUCCESS",
+          action_drafts: [
+            {
+              ...readyDraft,
+              status: "CONFIRMED" as const,
+              can_confirm: false,
+              can_cancel: false,
+            },
+          ],
+        }),
+      });
+    });
+
+    expect(result.current.messages[0].action_drafts[0]).toMatchObject({
+      id: "draft-1",
+      status: "CONFIRMED",
+    });
   });
 
   it("gap-fills after subscribe ack to close the initial history race", async () => {

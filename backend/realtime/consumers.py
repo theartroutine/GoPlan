@@ -8,6 +8,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.conf import settings
 
 from chat.services import (
+    build_personalized_chat_event_payload_for_viewer,
     ensure_user_can_access_trip_chat,
     is_chat_message_hidden_for_user,
     personalize_chat_event_payload_for_viewer,
@@ -243,9 +244,19 @@ class RealtimeConsumer(BaseConsumer):
             logger.exception("Failed to verify chat access before push")
             return
 
-        await self.send_json(
-            personalize_chat_event_payload_for_viewer(data, self.user)
-        )
+        message = data.get("message")
+        message_id = message.get("id") if isinstance(message, dict) else None
+        if await database_sync_to_async(is_chat_message_hidden_for_user)(
+            user=self.user,
+            trip_id=trip_id,
+            message_id=message_id,
+        ):
+            return
+
+        personalized = await database_sync_to_async(
+            build_personalized_chat_event_payload_for_viewer
+        )(data, self.user)
+        await self.send_json(personalized)
 
     async def chat_message_deleted_push(self, event):
         if not await self._ensure_current_session():

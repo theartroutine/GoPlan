@@ -8,9 +8,16 @@ from uuid import uuid4
 from django.test import TestCase
 from django.utils import timezone
 
-from ai.deepseek import DeepSeekProviderError, DeepSeekResult, DeepSeekUsage
+from ai.agent.runner import AgentDraftSpec, AgentRunResult
+from ai.deepseek import DeepSeekProviderError, DeepSeekUsage
 from ai.lifecycle import InteractionAlreadyRunningError, claim_interaction_for_run
-from ai.models import AIInteraction, AIInteractionErrorCode, AIInteractionStatus
+from ai.models import (
+    AIActionDraft,
+    AIActionDraftStatus,
+    AIInteraction,
+    AIInteractionErrorCode,
+    AIInteractionStatus,
+)
 from ai.services import (
     GENERIC_AI_ERROR_MESSAGE,
     enqueue_ai_interaction,
@@ -84,7 +91,7 @@ def _make_active_sibling_interaction(interaction):
 class GoPlanAITaskTests(TestCase):
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.complete_goplan_ai_prompt")
+    @patch("ai.tasks.run_goplan_ai_agent")
     def test_task_success_creates_ai_message_and_saves_usage(
         self,
         mock_complete,
@@ -92,8 +99,9 @@ class GoPlanAITaskTests(TestCase):
         mock_typing_stopped,
     ):
         interaction = _make_interaction()
-        mock_complete.return_value = DeepSeekResult(
-            content="AI answer",
+        mock_complete.return_value = AgentRunResult(
+            message="AI answer",
+            drafts=[],
             usage=DeepSeekUsage(input_tokens=5, output_tokens=7, total_tokens=12),
         )
 
@@ -112,7 +120,7 @@ class GoPlanAITaskTests(TestCase):
 
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.complete_goplan_ai_prompt")
+    @patch("ai.tasks.run_goplan_ai_agent")
     def test_task_provider_bad_response_creates_generic_error(
         self,
         mock_complete,
@@ -139,7 +147,7 @@ class GoPlanAITaskTests(TestCase):
 
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.complete_goplan_ai_prompt")
+    @patch("ai.tasks.run_goplan_ai_agent")
     def test_redelivered_task_does_not_create_duplicate_ai_message(
         self,
         mock_complete,
@@ -147,8 +155,9 @@ class GoPlanAITaskTests(TestCase):
         mock_typing_stopped,
     ):
         interaction = _make_interaction()
-        mock_complete.return_value = DeepSeekResult(
-            content="AI answer",
+        mock_complete.return_value = AgentRunResult(
+            message="AI answer",
+            drafts=[],
             usage=DeepSeekUsage(input_tokens=5, output_tokens=7, total_tokens=12),
         )
 
@@ -162,6 +171,40 @@ class GoPlanAITaskTests(TestCase):
         mock_complete.assert_called_once()
         mock_typing_started.assert_called_once()
         mock_typing_stopped.assert_called_once()
+
+    @patch("ai.tasks.push_ai_typing_stopped")
+    @patch("ai.tasks.push_ai_typing_started")
+    @patch("ai.tasks.run_goplan_ai_agent")
+    def test_task_success_persists_action_draft(
+        self,
+        mock_agent,
+        _typing_started,
+        _typing_stopped,
+    ):
+        interaction = _make_interaction()
+        mock_agent.return_value = AgentRunResult(
+            message="I prepared an expense draft.",
+            usage=DeepSeekUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+            drafts=[
+                AgentDraftSpec(
+                    action_type="expense.create",
+                    required_confirmation="CAPTAIN",
+                    status="READY",
+                    payload={"title": "Dinner", "total_amount": "1200000"},
+                    preview={"title": "Dinner"},
+                    missing_fields=[],
+                    preconditions={},
+                )
+            ],
+        )
+
+        run_goplan_ai_interaction(str(interaction.id))
+
+        interaction.refresh_from_db()
+        draft = AIActionDraft.objects.get()
+        self.assertEqual(draft.response_message, interaction.response_message)
+        self.assertEqual(draft.action_type, "expense.create")
+        self.assertEqual(draft.status, AIActionDraftStatus.READY)
 
     @patch("ai.tasks.run_goplan_ai_interaction.delay")
     def test_enqueue_ai_interaction_saves_task_id(self, mock_delay):

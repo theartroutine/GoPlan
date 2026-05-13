@@ -85,3 +85,86 @@ class AIInteraction(models.Model):
 
     def __str__(self) -> str:
         return f"AIInteraction {self.id} trip={self.trip_id} status={self.status}"
+
+
+class AIActionDraftStatus(models.TextChoices):
+    NEEDS_INFO = "NEEDS_INFO", "Needs info"
+    READY = "READY", "Ready"
+    CONFIRMED = "CONFIRMED", "Confirmed"
+    CANCELLED = "CANCELLED", "Cancelled"
+    EXPIRED = "EXPIRED", "Expired"
+    FAILED = "FAILED", "Failed"
+
+
+class AIActionDraft(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    trip = models.ForeignKey(
+        "trips.Trip",
+        on_delete=models.CASCADE,
+        related_name="ai_action_drafts",
+    )
+    interaction = models.ForeignKey(
+        "ai.AIInteraction",
+        on_delete=models.CASCADE,
+        related_name="action_drafts",
+    )
+    response_message = models.ForeignKey(
+        "chat.ChatMessage",
+        on_delete=models.CASCADE,
+        related_name="ai_action_drafts",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    action_type = models.CharField(max_length=64)
+    status = models.CharField(
+        max_length=16,
+        choices=AIActionDraftStatus.choices,
+        default=AIActionDraftStatus.NEEDS_INFO,
+    )
+    payload = models.JSONField(default=dict)
+    preview = models.JSONField(default=dict)
+    missing_fields = models.JSONField(default=list)
+    preconditions = models.JSONField(default=dict)
+    required_confirmation = models.CharField(max_length=32)
+    result = models.JSONField(default=dict)
+    error_code = models.CharField(max_length=64, blank=True, default="")
+    error_detail = models.CharField(max_length=255, blank=True, default="")
+    expires_at = models.DateTimeField(db_index=True)
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["trip", "status", "expires_at"],
+                name="ai_draft_trip_status_exp_idx",
+            ),
+            models.Index(
+                fields=["response_message", "created_at"],
+                name="ai_draft_response_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"AIActionDraft {self.id} {self.action_type} status={self.status}"

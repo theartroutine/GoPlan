@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
@@ -16,7 +16,14 @@ from realtime.consumers import RealtimeConsumer
 from realtime.middleware import WebSocketAuthMiddleware
 from realtime.services import issue_ws_ticket
 from test_helpers import create_completed_user, create_verified_user
-from chat.models import ChatMessage, ChatMessageHiddenForUser
+from ai.action_types import AI_CONFIRMATION_CAPTAIN
+from ai.models import (
+    AIActionDraft,
+    AIActionDraftStatus,
+    AIInteraction,
+    AIInteractionStatus,
+)
+from chat.models import ChatMessage, ChatMessageHiddenForUser, ChatMessageSenderKind
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
 TEST_CHANNEL_LAYERS = {
@@ -96,6 +103,47 @@ def _make_chat_message(trip, sender, content="Hidden content"):
 @database_sync_to_async
 def _hide_chat_message_for_user(message, user):
     return ChatMessageHiddenForUser.objects.create(message=message, user=user)
+
+
+@database_sync_to_async
+def _make_ai_message_with_draft(trip, captain):
+    prompt = ChatMessage.objects.create(
+        trip=trip,
+        sender=captain,
+        sender_display_name_snapshot=captain.display_name,
+        sender_identify_tag_snapshot=captain.identify_tag,
+        content="@GoPlanAI create dinner expense",
+        client_message_id=uuid4(),
+    )
+    ai_message = ChatMessage.objects.create(
+        trip=trip,
+        sender_kind=ChatMessageSenderKind.AI,
+        sender_display_name_snapshot="GoPlanAI",
+        content="I prepared a draft.",
+    )
+    interaction = AIInteraction.objects.create(
+        trip=trip,
+        requested_by=captain,
+        prompt_message=prompt,
+        prompt="create dinner expense",
+        status=AIInteractionStatus.SUCCEEDED,
+        lock_expires_at=timezone.now() + timedelta(minutes=2),
+    )
+    AIActionDraft.objects.create(
+        trip=trip,
+        interaction=interaction,
+        response_message=ai_message,
+        requested_by=captain,
+        action_type="expense.create",
+        status=AIActionDraftStatus.READY,
+        required_confirmation=AI_CONFIRMATION_CAPTAIN,
+        payload={"title": "Dinner"},
+        preview={"title": "Dinner"},
+        missing_fields=[],
+        preconditions={},
+        expires_at=timezone.now() + timedelta(hours=24),
+    )
+    return ai_message
 
 
 async def _connect(user):
@@ -306,6 +354,44 @@ class ChatConsumerTests(TransactionTestCase):
 
         await communicator.disconnect()
 
+    async def test_message_push_personalizes_action_draft_permissions(self):
+        captain = await _create_user("ws-ai-cap@example.com", "wsaicap", "WAC001")
+        member = await _create_user("ws-ai-mem@example.com", "wsaimem", "WAM001")
+        trip = await _make_trip(captain)
+        await _add_member(trip, member)
+        ai_message = await _make_ai_message_with_draft(trip, captain)
+        captain_socket, captain_connected = await _connect(captain)
+        member_socket, member_connected = await _connect(member)
+        self.assertTrue(captain_connected)
+        self.assertTrue(member_connected)
+
+        for communicator in (captain_socket, member_socket):
+            await communicator.send_json_to(
+                {"type": "chat.subscribe", "trip_id": str(trip.id)}
+            )
+            await communicator.receive_json_from(timeout=1)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"trip_chat_{trip.id}",
+            {
+                "type": "chat_message_push",
+                "data": {
+                    "type": "chat.message",
+                    "trip_id": str(trip.id),
+                    "message": {"id": str(ai_message.id)},
+                },
+            },
+        )
+
+        captain_push = await captain_socket.receive_json_from(timeout=1)
+        member_push = await member_socket.receive_json_from(timeout=1)
+        self.assertTrue(captain_push["message"]["action_drafts"][0]["can_confirm"])
+        self.assertFalse(member_push["message"]["action_drafts"][0]["can_confirm"])
+
+        await captain_socket.disconnect()
+        await member_socket.disconnect()
+
     async def test_chat_message_deleted_push_reaches_subscribed_member(self):
         captain = await _create_user("ws-del-cap@example.com", "wsdcap", "WDC001")
         member = await _create_user("ws-del-mem@example.com", "wsdmem", "WDM001")
@@ -366,6 +452,38 @@ class ChatConsumerTests(TransactionTestCase):
                         "id": str(message.id),
                         "is_deleted_for_everyone": True,
                     },
+                },
+            },
+        )
+
+        self.assertTrue(await communicator.receive_nothing(timeout=0.2))
+
+        await communicator.disconnect()
+
+    async def test_message_push_does_not_resurface_message_hidden_for_viewer(self):
+        captain = await _create_user("ws-push-hide-cap@example.com", "wsphcap", "WPH001")
+        member = await _create_user("ws-push-hide-mem@example.com", "wsphmem", "WPH002")
+        trip = await _make_trip(captain)
+        await _add_member(trip, member)
+        message = await _make_chat_message(trip, captain)
+        await _hide_chat_message_for_user(message, member)
+        communicator, connected = await _connect(member)
+        self.assertTrue(connected)
+
+        await communicator.send_json_to(
+            {"type": "chat.subscribe", "trip_id": str(trip.id)}
+        )
+        await communicator.receive_json_from(timeout=1)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"trip_chat_{trip.id}",
+            {
+                "type": "chat_message_push",
+                "data": {
+                    "type": "chat.message",
+                    "trip_id": str(trip.id),
+                    "message": {"id": str(message.id)},
                 },
             },
         )

@@ -64,6 +64,7 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     delete_for_everyone_until: "2026-05-08T10:05:00Z",
     can_delete_for_everyone: true,
     reactions: [],
+    action_drafts: [],
     ...overrides,
   };
 }

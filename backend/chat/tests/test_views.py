@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
+from django.utils import timezone
 from rest_framework.test import APITestCase
 from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.tokens import AccessToken
-from ai.models import AIInteraction
-from chat.models import ChatMessage
+from ai.action_types import AI_CONFIRMATION_CAPTAIN
+from ai.models import (
+    AIActionDraft,
+    AIActionDraftStatus,
+    AIInteraction,
+    AIInteractionStatus,
+)
+from chat.models import ChatMessage, ChatMessageSenderKind
+from chat.services import build_chat_message_payload
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
@@ -360,3 +369,50 @@ class TripChatAIPromptAPITests(APITestCase):
         self.assertEqual(second.data["message"]["id"], first.data["message"]["id"])
         self.assertEqual(ChatMessage.objects.count(), 1)
         self.assertEqual(AIInteraction.objects.count(), 1)
+
+
+class ChatMessageActionDraftPayloadTests(APITestCase):
+    def test_ai_message_payload_includes_viewer_specific_action_drafts(self):
+        captain = create_completed_user("draft-chat@example.com", "draftchat", "DRF001")
+        trip = _make_trip(captain)
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=captain,
+            sender_display_name_snapshot=captain.display_name,
+            sender_identify_tag_snapshot=captain.identify_tag,
+            content="@GoPlanAI create dinner expense",
+            client_message_id=uuid4(),
+        )
+        ai_message = ChatMessage.objects.create(
+            trip=trip,
+            sender_kind=ChatMessageSenderKind.AI,
+            sender_display_name_snapshot="GoPlanAI",
+            content="I prepared a draft.",
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=captain,
+            prompt_message=prompt,
+            prompt="create dinner expense",
+            status=AIInteractionStatus.SUCCEEDED,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        draft = AIActionDraft.objects.create(
+            trip=trip,
+            interaction=interaction,
+            response_message=ai_message,
+            requested_by=captain,
+            action_type="expense.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={"title": "Dinner"},
+            preview={"title": "Dinner"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        payload = build_chat_message_payload(ai_message, viewer=captain)
+
+        self.assertEqual(payload["action_drafts"][0]["id"], str(draft.id))
+        self.assertTrue(payload["action_drafts"][0]["can_confirm"])

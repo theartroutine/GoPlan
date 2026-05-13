@@ -110,6 +110,7 @@ export function ChatRoom({
         </div>
       )}
       <MessageList
+        tripId={tripId}
         messages={chat.messages}
         currentUserId={currentUser.id}
         captainUserId={captainUserId}

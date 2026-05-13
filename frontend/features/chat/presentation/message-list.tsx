@@ -19,6 +19,7 @@ import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 
 type Props = {
+  tripId?: string;
   messages: ChatMessage[];
   currentUserId: string;
   captainUserId?: string | null;
@@ -51,6 +52,7 @@ function sameGroup(a: ChatMessage, b: ChatMessage): boolean {
 }
 
 export function MessageList({
+  tripId,
   messages,
   currentUserId,
   captainUserId = null,
@@ -314,6 +316,7 @@ export function MessageList({
           return (
             <MessageBubble
               key={message.id}
+              tripId={tripId ?? message.trip_id}
               message={message}
               isOwn={isOwn}
               isPending={isPending}

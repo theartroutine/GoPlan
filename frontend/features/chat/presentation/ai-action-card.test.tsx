@@ -1,0 +1,123 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+import type { AIActionDraft } from "@/features/chat/domain/ai-action-drafts";
+import {
+  confirmAIActionDraft,
+  patchAIActionDraft,
+} from "@/features/chat/infrastructure/ai-action-drafts-api";
+import { AIActionCard } from "@/features/chat/presentation/ai-action-card";
+
+vi.mock("@/features/chat/infrastructure/ai-action-drafts-api", () => ({
+  cancelAIActionDraft: vi.fn(),
+  confirmAIActionDraft: vi.fn(),
+  patchAIActionDraft: vi.fn(),
+}));
+
+function makeDraft(overrides: Partial<AIActionDraft> = {}): AIActionDraft {
+  return {
+    id: "draft-1",
+    action_type: "expense.create",
+    status: "READY",
+    required_confirmation: "CAPTAIN",
+    can_confirm: true,
+    can_cancel: true,
+    preview: { title: "Dinner", amount: "1,200,000 VND" },
+    missing_fields: [],
+    result: {},
+    error_code: "",
+    error_detail: "",
+    expires_at: "2026-06-01T00:00:00Z",
+    created_at: "2026-05-13T00:00:00Z",
+    updated_at: "2026-05-13T00:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("AIActionCard", () => {
+  it("shows confirm and cancel for authorized ready drafts", () => {
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft()}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  it("shows waiting state for unauthorized ready drafts", () => {
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({ can_confirm: false, can_cancel: false })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Waiting for the authorized member to confirm."),
+    ).toBeInTheDocument();
+  });
+
+  it("calls confirm handler and reports changed draft", async () => {
+    vi.mocked(confirmAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({
+        status: "CONFIRMED",
+        can_confirm: false,
+        can_cancel: false,
+      }),
+    });
+    const onDraftChanged = vi.fn();
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft()}
+        onDraftChanged={onDraftChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    expect(await screen.findByText("CONFIRMED")).toBeInTheDocument();
+    expect(onDraftChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "CONFIRMED" }),
+    );
+  });
+
+  it("edits missing fields for needs-info drafts", async () => {
+    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({
+        status: "READY",
+        missing_fields: [],
+        preview: { title: "Lunch", total_amount: "500000" },
+      }),
+    });
+    const onDraftChanged = vi.fn();
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          missing_fields: [{ name: "total_amount", label: "Amount" }],
+          preview: { title: "Lunch" },
+        })}
+        onDraftChanged={onDraftChanged}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Amount"), {
+      target: { value: "500000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
+      total_amount: "500000",
+    });
+    expect(await screen.findByText("READY")).toBeInTheDocument();
+  });
+});

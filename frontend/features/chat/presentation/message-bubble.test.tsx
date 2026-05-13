@@ -27,6 +27,7 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     delete_for_everyone_until: null,
     can_delete_for_everyone: false,
     reactions: [],
+    action_drafts: [],
     ...overrides,
   };
 }
