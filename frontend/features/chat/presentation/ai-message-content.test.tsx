@@ -44,4 +44,16 @@ describe("AiMessageContent", () => {
     expect(document.querySelector("script")).toBeNull();
     expect(screen.getByText(/hello/)).toBeInTheDocument();
   });
+
+  it("does not render markdown images", () => {
+    render(<AiMessageContent content="![tracking pixel](https://example.com/pixel.png)" />);
+    expect(document.querySelector("img")).toBeNull();
+    expect(screen.queryByAltText("tracking pixel")).toBeNull();
+  });
+
+  it("strips raw image tags", () => {
+    render(<AiMessageContent content={'<img src="https://example.com/pixel.png" alt="pixel">hello'} />);
+    expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByText(/hello/)).toBeInTheDocument();
+  });
 });

@@ -1082,6 +1082,43 @@ describe("useTripChat", () => {
     expect(result.current.isAITyping).toBe(false);
   });
 
+  it.each(["SUCCESS", "ERROR"] as const)(
+    "clears AI typing when an AI %s message arrives without the stopped event",
+    async (aiStatus) => {
+      chatApiMock.bffListChatHistory.mockResolvedValue({ results: [], next_cursor: null });
+
+      const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+
+      act(() => {
+        const listeners = wsBridgeMock.listenersRef.current as unknown as {
+          onAITypingStarted: (e: unknown) => void;
+          onMessage: (e: unknown) => void;
+        };
+        listeners.onAITypingStarted({
+          type: "chat.ai_typing_started",
+          trip_id: TRIP_ID,
+          interaction_id: "interaction-final",
+          requested_by_user_id: ME.id,
+        });
+        listeners.onMessage({
+          type: "chat.message",
+          trip_id: TRIP_ID,
+          message: makeMessage({
+            id: `ai-${aiStatus.toLowerCase()}`,
+            sender: { id: null, display_name: "GoPlanAI", identify_tag: null },
+            sender_kind: "AI",
+            ai_status: aiStatus,
+            content: aiStatus === "SUCCESS" ? "AI answer" : "GoPlanAI hiện chưa trả lời được.",
+          }),
+        });
+      });
+
+      expect(result.current.isAITyping).toBe(false);
+      expect(result.current.messages[0].sender_kind).toBe("AI");
+    },
+  );
+
   it("ignores duplicate reaction clicks while a reaction mutation is in flight", async () => {
     chatApiMock.bffListChatHistory.mockResolvedValue({
       results: [makeMessage({ id: "react-once" })],

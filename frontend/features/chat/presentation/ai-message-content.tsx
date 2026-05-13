@@ -1,9 +1,42 @@
 import React from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
+import rehypeSanitize, { type Options as RehypeSanitizeOptions } from "rehype-sanitize";
 
 import { CodeBlock } from "@/features/chat/presentation/code-block";
+
+const aiMarkdownSanitizeSchema: RehypeSanitizeOptions = {
+  tagNames: [
+    "a",
+    "b",
+    "blockquote",
+    "br",
+    "code",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "i",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "strong",
+    "ul",
+  ],
+  attributes: {
+    a: ["href", "title"],
+    code: [["className", /^language-./]],
+    ol: ["start"],
+  },
+  protocols: {
+    href: ["http", "https", "mailto"],
+  },
+  strip: ["script", "style"],
+};
 
 const markdownComponents: Components = {
   h1: ({ children }) => <strong>{children}</strong>,
@@ -51,7 +84,7 @@ export function AiMessageContent({ content }: Props) {
     <div className="space-y-1.5 text-sm [&_li]:my-0.5 [&_ol]:ml-4 [&_ol]:list-decimal [&_ul]:ml-4 [&_ul]:list-disc">
       <ReactMarkdown
         remarkRehypeOptions={{ allowDangerousHtml: true }}
-        rehypePlugins={[rehypeRaw, rehypeSanitize]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, aiMarkdownSanitizeSchema]]}
         components={markdownComponents}
       >
         {content}
