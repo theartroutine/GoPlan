@@ -6,6 +6,8 @@ import {
 import { wsManager } from "@/features/realtime/infrastructure/ws-manager";
 
 import type {
+  WsChatAITypingStarted,
+  WsChatAITypingStopped,
   WsChatError,
   WsChatKicked,
   WsChatMessageDeleted,
@@ -23,6 +25,8 @@ type ChatRoomListeners = {
   onSubscribed?: (event: WsChatSubscribed) => void;
   onUnsubscribed?: (event: WsChatUnsubscribed) => void;
   onReactionUpdate?: (event: WsChatReactionUpdate) => void;
+  onAITypingStarted?: (event: WsChatAITypingStarted) => void;
+  onAITypingStopped?: (event: WsChatAITypingStopped) => void;
 };
 
 type ChatRoomHandle = {
@@ -87,6 +91,16 @@ function ensureLifecycle(): void {
   wsManager.on(CHAT_WS_MESSAGE_TYPES.REACTION_UPDATE, (data: WsMessage) => {
     const event = data as unknown as WsChatReactionUpdate;
     rooms.get(event.trip_id)?.listeners.onReactionUpdate?.(event);
+  });
+
+  wsManager.on(CHAT_WS_MESSAGE_TYPES.AI_TYPING_STARTED, (data: WsMessage) => {
+    const event = data as unknown as WsChatAITypingStarted;
+    rooms.get(event.trip_id)?.listeners.onAITypingStarted?.(event);
+  });
+
+  wsManager.on(CHAT_WS_MESSAGE_TYPES.AI_TYPING_STOPPED, (data: WsMessage) => {
+    const event = data as unknown as WsChatAITypingStopped;
+    rooms.get(event.trip_id)?.listeners.onAITypingStopped?.(event);
   });
 
   wsManager.onStatusChange((status) => {

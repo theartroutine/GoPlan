@@ -32,6 +32,8 @@ const wsBridgeMock = vi.hoisted(() => {
           onSubscribed?: (e: unknown) => void;
           onMessageDeleted?: (e: unknown) => void;
           onReactionUpdate?: (e: unknown) => void;
+          onAITypingStarted?: (e: unknown) => void;
+          onAITypingStopped?: (e: unknown) => void;
         },
       ) => {
         listenersRef.current = listeners as never;
@@ -60,6 +62,8 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
     id: "m-1",
     trip_id: TRIP_ID,
     sender: { id: "user-other", display_name: "Other", identify_tag: null },
+    sender_kind: "USER",
+    ai_status: null,
     content: "hello",
     client_message_id: null,
     created_at: "2026-05-08T10:00:00Z",
@@ -1010,6 +1014,110 @@ describe("useTripChat", () => {
 
     expect(result.current.errorCode).toBeNull();
   });
+
+  it("drops optimistic AI prompt when backend returns AI_BUSY", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({ results: [], next_cursor: null });
+    chatApiMock.bffSendChatMessage.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 409, data: { error_code: "AI_BUSY" } },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    await act(async () => {
+      await result.current.sendMessage("@GoPlanAI hello");
+    });
+
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.errorCode).toBe("AI_BUSY");
+  });
+
+  it("tracks AI typing state from realtime events and only clears the active interaction", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({ results: [], next_cursor: null });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onAITypingStarted: (e: unknown) => void;
+        onAITypingStopped: (e: unknown) => void;
+      };
+      listeners.onAITypingStarted({
+        type: "chat.ai_typing_started",
+        trip_id: TRIP_ID,
+        interaction_id: "interaction-1",
+        requested_by_user_id: ME.id,
+      });
+    });
+
+    expect(result.current.isAITyping).toBe(true);
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onAITypingStopped: (e: unknown) => void;
+      };
+      listeners.onAITypingStopped({
+        type: "chat.ai_typing_stopped",
+        trip_id: TRIP_ID,
+        interaction_id: "other-interaction",
+      });
+    });
+
+    expect(result.current.isAITyping).toBe(true);
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onAITypingStopped: (e: unknown) => void;
+      };
+      listeners.onAITypingStopped({
+        type: "chat.ai_typing_stopped",
+        trip_id: TRIP_ID,
+        interaction_id: "interaction-1",
+      });
+    });
+
+    expect(result.current.isAITyping).toBe(false);
+  });
+
+  it.each(["SUCCESS", "ERROR"] as const)(
+    "clears AI typing when an AI %s message arrives without the stopped event",
+    async (aiStatus) => {
+      chatApiMock.bffListChatHistory.mockResolvedValue({ results: [], next_cursor: null });
+
+      const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+      await waitFor(() => expect(result.current.status).toBe("ready"));
+
+      act(() => {
+        const listeners = wsBridgeMock.listenersRef.current as unknown as {
+          onAITypingStarted: (e: unknown) => void;
+          onMessage: (e: unknown) => void;
+        };
+        listeners.onAITypingStarted({
+          type: "chat.ai_typing_started",
+          trip_id: TRIP_ID,
+          interaction_id: "interaction-final",
+          requested_by_user_id: ME.id,
+        });
+        listeners.onMessage({
+          type: "chat.message",
+          trip_id: TRIP_ID,
+          message: makeMessage({
+            id: `ai-${aiStatus.toLowerCase()}`,
+            sender: { id: null, display_name: "GoPlanAI", identify_tag: null },
+            sender_kind: "AI",
+            ai_status: aiStatus,
+            content: aiStatus === "SUCCESS" ? "AI answer" : "GoPlanAI hiện chưa trả lời được.",
+          }),
+        });
+      });
+
+      expect(result.current.isAITyping).toBe(false);
+      expect(result.current.messages[0].sender_kind).toBe("AI");
+    },
+  );
 
   it("ignores duplicate reaction clicks while a reaction mutation is in flight", async () => {
     chatApiMock.bffListChatHistory.mockResolvedValue({

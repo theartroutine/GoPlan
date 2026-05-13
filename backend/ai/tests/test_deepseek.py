@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from django.test import SimpleTestCase, override_settings
+
+from ai.deepseek import DeepSeekProviderError, complete_goplan_ai_prompt
+from ai.models import AIInteractionErrorCode
+
+
+class DeepSeekClientTests(SimpleTestCase):
+    @override_settings(
+        DEEPSEEK_API_KEY="test-key",
+        DEEPSEEK_BASE_URL="https://api.deepseek.com",
+        DEEPSEEK_MODEL="deepseek-v4-flash",
+        DEEPSEEK_TIMEOUT_SECONDS=60,
+        DEEPSEEK_MAX_OUTPUT_TOKENS=800,
+        GOPLAN_AI_SYSTEM_PROMPT="system prompt",
+    )
+    @patch("ai.deepseek.OpenAI")
+    def test_complete_prompt_uses_deepseek_contract(self, mock_openai):
+        response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content=" AI answer "),
+                )
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=3,
+                completion_tokens=4,
+                total_tokens=7,
+            ),
+        )
+        client = mock_openai.return_value
+        client.chat.completions.create.return_value = response
+
+        result = complete_goplan_ai_prompt("plan day 1")
+
+        mock_openai.assert_called_once_with(
+            api_key="test-key",
+            base_url="https://api.deepseek.com",
+            timeout=60,
+        )
+        client.chat.completions.create.assert_called_once_with(
+            model="deepseek-v4-flash",
+            messages=[
+                {"role": "system", "content": "system prompt"},
+                {"role": "user", "content": "plan day 1"},
+            ],
+            stream=False,
+            max_tokens=800,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        self.assertEqual(result.content, "AI answer")
+        self.assertEqual(result.usage.total_tokens, 7)
+
+    @override_settings(DEEPSEEK_API_KEY="")
+    def test_missing_api_key_maps_to_config_missing(self):
+        with self.assertRaises(DeepSeekProviderError) as ctx:
+            complete_goplan_ai_prompt("hello")
+
+        self.assertEqual(ctx.exception.error_code, AIInteractionErrorCode.CONFIG_MISSING)

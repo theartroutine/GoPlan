@@ -21,6 +21,8 @@ import type {
   ChatMessage,
   DeleteChatMessageMode,
   ReactionSummary,
+  WsChatAITypingStarted,
+  WsChatAITypingStopped,
   WsChatError,
   WsChatMessageDeleted,
   WsChatMessagePush,
@@ -51,6 +53,7 @@ export type UseTripChatResult = {
   hasMoreOlder: boolean;
   isLoadingOlder: boolean;
   isSending: boolean;
+  isAITyping: boolean;
   loadOlder: () => Promise<void>;
   sendMessage: (content: string) => Promise<SendOutcome>;
   retryPending: (clientMessageId: string) => Promise<SendOutcome>;
@@ -74,6 +77,8 @@ type ChatState = {
   nextOlderCursor: string | null;
   isLoadingOlder: boolean;
   isSending: boolean;
+  activeAIInteractionId: string | null;
+  aiTypingRequestedByUserId: string | null;
 };
 
 type ChatAction =
@@ -104,7 +109,10 @@ type ChatAction =
   | { type: "WS_ERROR"; errorCode: string }
   | { type: "CLEAR_ROOM_ERROR" }
   | { type: "UPDATE_REACTIONS"; messageId: string; reactions: ReactionSummary[] }
-  | { type: "HIDE_MESSAGES"; messageIds: string[] };
+  | { type: "HIDE_MESSAGES"; messageIds: string[] }
+  | { type: "AI_TYPING_STARTED"; interactionId: string; requestedByUserId: string | null }
+  | { type: "AI_TYPING_STOPPED"; interactionId: string }
+  | { type: "DROP_PENDING"; clientMessageId: string };
 
 function initialState(): ChatState {
   return {
@@ -119,6 +127,8 @@ function initialState(): ChatState {
     nextOlderCursor: null,
     isLoadingOlder: false,
     isSending: false,
+    activeAIInteractionId: null,
+    aiTypingRequestedByUserId: null,
   };
 }
 
@@ -183,6 +193,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const confirmed = new Map(state.confirmed);
       const pending = new Map(state.pending);
       const failed = new Set(state.failed);
+      const didReceiveAICompletion = hasAICompletionMessage(action.messages);
       for (const m of action.messages) {
         if (state.hidden.has(m.id)) continue;
         confirmed.set(m.id, m);
@@ -191,7 +202,14 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           failed.delete(m.client_message_id);
         }
       }
-      return { ...state, confirmed, pending, failed, errorCode: null };
+      return {
+        ...state,
+        confirmed,
+        pending,
+        failed,
+        errorCode: null,
+        ...(didReceiveAICompletion ? clearedAIInteractionState() : {}),
+      };
     }
 
     case "PATCH_CONFIRMED": {
@@ -199,18 +217,27 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const pending = new Map(state.pending);
       const failed = new Set(state.failed);
       let changed = false;
+      let didReceiveAICompletion = false;
       for (const m of action.messages) {
         if (state.hidden.has(m.id)) continue;
         if (!confirmed.has(m.id)) continue;
         confirmed.set(m.id, m);
         changed = true;
+        didReceiveAICompletion ||= isAICompletionMessage(m);
         if (m.client_message_id) {
           pending.delete(m.client_message_id);
           failed.delete(m.client_message_id);
         }
       }
       if (!changed) return state;
-      return { ...state, confirmed, pending, failed, errorCode: null };
+      return {
+        ...state,
+        confirmed,
+        pending,
+        failed,
+        errorCode: null,
+        ...(didReceiveAICompletion ? clearedAIInteractionState() : {}),
+      };
     }
 
     case "ADD_PENDING": {
@@ -299,6 +326,25 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, confirmed, pending, hidden, errorCode: null };
     }
 
+    case "AI_TYPING_STARTED":
+      return {
+        ...state,
+        activeAIInteractionId: action.interactionId,
+        aiTypingRequestedByUserId: action.requestedByUserId,
+      };
+
+    case "AI_TYPING_STOPPED":
+      if (state.activeAIInteractionId !== action.interactionId) return state;
+      return { ...state, activeAIInteractionId: null, aiTypingRequestedByUserId: null };
+
+    case "DROP_PENDING": {
+      const pending = new Map(state.pending);
+      const failed = new Set(state.failed);
+      pending.delete(action.clientMessageId);
+      failed.delete(action.clientMessageId);
+      return { ...state, pending, failed };
+    }
+
     default:
       return state;
   }
@@ -309,6 +355,24 @@ function compareMessages(a: ChatMessage, b: ChatMessage): number {
     return a.created_at < b.created_at ? -1 : 1;
   }
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+function isAICompletionMessage(message: ChatMessage): boolean {
+  return (
+    message.sender_kind === "AI" &&
+    (message.ai_status === "SUCCESS" || message.ai_status === "ERROR")
+  );
+}
+
+function hasAICompletionMessage(messages: ChatMessage[]): boolean {
+  return messages.some(isAICompletionMessage);
+}
+
+function clearedAIInteractionState() {
+  return {
+    activeAIInteractionId: null,
+    aiTypingRequestedByUserId: null,
+  };
 }
 
 function selectVisibleMessages(state: ChatState): ChatMessage[] {
@@ -492,6 +556,19 @@ export function useTripChat(
           reactions: event.reactions,
         });
       },
+      onAITypingStarted: (event: WsChatAITypingStarted) => {
+        dispatch({
+          type: "AI_TYPING_STARTED",
+          interactionId: event.interaction_id,
+          requestedByUserId: event.requested_by_user_id,
+        });
+      },
+      onAITypingStopped: (event: WsChatAITypingStopped) => {
+        dispatch({
+          type: "AI_TYPING_STOPPED",
+          interactionId: event.interaction_id,
+        });
+      },
     });
 
     return () => {
@@ -550,6 +627,8 @@ export function useTripChat(
             display_name: currentUser.display_name,
             identify_tag: currentUser.identify_tag,
           },
+          sender_kind: "USER",
+          ai_status: null,
           content,
           client_message_id: clientMessageId,
           created_at: now,
@@ -582,6 +661,11 @@ export function useTripChat(
         const errorCode = extractErrorCode(error, "SEND_FAILED");
         if (errorCode === "TRIP_TERMINAL") {
           dispatch({ type: "LOCK_SEND_TERMINAL", clientMessageId });
+          return "failed";
+        }
+        if (errorCode === "AI_BUSY" || errorCode === "INVALID_AI_PROMPT") {
+          dispatch({ type: "DROP_PENDING", clientMessageId });
+          dispatch({ type: "WS_ERROR", errorCode });
           return "failed";
         }
         dispatch({ type: "FAIL_PENDING", clientMessageId });
@@ -683,6 +767,7 @@ export function useTripChat(
     hasMoreOlder: state.hasMoreOlder,
     isLoadingOlder: state.isLoadingOlder,
     isSending: state.isSending,
+    isAITyping: state.activeAIInteractionId !== null,
     loadOlder,
     sendMessage,
     retryPending,

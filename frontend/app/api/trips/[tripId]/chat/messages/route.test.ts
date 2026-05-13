@@ -173,6 +173,37 @@ describe("BFF /api/trips/[tripId]/chat/messages", () => {
     );
   });
 
+  it("passes AI_BUSY from upstream without changing status or payload", async () => {
+    const { POST } = await import(
+      "@/app/api/trips/[tripId]/chat/messages/route"
+    );
+
+    protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
+      ok: false,
+      response: Response.json(
+        {
+          detail: "GoPlanAI is already replying.",
+          error_code: "AI_BUSY",
+        },
+        { status: 409 },
+      ),
+    });
+
+    const response = await POST(
+      buildPostRequest({
+        content: "@GoPlanAI hello",
+        client_message_id: "11111111-1111-4111-8111-111111111111",
+      }) as never,
+      { params: Promise.resolve({ tripId: TRIP_ID }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      detail: "GoPlanAI is already replying.",
+      error_code: "AI_BUSY",
+    });
+  });
+
   it("forwards updated_since param on GET mutation sync", async () => {
     const { GET } = await import(
       "@/app/api/trips/[tripId]/chat/messages/route"

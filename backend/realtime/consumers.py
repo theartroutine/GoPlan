@@ -324,6 +324,37 @@ class RealtimeConsumer(BaseConsumer):
 
         await self.send_json(data)
 
+    async def chat_ai_typing_started_push(self, event):
+        await self._forward_chat_event_if_authorized(event, "AI typing started")
+
+    async def chat_ai_typing_stopped_push(self, event):
+        await self._forward_chat_event_if_authorized(event, "AI typing stopped")
+
+    async def _forward_chat_event_if_authorized(self, event, label: str):
+        if not await self._ensure_current_session():
+            return
+        data = event.get("data")
+        if not isinstance(data, dict):
+            logger.warning("%s event received without dict data", label)
+            return
+        trip_id = data.get("trip_id")
+        if not isinstance(trip_id, str) or not trip_id:
+            logger.warning("%s event received without trip_id", label)
+            return
+        try:
+            await database_sync_to_async(ensure_user_can_access_trip_chat)(
+                self.user,
+                trip_id,
+            )
+        except TripNotFoundError:
+            await self._discard_chat_group(trip_id)
+            await self.send_json({"type": "chat.kicked", "trip_id": trip_id})
+            return
+        except Exception:
+            logger.exception("Failed to verify chat access before %s push", label)
+            return
+        await self.send_json(data)
+
     async def chat_kicked_push(self, event):
         if not await self._ensure_current_session():
             return

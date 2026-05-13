@@ -378,3 +378,57 @@ class ChatMessageDeletionPushTests(TransactionTestCase):
             mock_send.call_args[0][1]["data"]["message"]["id"],
             str(message.id),
         )
+
+
+class AIMessageDeletionTests(APITestCase):
+
+    def setUp(self):
+        self.captain = create_completed_user("ai-del-cap@example.com", "aidelcap", "ADC001")
+        self.member = create_completed_user("ai-del-mem@example.com", "aidelmem", "ADM001")
+        self.trip = _make_trip(self.captain)
+        _add_member(self.trip, self.member)
+
+    def test_ai_message_cannot_be_deleted_for_everyone(self):
+        ai_message = ChatMessage.objects.create(
+            trip=self.trip,
+            sender=None,
+            sender_kind="AI",
+            sender_display_name_snapshot="GoPlanAI",
+            sender_identify_tag_snapshot=None,
+            content="AI reply",
+            ai_status="SUCCESS",
+        )
+
+        with self.assertRaises(ChatDeleteForbiddenError):
+            delete_message_for_everyone(
+                user=self.captain,
+                trip_id=self.trip.id,
+                message_id=ai_message.id,
+            )
+
+        payload = build_chat_message_payload(ai_message, viewer=self.captain)
+        self.assertEqual(payload["sender_kind"], "AI")
+        self.assertFalse(payload["can_delete_for_everyone"])
+
+    def test_ai_message_can_be_hidden_for_current_user(self):
+        ai_message = ChatMessage.objects.create(
+            trip=self.trip,
+            sender=None,
+            sender_kind="AI",
+            sender_display_name_snapshot="GoPlanAI",
+            sender_identify_tag_snapshot=None,
+            content="AI reply",
+            ai_status="SUCCESS",
+        )
+
+        hidden_ids = hide_messages_for_user(
+            user=self.member,
+            trip_id=self.trip.id,
+            message_ids=[ai_message.id],
+        )
+
+        self.assertEqual(hidden_ids, [str(ai_message.id)])
+        member_page = list_chat_messages(user=self.member, trip_id=self.trip.id)
+        captain_page = list_chat_messages(user=self.captain, trip_id=self.trip.id)
+        self.assertEqual(member_page["results"], [])
+        self.assertEqual(captain_page["results"][0]["id"], str(ai_message.id))

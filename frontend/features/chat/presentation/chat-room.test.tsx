@@ -15,6 +15,7 @@ const chatMock = vi.hoisted(() => ({
     hasMoreOlder: false,
     isLoadingOlder: false,
     isSending: false,
+    isAITyping: false,
     loadOlder: vi.fn(),
     sendMessage: vi.fn(),
     retryPending: vi.fn(),
@@ -51,6 +52,8 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     id: "m-1",
     trip_id: "trip-1",
     sender: { id: CURRENT_USER.id, display_name: "Me", identify_tag: null },
+    sender_kind: "USER",
+    ai_status: null,
     content: "hello",
     client_message_id: null,
     created_at: "2026-05-08T10:00:00Z",
@@ -73,6 +76,7 @@ describe("ChatRoom", () => {
     chatMock.state.messages = [];
     chatMock.state.sendLockReason = null;
     chatMock.state.isSending = false;
+    chatMock.state.isAITyping = false;
   });
 
   it("keeps REST sending available while websocket is disconnected", () => {
@@ -136,6 +140,21 @@ describe("ChatRoom", () => {
     expect(
       screen.getByText("This message can no longer be removed for everyone."),
     ).toBeDefined();
+  });
+
+  it("shows AI_BUSY warning when GoPlanAI is already replying", () => {
+    chatMock.state.errorCode = "AI_BUSY";
+
+    render(
+      <ChatRoom
+        tripId="trip-1"
+        isTerminal={false}
+        currentUser={CURRENT_USER}
+      />,
+    );
+
+    expect(screen.getByText("GoPlanAI đang trả lời. Thử lại sau.")).toBeDefined();
+    expect(screen.getByLabelText("Message")).toBeDefined();
   });
 
   it("keeps terminal chat history read-only, including reactions and deletes", () => {

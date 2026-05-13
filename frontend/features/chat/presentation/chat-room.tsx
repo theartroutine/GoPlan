@@ -4,8 +4,8 @@ import { Spinner } from "@/shared/ui/spinner";
 
 import { useTripChat } from "@/features/chat/application/use-trip-chat";
 import { ConnectionBanner } from "@/features/chat/presentation/connection-banner";
-import { Composer } from "@/features/chat/presentation/composer";
 import { MessageList } from "@/features/chat/presentation/message-list";
+import { RichComposer } from "@/features/chat/presentation/rich-composer";
 import { useWebSocket } from "@/features/realtime/application/ws-context";
 
 type Props = {
@@ -35,6 +35,12 @@ function getChatWarning(errorCode: string | null): string | null {
   }
   if (errorCode === "TRIP_TERMINAL") {
     return "This trip is closed. Chat changes are disabled.";
+  }
+  if (errorCode === "AI_BUSY") {
+    return "GoPlanAI đang trả lời. Thử lại sau.";
+  }
+  if (errorCode === "INVALID_AI_PROMPT") {
+    return "Bạn muốn hỏi GoPlanAI điều gì?";
   }
   if (
     errorCode === "REACTION_DUPLICATE" ||
@@ -116,13 +122,14 @@ export function ChatRoom({
         onToggleReaction={isChatClosed ? undefined : chat.toggleReaction}
         onDeleteMessage={isChatClosed ? undefined : chat.deleteMessage}
         onHideMessagesForMe={isChatClosed ? undefined : chat.hideMessagesForMe}
+        isAITyping={chat.isAITyping}
       />
       {isChatClosed ? (
         <div className="border-t border-border bg-muted/40 px-3 py-3 text-center text-xs text-muted-foreground">
           This trip is closed — sending new messages is disabled.
         </div>
       ) : (
-        <Composer
+        <RichComposer
           disabled={false}
           isSending={chat.isSending}
           onSend={(content) => {

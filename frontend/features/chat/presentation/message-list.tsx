@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   DeleteChatMessageMode,
 } from "@/features/chat/domain/types";
+import { AITypingIndicator } from "@/features/chat/presentation/ai-typing-indicator";
 import { MessageBubble } from "@/features/chat/presentation/message-bubble";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
@@ -30,6 +31,7 @@ type Props = {
   onToggleReaction?: (messageId: string, emoji: string) => void;
   onDeleteMessage?: (messageId: string, mode: DeleteChatMessageMode) => void;
   onHideMessagesForMe?: (messageIds: string[]) => void;
+  isAITyping?: boolean;
 };
 
 const SCROLL_STICK_THRESHOLD_PX = 80;
@@ -61,6 +63,7 @@ export function MessageList({
   onToggleReaction,
   onDeleteMessage,
   onHideMessagesForMe,
+  isAITyping = false,
 }: Props) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -210,6 +213,15 @@ export function MessageList({
     }
   }, [messages]);
 
+  // Auto-scroll to bottom when the AI typing indicator appears so the user
+  // can see it — the indicator is not a message so the effect above won't fire.
+  useEffect(() => {
+    if (!isAITyping) return;
+    const el = scrollerRef.current;
+    if (!el || !wasNearBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [isAITyping]);
+
   // After older messages are prepended, anchor scroll position so the user's
   // current view doesn't jump.
   useLayoutEffect(() => {
@@ -327,6 +339,7 @@ export function MessageList({
           );
         })
       )}
+      {isAITyping && <AITypingIndicator />}
     </div>
   );
 }

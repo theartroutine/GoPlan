@@ -146,4 +146,35 @@ describe("chat-ws-bridge", () => {
       trip_id: "trip-1",
     });
   });
+
+  it("routes ai_typing_started to the correct room listener", () => {
+    const onAITypingStarted = vi.fn();
+    joinChatRoom("trip-ai", { onAITypingStarted });
+
+    wsManagerMock.emit(CHAT_WS_MESSAGE_TYPES.AI_TYPING_STARTED, {
+      type: "chat.ai_typing_started",
+      trip_id: "trip-ai",
+      interaction_id: "int-1",
+      requested_by_user_id: "user-1",
+    });
+
+    expect(onAITypingStarted).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "chat.ai_typing_started", trip_id: "trip-ai" }),
+    );
+  });
+
+  it("routes ai_typing_stopped to the correct room listener", () => {
+    const onAITypingStopped = vi.fn();
+    joinChatRoom("trip-ai2", { onAITypingStopped });
+
+    wsManagerMock.emit(CHAT_WS_MESSAGE_TYPES.AI_TYPING_STOPPED, {
+      type: "chat.ai_typing_stopped",
+      trip_id: "trip-ai2",
+      interaction_id: "int-2",
+    });
+
+    expect(onAITypingStopped).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "chat.ai_typing_stopped", trip_id: "trip-ai2" }),
+    );
+  });
 });

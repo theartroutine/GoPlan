@@ -445,3 +445,62 @@ class ChatConsumerTests(TransactionTestCase):
         self.assertTrue(await communicator.receive_nothing(timeout=0.2))
 
         await communicator.disconnect()
+
+    async def test_ai_typing_started_reaches_subscribed_member(self):
+        captain = await _create_user("ws-ai-cap@example.com", "wsaicap", "WAI001")
+        member = await _create_user("ws-ai-mem@example.com", "wsaimem", "WAI002")
+        trip = await _make_trip(captain)
+        await _add_member(trip, member)
+        communicator, connected = await _connect(member)
+        self.assertTrue(connected)
+        await communicator.send_json_to({"type": "chat.subscribe", "trip_id": str(trip.id)})
+        await communicator.receive_json_from(timeout=1)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"trip_chat_{trip.id}",
+            {
+                "type": "chat_ai_typing_started_push",
+                "data": {
+                    "type": "chat.ai_typing_started",
+                    "trip_id": str(trip.id),
+                    "interaction_id": "11111111-1111-1111-1111-111111111111",
+                    "requested_by_user_id": str(member.id),
+                },
+            },
+        )
+
+        pushed = await communicator.receive_json_from(timeout=1)
+        self.assertEqual(pushed["type"], "chat.ai_typing_started")
+        self.assertEqual(pushed["trip_id"], str(trip.id))
+
+        await communicator.disconnect()
+
+    async def test_ai_typing_stopped_reaches_subscribed_member(self):
+        captain = await _create_user("ws-ai-cap2@example.com", "wsaicap2", "WAI003")
+        member = await _create_user("ws-ai-mem2@example.com", "wsaimem2", "WAI004")
+        trip = await _make_trip(captain)
+        await _add_member(trip, member)
+        communicator, connected = await _connect(member)
+        self.assertTrue(connected)
+        await communicator.send_json_to({"type": "chat.subscribe", "trip_id": str(trip.id)})
+        await communicator.receive_json_from(timeout=1)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            f"trip_chat_{trip.id}",
+            {
+                "type": "chat_ai_typing_stopped_push",
+                "data": {
+                    "type": "chat.ai_typing_stopped",
+                    "trip_id": str(trip.id),
+                    "interaction_id": "11111111-1111-1111-1111-111111111111",
+                },
+            },
+        )
+
+        pushed = await communicator.receive_json_from(timeout=1)
+        self.assertEqual(pushed["type"], "chat.ai_typing_stopped")
+        self.assertEqual(pushed["trip_id"], str(trip.id))
+
+        await communicator.disconnect()
