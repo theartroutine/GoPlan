@@ -404,6 +404,41 @@ def _execute(draft: AIActionDraft, *, actor) -> dict:
     raise AIActionDraftNotReadyError("Unsupported draft action.")
 
 
+def mark_action_draft_failed(
+    *,
+    draft_id,
+    trip_id,
+    error_code: str,
+    error_detail: str,
+) -> AIActionDraft | None:
+    with transaction.atomic():
+        try:
+            draft = (
+                AIActionDraft.objects
+                .select_for_update()
+                .select_related("response_message")
+                .get(pk=draft_id, trip_id=trip_id)
+            )
+        except AIActionDraft.DoesNotExist:
+            return None
+        if draft.status != AIActionDraftStatus.READY:
+            return draft
+        draft.status = AIActionDraftStatus.FAILED
+        draft.error_code = error_code[:64]
+        draft.error_detail = error_detail[:255]
+        draft.save(
+            update_fields=[
+                "status",
+                "error_code",
+                "error_detail",
+                "updated_at",
+            ]
+        )
+        draft.response_message.updated_at = timezone.now()
+        draft.response_message.save(update_fields=["updated_at"])
+        return draft
+
+
 @transaction.atomic
 def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
     draft = (

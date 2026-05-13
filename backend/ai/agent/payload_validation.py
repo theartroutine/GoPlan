@@ -14,7 +14,12 @@ from ai.action_types import (
     AI_ACTION_TIMELINE_ACTIVITY_STATUS_UPDATE,
     AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
 )
-from trips.models import TimelineActivityTimeMode
+from trips.models import (
+    TimelineActivityStatus,
+    TimelineActivityTimeMode,
+    TimelineLocationMode,
+    TimelineSystemType,
+)
 
 EXPENSE_CONTRIBUTION_USER_FIELDS = (
     "user_id",
@@ -113,6 +118,60 @@ def _require_field(names: list[str], payload: dict, field: str) -> None:
         names.append(field)
 
 
+def _append_once(names: list[str], field: str) -> None:
+    if field not in names:
+        names.append(field)
+
+
+def _serializer_error_field_names(errors, *, allowed_names: set[str]) -> list[str]:
+    if not isinstance(errors, dict):
+        return []
+    names = []
+    for raw_name in errors.keys():
+        name = str(raw_name)
+        if name == "non_field_errors":
+            continue
+        if name in allowed_names:
+            names.append(name)
+    return list(dict.fromkeys(names))
+
+
+def _timeline_create_serializer_invalid_field_names(data: dict) -> list[str]:
+    from trips.serializers import CreateTimelineActivitySerializer
+
+    serializer = CreateTimelineActivitySerializer(data=data)
+    if serializer.is_valid():
+        return []
+    return _serializer_error_field_names(
+        serializer.errors,
+        allowed_names=TIMELINE_ACTIVITY_DATA_FIELDS,
+    )
+
+
+def _timeline_update_serializer_invalid_field_names(data: dict) -> list[str]:
+    from trips.serializers import PatchTimelineActivitySerializer
+
+    serializer = PatchTimelineActivitySerializer(data=data)
+    if serializer.is_valid():
+        return []
+    return _serializer_error_field_names(
+        serializer.errors,
+        allowed_names=TIMELINE_ACTIVITY_DATA_FIELDS,
+    )
+
+
+def _timeline_status_serializer_invalid_field_names(payload: dict) -> list[str]:
+    from trips.serializers import UpdateTimelineActivityStatusSerializer
+
+    serializer = UpdateTimelineActivityStatusSerializer(data=payload)
+    if serializer.is_valid():
+        return []
+    return _serializer_error_field_names(
+        serializer.errors,
+        allowed_names={"status"},
+    )
+
+
 def _timeline_create_missing_names(
     payload: dict,
     provider_missing_names: list[str],
@@ -120,6 +179,12 @@ def _timeline_create_missing_names(
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
     required_fields = ["section_id", "title", "time_mode"]
     time_mode = data.get("time_mode")
+    system_type = data.get("system_type")
+    custom_type_id = data.get("custom_type_id")
+    if not system_type and custom_type_id is None:
+        required_fields.append("system_type")
+    if system_type and custom_type_id is not None:
+        required_fields.append("system_type")
     if time_mode == TimelineActivityTimeMode.AT_TIME:
         required_fields.append("start_time")
     if time_mode == TimelineActivityTimeMode.TIME_RANGE:
@@ -135,6 +200,38 @@ def _timeline_create_missing_names(
         value = payload.get(field) if field == "section_id" else data.get(field)
         if is_blank(value) and field not in names:
             names.append(field)
+    if time_mode and time_mode not in TimelineActivityTimeMode.values:
+        _append_once(names, "time_mode")
+    if system_type and system_type not in TimelineSystemType.values:
+        _append_once(names, "system_type")
+    location_mode = data.get("location_mode")
+    if location_mode and location_mode not in TimelineLocationMode.values:
+        _append_once(names, "location_mode")
+    if location_mode == TimelineLocationMode.STRUCTURED:
+        place = data.get("place")
+        if not isinstance(place, dict) or not all(
+            place.get(field) for field in ("provider", "provider_id", "title")
+        ):
+            _append_once(names, "place")
+    names.extend(_timeline_create_serializer_invalid_field_names(data))
+    return list(dict.fromkeys(names))
+
+
+def _has_known_timeline_activity_patch_field(data: dict) -> bool:
+    return any(field in TIMELINE_ACTIVITY_DATA_FIELDS for field in data)
+
+
+def _timeline_update_invalid_field_names(data: dict) -> list[str]:
+    names = []
+    time_mode = data.get("time_mode")
+    system_type = data.get("system_type")
+    location_mode = data.get("location_mode")
+    if time_mode and time_mode not in TimelineActivityTimeMode.values:
+        names.append("time_mode")
+    if system_type and system_type not in TimelineSystemType.values:
+        names.append("system_type")
+    if location_mode and location_mode not in TimelineLocationMode.values:
+        names.append("location_mode")
     return names
 
 
@@ -197,14 +294,22 @@ def missing_payload_field_names(
     if action_type == AI_ACTION_TIMELINE_ACTIVITY_UPDATE:
         names = _with_provider_missing(
             provider_missing_names,
-            allowed_names={"activity_id", "data"},
+            allowed_names={"activity_id", "data", *TIMELINE_ACTIVITY_DATA_FIELDS},
             payload=payload,
+            data=payload.get("data") if isinstance(payload.get("data"), dict) else None,
         )
         _require_field(names, payload, "activity_id")
         data = payload.get("data")
-        if (not isinstance(data, dict) or not data) and "data" not in names:
+        if (
+            not isinstance(data, dict)
+            or not data
+            or not _has_known_timeline_activity_patch_field(data)
+        ) and "data" not in names:
             names.append("data")
-        return names
+        if isinstance(data, dict):
+            names.extend(_timeline_update_invalid_field_names(data))
+            names.extend(_timeline_update_serializer_invalid_field_names(data))
+        return list(dict.fromkeys(names))
 
     if action_type == AI_ACTION_TIMELINE_ACTIVITY_DELETE:
         names = _with_provider_missing(
@@ -223,6 +328,10 @@ def missing_payload_field_names(
         )
         _require_field(names, payload, "activity_id")
         _require_field(names, payload, "status")
+        draft_status = payload.get("status")
+        if draft_status and draft_status not in TimelineActivityStatus.values:
+            _append_once(names, "status")
+        names.extend(_timeline_status_serializer_invalid_field_names(payload))
         return names
 
     if action_type in {

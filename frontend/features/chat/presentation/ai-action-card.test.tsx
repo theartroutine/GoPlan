@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AIActionDraft } from "@/features/chat/domain/ai-action-drafts";
 import {
@@ -35,6 +35,10 @@ function makeDraft(overrides: Partial<AIActionDraft> = {}): AIActionDraft {
 }
 
 describe("AIActionCard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("shows confirm and cancel for authorized ready drafts", () => {
     render(
       <AIActionCard
@@ -119,5 +123,71 @@ describe("AIActionCard", () => {
       total_amount: "500000",
     });
     expect(await screen.findByText("READY")).toBeInTheDocument();
+  });
+
+  it("sends selected field option values when editing missing fields", async () => {
+    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({ status: "READY", missing_fields: [] }),
+    });
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          missing_fields: [
+            {
+              name: "section_id",
+              label: "Timeline day",
+              type: "select",
+              options: [
+                { label: "Day 1", value: "section-1" },
+                { label: "Day 2", value: "section-2" },
+              ],
+            },
+          ],
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Timeline day"), {
+      target: { value: "section-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
+      section_id: "section-2",
+    });
+  });
+
+  it("parses JSON field values before patching drafts", async () => {
+    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({ status: "READY", missing_fields: [] }),
+    });
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          missing_fields: [
+            { name: "data", label: "Activity details", type: "json" },
+          ],
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Activity details"), {
+      target: { value: '{"title":"Museum"}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
+      data: { title: "Museum" },
+    });
   });
 });

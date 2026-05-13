@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APITestCase
 
 from ai.action_types import (
     AI_CONFIRMATION_CAPTAIN,
@@ -613,3 +614,85 @@ class ActionExecutorTests(TestCase):
         )
 
         self.assertEqual(received.result["object_type"], "settlement_transfer")
+
+
+class ActionDraftConfirmAPITests(APITestCase):
+    def setUp(self):
+        self.captain = create_completed_user(
+            "confirm-api-captain@example.com",
+            "confirmapi",
+            "CAP001",
+        )
+        self.trip = create_trip(
+            captain=self.captain,
+            name="Confirm API Trip",
+            destination="Da Nang",
+            start_date="2026-06-01",
+            end_date="2026-06-02",
+        )
+        self.prompt = ChatMessage.objects.create(
+            trip=self.trip,
+            sender=self.captain,
+            sender_display_name_snapshot=self.captain.display_name,
+            sender_identify_tag_snapshot=self.captain.identify_tag,
+            content="@GoPlanAI update dinner",
+            client_message_id=uuid4(),
+        )
+        self.response = ChatMessage.objects.create(
+            trip=self.trip,
+            sender_kind=ChatMessageSenderKind.AI,
+            sender_display_name_snapshot="GoPlanAI",
+            content="I prepared a draft.",
+        )
+        self.interaction = AIInteraction.objects.create(
+            trip=self.trip,
+            requested_by=self.captain,
+            prompt_message=self.prompt,
+            prompt="update dinner",
+            status=AIInteractionStatus.SUCCEEDED,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+
+    def _confirm_url(self, draft_id):
+        return f"/api/trips/{self.trip.id}/ai/action-drafts/{draft_id}/confirm"
+
+    def test_stale_confirm_failure_is_persisted_on_draft(self):
+        self.client.force_authenticate(self.captain)
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Dinner",
+            total_amount=Decimal("1200000"),
+            collector=self.captain,
+        )
+        stale_timestamp = expense.updated_at.isoformat()
+        expense.title = "Changed elsewhere"
+        expense.save(update_fields=["title", "updated_at"])
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="expense.update",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={"expense_id": str(expense.id), "title": "Dinner from AI"},
+            preview={"title": "Dinner from AI"},
+            missing_fields=[],
+            preconditions={
+                "target": {
+                    "type": "expense",
+                    "id": str(expense.id),
+                    "updated_at": stale_timestamp,
+                }
+            },
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        response = self.client.post(self._confirm_url(draft.id))
+
+        self.assertEqual(response.status_code, 409)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.FAILED)
+        self.assertEqual(draft.error_code, "AI_DRAFT_STALE")
+        self.assertIn("changed", draft.error_detail)

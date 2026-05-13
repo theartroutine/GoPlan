@@ -22,6 +22,7 @@ from ai.agent.draft_fields import (
     normalize_missing_field_names,
 )
 from ai.agent.payload_validation import missing_payload_field_names
+from ai.agent.preview import build_action_preview
 from ai.deepseek import complete_goplan_ai_agent_prompt
 from ai.models import AIActionDraftStatus
 from trips.models import TimelineLocationMode
@@ -185,32 +186,6 @@ def _normalize_status(value, *, missing_fields: list[str]) -> str:
     return AIActionDraftStatus.READY
 
 
-def _build_preview(*, action_type: str, payload: dict) -> dict:
-    preview = {}
-    for field in (
-        "title",
-        "total_amount",
-        "description",
-        "currency_code",
-        "expense_id",
-        "activity_id",
-        "transfer_id",
-        "status",
-    ):
-        if field in payload:
-            preview[field] = payload[field]
-
-    activity_data = payload.get("data")
-    if isinstance(activity_data, dict):
-        for field in ("title", "start_at", "end_at", "location_name"):
-            if field in activity_data:
-                preview[field] = activity_data[field]
-
-    if action_type and "action_type" not in preview:
-        preview["action_type"] = action_type
-    return preview
-
-
 def _coerce_dict(value, *, field_name: str, default: dict | None = None) -> dict:
     if value is None and default is not None:
         return default
@@ -220,16 +195,9 @@ def _coerce_dict(value, *, field_name: str, default: dict | None = None) -> dict
 
 
 def _coerce_preview(value, *, action_type: str, payload: dict) -> dict:
-    preview = _build_preview(action_type=action_type, payload=payload)
-    if value is None:
-        return preview
-    if isinstance(value, str):
-        if value.strip():
-            preview["summary"] = value.strip()
-        return preview
-    if not isinstance(value, dict):
+    if value is not None and not isinstance(value, (str, dict)):
         raise ValueError("Agent draft preview must be an object.")
-    return preview | value
+    return build_action_preview(action_type=action_type, payload=payload)
 
 
 def _message_claims_completed_action(message: str) -> bool:

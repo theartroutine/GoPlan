@@ -7,7 +7,10 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from ai.action_types import AI_CONFIRMATION_CAPTAIN
+from ai.action_types import (
+    AI_CONFIRMATION_CAPTAIN,
+    AI_CONFIRMATION_TRANSFER_PAYER,
+)
 from ai.agent.drafts import build_action_draft_payload
 from ai.models import (
     AIActionDraft,
@@ -179,6 +182,51 @@ class AIActionDraftPayloadTests(AIActionDraftModelTests):
 
         self.assertTrue(payload["can_confirm"])
 
+    def test_malformed_transfer_id_cannot_break_draft_payload_rendering(self):
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="settlement.transfer.mark_sent",
+            status=AIActionDraftStatus.READY,
+            payload={"transfer_id": "not-a-uuid"},
+            preview={"transfer_id": "not-a-uuid"},
+            missing_fields=[],
+            preconditions={},
+            required_confirmation=AI_CONFIRMATION_TRANSFER_PAYER,
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        payload = build_action_draft_payload(draft, viewer=self.user)
+
+        self.assertFalse(payload["can_confirm"])
+
+    def test_missing_section_field_includes_select_options(self):
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            payload={"data": {"title": "Museum", "time_mode": "FLEXIBLE"}},
+            preview={"title": "Museum"},
+            missing_fields=[{"name": "section_id", "label": "Timeline day"}],
+            preconditions={},
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        payload = build_action_draft_payload(draft, viewer=self.user)
+
+        section_field = payload["missing_fields"][0]
+        self.assertEqual(section_field["type"], "select")
+        self.assertEqual(
+            section_field["options"][0]["value"],
+            str(self.trip.timeline_sections.order_by("section_date").first().id),
+        )
+
 
 class AIActionDraftAPITests(APITestCase, AIActionDraftModelTests):
     def _detail_url(self, draft_id):
@@ -268,6 +316,8 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
         draft.refresh_from_db()
         self.assertEqual(draft.status, AIActionDraftStatus.READY)
         self.assertEqual(draft.payload["total_amount"], "500000")
+        self.assertEqual(draft.preview["total_amount"], "500000")
+        self.assertEqual(response.data["draft"]["preview"]["total_amount"], "500000")
         self.assertEqual(draft.missing_fields, [])
 
     def test_patch_keeps_legacy_string_missing_field_until_value_is_present(self):
@@ -312,7 +362,10 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
             action_type="timeline.activity.create",
             status=AIActionDraftStatus.NEEDS_INFO,
             required_confirmation="CAPTAIN",
-            payload={"section_id": str(section.id), "data": {"time_mode": "FLEXIBLE"}},
+            payload={
+                "section_id": str(section.id),
+                "data": {"time_mode": "FLEXIBLE", "system_type": "SIGHTSEEING"},
+            },
             preview={"title": "Museum"},
             missing_fields=[{"name": "title", "label": "Title"}],
             preconditions={},

@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
+from rest_framework import serializers as drf_serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -17,11 +18,13 @@ from ai.agent.executor import (
     AIActionDraftNotReadyError,
     AIActionDraftStaleError,
     confirm_action_draft,
+    mark_action_draft_failed,
 )
 from ai.agent.payload_validation import (
     TIMELINE_ACTIVITY_DATA_FIELDS,
     missing_payload_field_names,
 )
+from ai.agent.preview import build_action_preview
 from ai.action_types import (
     AI_ACTION_TIMELINE_ACTIVITY_CREATE,
     AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
@@ -174,12 +177,17 @@ class AIActionDraftDetailAPIView(APIView):
             )
             still_missing = _refresh_missing_fields(draft, next_payload)
             draft.payload = next_payload
+            draft.preview = build_action_preview(
+                action_type=draft.action_type,
+                payload=next_payload,
+            )
             draft.missing_fields = still_missing
             if not still_missing:
                 draft.status = AIActionDraftStatus.READY
             draft.save(
                 update_fields=[
                     "payload",
+                    "preview",
                     "missing_fields",
                     "status",
                     "updated_at",
@@ -308,7 +316,41 @@ def _confirm_error_response(exc: Exception) -> Response | None:
         ),
     ):
         return _error(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, drf_serializers.ValidationError):
+        return _error(
+            "Draft payload is invalid.",
+            "AI_DRAFT_VALIDATION_FAILED",
+            status.HTTP_400_BAD_REQUEST,
+        )
     return None
+
+
+def _should_persist_confirm_failure(exc: Exception) -> bool:
+    return not isinstance(
+        exc,
+        (
+            AIActionDraftForbiddenError,
+            AIActionDraftExpiredError,
+            AIActionDraft.DoesNotExist,
+        ),
+    )
+
+
+def _confirm_failure_error_code(exc: Exception) -> str:
+    if isinstance(exc, drf_serializers.ValidationError):
+        return "AI_DRAFT_VALIDATION_FAILED"
+    return str(getattr(exc, "error_code", "") or "AI_DRAFT_EXECUTION_FAILED")
+
+
+def _persist_confirm_failure(*, draft_id, trip_id, exc: Exception) -> AIActionDraft | None:
+    if not _should_persist_confirm_failure(exc):
+        return None
+    return mark_action_draft_failed(
+        draft_id=draft_id,
+        trip_id=trip_id,
+        error_code=_confirm_failure_error_code(exc),
+        error_detail=str(exc) or "Draft execution failed.",
+    )
 
 
 class AIActionDraftConfirmAPIView(APIView):
@@ -336,6 +378,16 @@ class AIActionDraftConfirmAPIView(APIView):
                 status.HTTP_404_NOT_FOUND,
             )
         except Exception as exc:
+            failed_draft = _persist_confirm_failure(
+                draft_id=draft_id,
+                trip_id=trip_id,
+                exc=exc,
+            )
+            if (
+                failed_draft is not None
+                and failed_draft.status == AIActionDraftStatus.FAILED
+            ):
+                push_chat_message(failed_draft.response_message)
             mapped = _confirm_error_response(exc)
             if mapped is not None:
                 return mapped

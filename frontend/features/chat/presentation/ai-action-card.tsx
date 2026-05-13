@@ -95,7 +95,7 @@ export function AIActionCard({ tripId, draft, onDraftChanged }: Props) {
     }
   }
 
-  async function handlePatch(payload: Record<string, string>) {
+  async function handlePatch(payload: Record<string, unknown>) {
     if (pending !== null) return;
     setPending("patch");
     setError(null);

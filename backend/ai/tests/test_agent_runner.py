@@ -83,8 +83,20 @@ class AgentDraftValidationTests(TestCase):
         draft = parsed.drafts[0]
         self.assertEqual(draft.status, "READY")
         self.assertEqual(draft.missing_fields, [])
-        self.assertEqual(draft.preview["summary"], "Bus - 2.000.000 VND")
         self.assertEqual(draft.preview["title"], "Bus")
+
+    def test_provider_preview_cannot_override_payload_derived_fields(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"expense.create",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"title":"Dinner","total_amount":"1000000"},'
+            '"preview":{"title":"Lunch","total_amount":"100000"},'
+            '"missing_fields":[],"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.preview["title"], "Dinner")
+        self.assertEqual(draft.preview["total_amount"], "1000000")
 
     def test_missing_fields_are_frontend_field_objects(self):
         parsed = parse_agent_response(
@@ -112,7 +124,7 @@ class AgentDraftValidationTests(TestCase):
             (
                 "timeline.activity.status.update",
                 {"activity_id": "activity-1"},
-                [{"name": "status", "label": "Status"}],
+                [{"name": "status", "label": "Status", "type": "select"}],
             ),
             (
                 "settlement.transfer.mark_sent",
@@ -134,6 +146,68 @@ class AgentDraftValidationTests(TestCase):
                 draft = parsed.drafts[0]
                 self.assertEqual(draft.status, "NEEDS_INFO")
                 self.assertEqual(draft.missing_fields, expected_missing)
+
+    def test_timeline_create_requires_activity_type_before_ready(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"timeline.activity.create",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"section_id":"section-1","data":{'
+            '"title":"Museum","time_mode":"FLEXIBLE"}},'
+            '"preview":{},"missing_fields":[],"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.status, "NEEDS_INFO")
+        self.assertEqual(
+            draft.missing_fields,
+            [{"name": "system_type", "label": "Activity type", "type": "select"}],
+        )
+
+    def test_timeline_create_requires_known_activity_type_before_ready(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"timeline.activity.create",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"section_id":"section-1","data":{'
+            '"title":"Museum","time_mode":"FLEXIBLE","system_type":"NOT_REAL"}},'
+            '"preview":{},"missing_fields":[],"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.status, "NEEDS_INFO")
+        self.assertEqual(
+            draft.missing_fields,
+            [{"name": "system_type", "label": "Activity type", "type": "select"}],
+        )
+
+    def test_timeline_update_requires_at_least_one_known_patch_field(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"timeline.activity.update",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"activity_id":"activity-1","data":{"foo":"bar"}},'
+            '"preview":{},"missing_fields":[],"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.status, "NEEDS_INFO")
+        self.assertEqual(
+            draft.missing_fields,
+            [{"name": "data", "label": "Activity details", "type": "json"}],
+        )
+
+    def test_timeline_status_update_requires_known_status_before_ready(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{'
+            '"action_type":"timeline.activity.status.update",'
+            '"payload":{"activity_id":"activity-1","status":"NOT_REAL"},'
+            '"preview":{},"missing_fields":[],"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.status, "NEEDS_INFO")
+        self.assertEqual(
+            draft.missing_fields,
+            [{"name": "status", "label": "Status", "type": "select"}],
+        )
 
     def test_timeline_status_update_defaults_to_status_service_confirmation(self):
         parsed = parse_agent_response(
@@ -165,7 +239,9 @@ class AgentDraftValidationTests(TestCase):
         self.assertEqual(draft.payload["data"]["title"], "Bãi Sau")
         self.assertEqual(draft.payload["data"]["system_type"], "SIGHTSEEING")
         self.assertEqual(draft.payload["data"]["location_mode"], "MANUAL")
-        self.assertEqual(draft.preview["summary"], "Bãi Sau từ 15:30 đến 17:00")
+        self.assertEqual(draft.preview["title"], "Bãi Sau")
+        self.assertEqual(draft.preview["start_time"], "15:30:00")
+        self.assertEqual(draft.preview["end_time"], "17:00:00")
 
     def test_timeline_create_normalizes_nested_provider_location(self):
         parsed = parse_agent_response(
