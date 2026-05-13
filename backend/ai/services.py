@@ -8,11 +8,13 @@ from django.db import transaction
 from django.utils import timezone
 
 from ai.models import AIInteraction, AIInteractionStatus
+from trips.models import Trip
 
 logger = logging.getLogger(__name__)
 
 AI_LOCK_TTL = timedelta(seconds=settings.GOPLAN_AI_LOCK_TTL_SECONDS)
 GENERIC_AI_ERROR_MESSAGE = "GoPlanAI hiện chưa trả lời được. Thử lại sau."
+ACTIVE_AI_STATUSES = (AIInteractionStatus.PENDING, AIInteractionStatus.RUNNING)
 
 
 class AIServiceError(Exception):
@@ -29,12 +31,25 @@ class AIBusyError(AIServiceError):
 
 def ensure_ai_prompt_available(trip) -> None:
     now = timezone.now()
-    if AIInteraction.objects.filter(
-        trip=trip,
-        status__in=[AIInteractionStatus.PENDING, AIInteractionStatus.RUNNING],
-        lock_expires_at__gt=now,
-    ).exists():
+    if has_active_ai_interaction(trip_id=trip.id, now=now):
         raise AIBusyError("GoPlanAI is already replying.")
+
+
+def has_active_ai_interaction(
+    *,
+    trip_id,
+    now=None,
+    exclude_interaction_id=None,
+) -> bool:
+    resolved_now = now or timezone.now()
+    queryset = AIInteraction.objects.filter(
+        trip_id=trip_id,
+        status__in=ACTIVE_AI_STATUSES,
+        lock_expires_at__gt=resolved_now,
+    )
+    if exclude_interaction_id is not None:
+        queryset = queryset.exclude(pk=exclude_interaction_id)
+    return queryset.exists()
 
 
 def create_pending_interaction(*, trip, requested_by, prompt_message, prompt: str):
@@ -99,6 +114,21 @@ def recover_stale_ai_interactions(*, limit: int = 50) -> dict[str, int]:
         interaction = None
 
         with transaction.atomic():
+            trip_id = (
+                AIInteraction.objects.filter(pk=interaction_id)
+                .values_list("trip_id", flat=True)
+                .first()
+            )
+            if trip_id is None:
+                skipped += 1
+                continue
+
+            try:
+                Trip.objects.select_for_update().get(pk=trip_id)
+            except Trip.DoesNotExist:
+                skipped += 1
+                continue
+
             interaction = (
                 AIInteraction.objects.select_for_update(skip_locked=True)
                 .filter(pk=interaction_id)
@@ -117,6 +147,13 @@ def recover_stale_ai_interactions(*, limit: int = 50) -> dict[str, int]:
                 skipped += 1
                 continue
             if interaction.lock_expires_at > now:
+                skipped += 1
+                continue
+            if has_active_ai_interaction(
+                trip_id=interaction.trip_id,
+                now=now,
+                exclude_interaction_id=interaction.id,
+            ):
                 skipped += 1
                 continue
 

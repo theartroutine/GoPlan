@@ -9,8 +9,13 @@ from django.test import TestCase
 from django.utils import timezone
 
 from ai.deepseek import DeepSeekProviderError, DeepSeekResult, DeepSeekUsage
+from ai.lifecycle import InteractionAlreadyRunningError, claim_interaction_for_run
 from ai.models import AIInteraction, AIInteractionErrorCode, AIInteractionStatus
-from ai.services import GENERIC_AI_ERROR_MESSAGE, enqueue_ai_interaction, recover_stale_ai_interactions
+from ai.services import (
+    GENERIC_AI_ERROR_MESSAGE,
+    enqueue_ai_interaction,
+    recover_stale_ai_interactions,
+)
 from ai.tasks import run_goplan_ai_interaction
 from chat.models import ChatMessage
 from test_helpers import create_completed_user
@@ -54,6 +59,26 @@ def _make_interaction():
         lock_expires_at=timezone.now() + timedelta(minutes=2),
     )
     return interaction
+
+
+def _make_active_sibling_interaction(interaction):
+    user = interaction.requested_by
+    prompt_message = ChatMessage.objects.create(
+        trip=interaction.trip,
+        sender=user,
+        sender_display_name_snapshot=user.display_name,
+        sender_identify_tag_snapshot=user.identify_tag,
+        content="@GoPlanAI newer",
+        client_message_id=uuid4(),
+    )
+    return AIInteraction.objects.create(
+        trip=interaction.trip,
+        requested_by=user,
+        prompt_message=prompt_message,
+        prompt="newer",
+        status=AIInteractionStatus.PENDING,
+        lock_expires_at=timezone.now() + timedelta(minutes=2),
+    )
 
 
 class GoPlanAITaskTests(TestCase):
@@ -178,6 +203,45 @@ class GoPlanAITaskTests(TestCase):
         self.assertEqual(interaction.status, AIInteractionStatus.PENDING)
         self.assertEqual(interaction.celery_task_id, "recovered-task")
         self.assertGreater(interaction.lock_expires_at, timezone.now())
+
+    @patch("ai.tasks.run_goplan_ai_interaction.delay")
+    def test_recovery_skips_stale_interaction_when_trip_has_active_interaction(
+        self,
+        mock_delay,
+    ):
+        interaction = _make_interaction()
+        AIInteraction.objects.filter(pk=interaction.pk).update(
+            status=AIInteractionStatus.RUNNING,
+            attempt_count=1,
+            lock_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        _make_active_sibling_interaction(interaction)
+        mock_delay.return_value = SimpleNamespace(id="should-not-recover")
+
+        result = recover_stale_ai_interactions()
+
+        interaction.refresh_from_db()
+        self.assertEqual(result, {"recovered": 0, "failed": 0, "skipped": 1})
+        self.assertEqual(interaction.status, AIInteractionStatus.RUNNING)
+        self.assertLess(interaction.lock_expires_at, timezone.now())
+        mock_delay.assert_not_called()
+
+    def test_claim_retries_stale_interaction_when_trip_has_active_interaction(self):
+        interaction = _make_interaction()
+        AIInteraction.objects.filter(pk=interaction.pk).update(
+            status=AIInteractionStatus.RUNNING,
+            attempt_count=1,
+            lock_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        _make_active_sibling_interaction(interaction)
+
+        with self.assertRaises(InteractionAlreadyRunningError):
+            claim_interaction_for_run(str(interaction.id))
+
+        interaction.refresh_from_db()
+        self.assertEqual(interaction.status, AIInteractionStatus.RUNNING)
+        self.assertEqual(interaction.attempt_count, 1)
+        self.assertLess(interaction.lock_expires_at, timezone.now())
 
     @patch("ai.tasks.run_goplan_ai_interaction.delay")
     def test_recovery_fails_abandoned_interaction_once(self, mock_delay):

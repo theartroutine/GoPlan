@@ -4,9 +4,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from ai.models import AIInteraction, AIInteractionStatus
-from ai.services import AI_LOCK_TTL, GENERIC_AI_ERROR_MESSAGE
+from ai.services import (
+    AI_LOCK_TTL,
+    GENERIC_AI_ERROR_MESSAGE,
+    has_active_ai_interaction,
+)
 from chat.models import ChatMessage, ChatMessageAIStatus, ChatMessageSenderKind
 from chat.services import push_chat_message
+from trips.models import Trip
 
 
 class InteractionAlreadyRunningError(Exception):
@@ -15,11 +20,27 @@ class InteractionAlreadyRunningError(Exception):
 
 def claim_interaction_for_run(interaction_id):
     now = timezone.now()
+    trip_id = (
+        AIInteraction.objects.filter(pk=interaction_id)
+        .values_list("trip_id", flat=True)
+        .first()
+    )
+    if trip_id is None:
+        return None
+
     with transaction.atomic():
-        interaction = (
-            AIInteraction.objects.select_for_update()
-            .get(pk=interaction_id)
-        )
+        try:
+            Trip.objects.select_for_update().get(pk=trip_id)
+        except Trip.DoesNotExist:
+            return None
+
+        try:
+            interaction = AIInteraction.objects.select_for_update().get(
+                pk=interaction_id
+            )
+        except AIInteraction.DoesNotExist:
+            return None
+
         if interaction.response_message_id is not None:
             return None
         if interaction.status in (
@@ -30,6 +51,12 @@ def claim_interaction_for_run(interaction_id):
         if (
             interaction.status == AIInteractionStatus.RUNNING
             and interaction.lock_expires_at > now
+        ):
+            raise InteractionAlreadyRunningError(str(interaction.id))
+        if has_active_ai_interaction(
+            trip_id=interaction.trip_id,
+            now=now,
+            exclude_interaction_id=interaction.id,
         ):
             raise InteractionAlreadyRunningError(str(interaction.id))
 
