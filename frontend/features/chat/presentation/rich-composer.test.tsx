@@ -54,6 +54,19 @@ describe("RichComposer", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it("limits AI prompt text so the sent backend payload stays within 2000 characters", () => {
+    const onSend = vi.fn();
+    render(<RichComposer disabled={false} isSending={false} onSend={onSend} />);
+
+    inputText(`@GoPlanAI ${"a".repeat(2000)}`);
+    fireEvent.keyDown(getEditor(), { key: "Enter" });
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const sent = onSend.mock.calls[0][0] as string;
+    expect(sent).toHaveLength(2000);
+    expect(sent).toBe(`@GoPlanAI ${"a".repeat(1990)}`);
+  });
+
   it("backspace removes an empty GoPlanAI token", () => {
     render(<RichComposer disabled={false} isSending={false} onSend={vi.fn()} />);
 

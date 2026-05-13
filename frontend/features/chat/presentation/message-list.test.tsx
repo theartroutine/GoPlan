@@ -478,6 +478,24 @@ describe("MessageList", () => {
     expect(screen.queryByLabelText(/Thu hồi với mọi người/)).toBeNull();
   });
 
+  it("renders the GoPlanAI typing indicator when AI is replying", () => {
+    render(
+      <MessageList
+        messages={[]}
+        currentUserId={CURRENT_USER_ID}
+        pendingClientIds={new Set()}
+        failedClientIds={new Set()}
+        hasMoreOlder={false}
+        isLoadingOlder={false}
+        onLoadOlder={vi.fn()}
+        onRetry={vi.fn()}
+        isAITyping
+      />,
+    );
+
+    expect(screen.getByText("GoPlanAI đang trả lời…")).toBeInTheDocument();
+  });
+
   it("centers hover controls beside multiline message bubbles", () => {
     const ownContent = "one\ntwo\nthree";
     const otherContent = "alpha\nbeta\ngamma";

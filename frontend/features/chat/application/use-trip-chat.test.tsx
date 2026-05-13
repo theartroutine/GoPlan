@@ -32,6 +32,8 @@ const wsBridgeMock = vi.hoisted(() => {
           onSubscribed?: (e: unknown) => void;
           onMessageDeleted?: (e: unknown) => void;
           onReactionUpdate?: (e: unknown) => void;
+          onAITypingStarted?: (e: unknown) => void;
+          onAITypingStopped?: (e: unknown) => void;
         },
       ) => {
         listenersRef.current = listeners as never;
@@ -1029,6 +1031,55 @@ describe("useTripChat", () => {
 
     expect(result.current.messages).toHaveLength(0);
     expect(result.current.errorCode).toBe("AI_BUSY");
+  });
+
+  it("tracks AI typing state from realtime events and only clears the active interaction", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({ results: [], next_cursor: null });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onAITypingStarted: (e: unknown) => void;
+        onAITypingStopped: (e: unknown) => void;
+      };
+      listeners.onAITypingStarted({
+        type: "chat.ai_typing_started",
+        trip_id: TRIP_ID,
+        interaction_id: "interaction-1",
+        requested_by_user_id: ME.id,
+      });
+    });
+
+    expect(result.current.isAITyping).toBe(true);
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onAITypingStopped: (e: unknown) => void;
+      };
+      listeners.onAITypingStopped({
+        type: "chat.ai_typing_stopped",
+        trip_id: TRIP_ID,
+        interaction_id: "other-interaction",
+      });
+    });
+
+    expect(result.current.isAITyping).toBe(true);
+
+    act(() => {
+      const listeners = wsBridgeMock.listenersRef.current as unknown as {
+        onAITypingStopped: (e: unknown) => void;
+      };
+      listeners.onAITypingStopped({
+        type: "chat.ai_typing_stopped",
+        trip_id: TRIP_ID,
+        interaction_id: "interaction-1",
+      });
+    });
+
+    expect(result.current.isAITyping).toBe(false);
   });
 
   it("ignores duplicate reaction clicks while a reaction mutation is in flight", async () => {

@@ -12,6 +12,8 @@ import { MentionCommandMenu } from "@/features/chat/presentation/mention-command
 import { Textarea } from "@/shared/ui/textarea";
 
 const MAX_CONTENT_LENGTH = 2000;
+const AI_MESSAGE_PREFIX = `${GOPLAN_AI_MENTION} `;
+const MAX_AI_PROMPT_LENGTH = MAX_CONTENT_LENGTH - AI_MESSAGE_PREFIX.length;
 const EMPTY_AI_PROMPT_MESSAGE = "Bạn muốn hỏi GoPlanAI điều gì?";
 
 type Props = {
@@ -27,6 +29,13 @@ function normalizePlainText(value: string): string {
 
 function removeTrailingCommandTrigger(value: string): string {
   return value.replace(/@\s*$/, "").trim();
+}
+
+function limitDraftForMode(value: string, hasAIMention: boolean): string {
+  return value.slice(
+    0,
+    hasAIMention ? MAX_AI_PROMPT_LENGTH : MAX_CONTENT_LENGTH,
+  );
 }
 
 export function RichComposer({ disabled, isSending, placeholder, onSend }: Props) {
@@ -45,12 +54,12 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
 
     if (parsed.hasMention) {
       setHasMention(true);
-      setDraft(parsed.prompt);
+      setDraft(limitDraftForMode(parsed.prompt, true));
       setMenuOpen(false);
       return;
     }
 
-    setDraft(rawValue);
+    setDraft(limitDraftForMode(rawValue, false));
     if (!hasMention) {
       setMenuOpen(/(^|\s)@$/.test(rawValue));
     }
@@ -58,7 +67,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
 
   function selectGoPlanAI(): void {
     setHasMention(true);
-    setDraft(removeTrailingCommandTrigger(draft));
+    setDraft(limitDraftForMode(removeTrailingCommandTrigger(draft), true));
     setMenuOpen(false);
     setError(null);
   }
@@ -71,7 +80,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
     }
 
     const content = hasMention
-      ? `${GOPLAN_AI_MENTION} ${normalizedDraft}`.trim()
+      ? `${GOPLAN_AI_MENTION} ${limitDraftForMode(normalizedDraft, true)}`.trim()
       : normalizedDraft;
 
     onSend(content);
@@ -129,7 +138,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
           <Textarea
             value={draft}
             rows={1}
-            maxLength={MAX_CONTENT_LENGTH}
+            maxLength={hasMention ? MAX_AI_PROMPT_LENGTH : MAX_CONTENT_LENGTH}
             placeholder={
               placeholder ?? (hasMention ? "Ask GoPlanAI" : "Write a message")
             }
