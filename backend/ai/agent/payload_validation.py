@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from ai.action_types import (
     AI_ACTION_EXPENSE_CONTRIBUTION_SET,
     AI_ACTION_EXPENSE_CREATE,
@@ -121,6 +123,69 @@ def _require_field(names: list[str], payload: dict, field: str) -> None:
 def _append_once(names: list[str], field: str) -> None:
     if field not in names:
         names.append(field)
+
+
+def _is_invalid_money_value(value, *, allow_zero: bool = False) -> bool:
+    if is_missing_value(value):
+        return False
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return True
+    if not amount.is_finite():
+        return True
+    return amount < 0 if allow_zero else amount <= 0
+
+
+def _append_invalid_money_field(
+    names: list[str],
+    payload: dict,
+    field: str,
+    *,
+    allow_zero: bool = False,
+) -> None:
+    if field in payload and _is_invalid_money_value(
+        payload.get(field),
+        allow_zero=allow_zero,
+    ):
+        _append_once(names, field)
+
+
+def _append_invalid_contribution_amounts(names: list[str], payload: dict) -> None:
+    for field in EXPENSE_CONTRIBUTION_AMOUNT_FIELDS:
+        _append_invalid_money_field(names, payload, field, allow_zero=True)
+
+    contributions = payload.get("contributions")
+    if isinstance(contributions, list):
+        for contribution in contributions:
+            if not isinstance(contribution, dict):
+                continue
+            if any(
+                _is_invalid_money_value(
+                    contribution.get(field),
+                    allow_zero=True,
+                )
+                for field in EXPENSE_CONTRIBUTION_AMOUNT_FIELDS
+                if field in contribution
+            ):
+                _append_once(names, "amount")
+
+    member_contributions = payload.get("member_contributions")
+    if isinstance(member_contributions, dict):
+        for contribution in member_contributions.values():
+            if not isinstance(contribution, dict):
+                if _is_invalid_money_value(contribution, allow_zero=True):
+                    _append_once(names, "amount")
+                continue
+            if any(
+                _is_invalid_money_value(
+                    contribution.get(field),
+                    allow_zero=True,
+                )
+                for field in EXPENSE_CONTRIBUTION_AMOUNT_FIELDS
+                if field in contribution
+            ):
+                _append_once(names, "amount")
 
 
 def _serializer_error_field_names(errors, *, allowed_names: set[str]) -> list[str]:
@@ -251,6 +316,7 @@ def missing_payload_field_names(
         )
         _require_field(names, payload, "title")
         _require_field(names, payload, "total_amount")
+        _append_invalid_money_field(names, payload, "total_amount")
         return names
 
     if action_type == AI_ACTION_EXPENSE_UPDATE:
@@ -260,6 +326,7 @@ def missing_payload_field_names(
             payload=payload,
         )
         _require_field(names, payload, "expense_id")
+        _append_invalid_money_field(names, payload, "total_amount")
         return names
 
     if action_type == AI_ACTION_EXPENSE_DELETE:
@@ -286,6 +353,7 @@ def missing_payload_field_names(
                 names.append("user_id")
             if not _has_any_value(payload, EXPENSE_CONTRIBUTION_AMOUNT_FIELDS):
                 names.append("amount")
+        _append_invalid_contribution_amounts(names, payload)
         return list(dict.fromkeys(names))
 
     if action_type == AI_ACTION_TIMELINE_ACTIVITY_CREATE:

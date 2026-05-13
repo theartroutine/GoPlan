@@ -696,3 +696,54 @@ class ActionDraftConfirmAPITests(APITestCase):
         self.assertEqual(draft.status, AIActionDraftStatus.FAILED)
         self.assertEqual(draft.error_code, "AI_DRAFT_STALE")
         self.assertIn("changed", draft.error_detail)
+
+    def test_confirm_received_before_transfer_sent_does_not_fail_draft(self):
+        self.client.force_authenticate(self.captain)
+        member = create_completed_user(
+            "confirm-api-member@example.com",
+            "confirmmem",
+            "CAP002",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Dinner",
+            total_amount=Decimal("100000"),
+            collector=self.captain,
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.captain.id,
+            actor=self.captain,
+            amount=Decimal("100000"),
+        )
+        settlement = finalize_settlement(trip_id=self.trip.id, actor=self.captain)
+        transfer = settlement.transfers.get()
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="settlement.transfer.confirm_received",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_TRANSFER_RECIPIENT,
+            payload={"transfer_id": str(transfer.id)},
+            preview={"title": "Confirm received"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        response = self.client.post(self._confirm_url(draft.id))
+
+        self.assertEqual(response.status_code, 403)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.READY)
+        self.assertEqual(draft.error_code, "")

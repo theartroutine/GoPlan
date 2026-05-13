@@ -306,7 +306,6 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
             {
                 "payload": {
                     "total_amount": "500000",
-                    "collector_id": str(self.user.id),
                 }
             },
             format="json",
@@ -319,6 +318,34 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
         self.assertEqual(draft.preview["total_amount"], "500000")
         self.assertEqual(response.data["draft"]["preview"]["total_amount"], "500000")
         self.assertEqual(draft.missing_fields, [])
+
+    def test_patch_rejects_payload_fields_that_are_not_currently_missing(self):
+        self.client.force_authenticate(self.user)
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="expense.create",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            required_confirmation="CAPTAIN",
+            payload={"title": "Lunch"},
+            preview={"title": "Lunch"},
+            missing_fields=[{"name": "total_amount", "label": "Amount"}],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        response = self.client.patch(
+            f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
+            {"payload": {"expense_id": str(uuid4())}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error_code"], "AI_DRAFT_PATCH_FIELD_NOT_ALLOWED")
+        draft.refresh_from_db()
+        self.assertNotIn("expense_id", draft.payload)
 
     def test_patch_keeps_legacy_string_missing_field_until_value_is_present(self):
         self.client.force_authenticate(self.user)
@@ -339,7 +366,7 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
 
         response = self.client.patch(
             f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
-            {"payload": {"description": "Team lunch"}},
+            {"payload": {"total_amount": ""}},
             format="json",
         )
 
@@ -383,3 +410,38 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
         self.assertEqual(draft.status, AIActionDraftStatus.READY)
         self.assertEqual(draft.payload["data"]["title"], "Museum")
         self.assertNotIn("title", draft.payload)
+
+    def test_patch_timeline_update_missing_data_object_updates_nested_payload(self):
+        self.client.force_authenticate(self.user)
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.update",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            required_confirmation="CAPTAIN",
+            payload={"activity_id": str(uuid4()), "data": {}},
+            preview={"action_type": "timeline.activity.update"},
+            missing_fields=[
+                {
+                    "name": "data",
+                    "label": "Activity details",
+                    "type": "json",
+                }
+            ],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        response = self.client.patch(
+            f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
+            {"payload": {"data": {"title": "Museum"}}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.READY)
+        self.assertEqual(draft.payload["data"], {"title": "Museum"})
+        self.assertEqual(response.data["draft"]["preview"]["title"], "Museum")

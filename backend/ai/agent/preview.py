@@ -6,6 +6,7 @@ TOP_LEVEL_PREVIEW_FIELDS = (
     "total_amount",
     "description",
     "currency_code",
+    "collector_id",
     "expense_id",
     "activity_id",
     "transfer_id",
@@ -13,6 +14,8 @@ TOP_LEVEL_PREVIEW_FIELDS = (
     "scope",
     "user_id",
     "amount",
+    "contributions",
+    "member_contributions",
 )
 
 TIMELINE_ACTIVITY_PREVIEW_FIELDS = (
@@ -35,12 +38,20 @@ def build_action_preview(*, action_type: str, payload: dict) -> dict:
     for field in TOP_LEVEL_PREVIEW_FIELDS:
         if field in payload:
             preview[field] = payload[field]
+    for field, value in payload.items():
+        if field == "data" or field in preview:
+            continue
+        preview[field] = value
 
     activity_data = payload.get("data")
     if isinstance(activity_data, dict):
         for field in TIMELINE_ACTIVITY_PREVIEW_FIELDS:
             if field in activity_data:
                 preview[field] = activity_data[field]
+        for field, value in activity_data.items():
+            if field in preview:
+                continue
+            preview[field] = value
 
     if action_type:
         preview["action_type"] = action_type

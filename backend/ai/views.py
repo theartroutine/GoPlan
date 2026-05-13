@@ -85,14 +85,36 @@ def _apply_draft_patch_payload(draft: AIActionDraft, patch_payload: dict) -> dic
         AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
     }:
         data = dict(next_payload.get("data") or {})
+        data_overridden = False
         for key, value in patch_payload.items():
-            if key in TIMELINE_ACTIVITY_DATA_FIELDS:
+            if key == "data":
+                if isinstance(value, dict):
+                    data.update(value)
+                else:
+                    next_payload["data"] = value
+                    data_overridden = True
+            elif key in TIMELINE_ACTIVITY_DATA_FIELDS:
                 data[key] = value
             else:
                 next_payload[key] = value
-        next_payload["data"] = data
+        if not data_overridden:
+            next_payload["data"] = data
         return next_payload
     return {**next_payload, **patch_payload}
+
+
+def _disallowed_patch_fields(draft: AIActionDraft, patch_payload: dict) -> list[str]:
+    allowed_fields = set(
+        normalize_missing_field_names(
+            draft.missing_fields,
+            strict=False,
+        )
+    )
+    return sorted(
+        field_name
+        for field_name in patch_payload.keys()
+        if field_name not in allowed_fields
+    )
 
 
 def _refresh_missing_fields(draft: AIActionDraft, payload: dict) -> list[dict]:
@@ -171,9 +193,21 @@ class AIActionDraftDetailAPIView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
 
+            patch_payload = serializer.validated_data.get("payload", {})
+            disallowed_fields = _disallowed_patch_fields(draft, patch_payload)
+            if disallowed_fields:
+                return _error(
+                    (
+                        "Only fields currently requested by this draft can be "
+                        f"updated. Unsupported field(s): {', '.join(disallowed_fields)}."
+                    ),
+                    "AI_DRAFT_PATCH_FIELD_NOT_ALLOWED",
+                    status.HTTP_400_BAD_REQUEST,
+                )
+
             next_payload = _apply_draft_patch_payload(
                 draft,
-                serializer.validated_data.get("payload", {}),
+                patch_payload,
             )
             still_missing = _refresh_missing_fields(draft, next_payload)
             draft.payload = next_payload
@@ -332,6 +366,7 @@ def _should_persist_confirm_failure(exc: Exception) -> bool:
             AIActionDraftForbiddenError,
             AIActionDraftExpiredError,
             AIActionDraft.DoesNotExist,
+            TransferNotSentError,
         ),
     )
 

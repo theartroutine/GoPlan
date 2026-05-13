@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from ai.action_types import (
+    AI_ACTION_SETTLEMENT_TRANSFER_CONFIRM_RECEIVED,
     AI_CONFIRMATION_CAPTAIN,
     AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS,
     AI_CONFIRMATION_TRANSFER_PAYER,
@@ -51,29 +52,36 @@ def _can_confirm_transfer(draft: AIActionDraft, viewer) -> bool:
     transfer = draft.preconditions.get("transfer", {})
     if not isinstance(transfer, dict):
         transfer = {}
-    if "payer_id" not in transfer or "recipient_id" not in transfer:
-        transfer_id = draft.payload.get("transfer_id")
-        if transfer_id:
-            try:
-                transfer_obj = SettlementTransfer.objects.get(
-                    pk=transfer_id,
-                    settlement__trip_id=draft.trip_id,
-                    settlement__status=SettlementStatus.FINALIZED,
-                )
-            except (
-                SettlementTransfer.DoesNotExist,
-                TypeError,
-                ValueError,
-                ValidationError,
-            ):
-                return False
-            transfer = {
-                "payer_id": str(transfer_obj.payer_id),
-                "recipient_id": str(transfer_obj.recipient_id),
-            }
+    transfer_obj = None
+    transfer_id = draft.payload.get("transfer_id")
+    should_lookup_transfer = bool(transfer_id)
+    if should_lookup_transfer and transfer_id:
+        try:
+            transfer_obj = SettlementTransfer.objects.get(
+                pk=transfer_id,
+                settlement__trip_id=draft.trip_id,
+                settlement__status=SettlementStatus.FINALIZED,
+            )
+        except (
+            SettlementTransfer.DoesNotExist,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ):
+            return False
+        transfer = {
+            "payer_id": str(transfer_obj.payer_id),
+            "recipient_id": str(transfer_obj.recipient_id),
+        }
     if draft.required_confirmation == AI_CONFIRMATION_TRANSFER_PAYER:
         return str(transfer.get("payer_id")) == str(viewer.id)
     if draft.required_confirmation == AI_CONFIRMATION_TRANSFER_RECIPIENT:
+        if (
+            draft.action_type == AI_ACTION_SETTLEMENT_TRANSFER_CONFIRM_RECEIVED
+            and transfer_obj is not None
+            and transfer_obj.payer_marked_sent_at is None
+        ):
+            return False
         return str(transfer.get("recipient_id")) == str(viewer.id)
     return False
 

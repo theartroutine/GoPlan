@@ -46,6 +46,13 @@ def _complete_prompt(*, prompt: str, system_prompt: str) -> DeepSeekResult:
         base_url=settings.DEEPSEEK_BASE_URL,
         timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
     )
+    thinking_kwargs = {"extra_body": {"thinking": {"type": "disabled"}}}
+    if settings.GOPLAN_AI_THINKING_ENABLED:
+        thinking_kwargs = {
+            "reasoning_effort": settings.GOPLAN_AI_REASONING_EFFORT,
+            "extra_body": {"thinking": {"type": "enabled"}},
+        }
+
     try:
         response = client.chat.completions.create(
             model=settings.DEEPSEEK_MODEL,
@@ -55,7 +62,7 @@ def _complete_prompt(*, prompt: str, system_prompt: str) -> DeepSeekResult:
             ],
             stream=False,
             max_tokens=settings.DEEPSEEK_MAX_OUTPUT_TOKENS,
-            extra_body={"thinking": {"type": "disabled"}},
+            **thinking_kwargs,
         )
     except APITimeoutError as exc:
         raise DeepSeekProviderError(AIInteractionErrorCode.TIMEOUT) from exc

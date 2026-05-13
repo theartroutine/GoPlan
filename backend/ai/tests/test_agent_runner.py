@@ -98,11 +98,40 @@ class AgentDraftValidationTests(TestCase):
         self.assertEqual(draft.preview["title"], "Dinner")
         self.assertEqual(draft.preview["total_amount"], "1000000")
 
+    def test_preview_includes_executable_optional_fields(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"expense.create",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"title":"Dinner","total_amount":"1000000",'
+            '"collector_id":"collector-1"},'
+            '"preview":{"title":"Dinner"},"missing_fields":[],'
+            '"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.preview["collector_id"], "collector-1")
+
     def test_missing_fields_are_frontend_field_objects(self):
         parsed = parse_agent_response(
             '{"message":"Draft","drafts":[{"action_type":"expense.create",'
             '"required_confirmation":"CAPTAIN","status":"READY",'
             '"payload":{"title":"Lunch"},'
+            '"preview":{"title":"Lunch"},"missing_fields":[],'
+            '"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.status, "NEEDS_INFO")
+        self.assertEqual(
+            draft.missing_fields,
+            [{"name": "total_amount", "label": "Amount", "type": "money"}],
+        )
+
+    def test_invalid_money_field_keeps_draft_needing_info(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"expense.create",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"title":"Lunch","total_amount":"abc"},'
             '"preview":{"title":"Lunch"},"missing_fields":[],'
             '"preconditions":{}}]}'
         )
