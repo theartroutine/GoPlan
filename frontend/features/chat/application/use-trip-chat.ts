@@ -678,7 +678,7 @@ export function useTripChat(
         dispatch({ type: "SEND_END" });
       }
     },
-    [tripId, currentUser.id, currentUser.display_name, currentUser.identify_tag],
+    [tripId, currentUser.id, currentUser.display_name, currentUser.identify_tag, currentUser.avatar_url],
   );
 
   const sendMessage = useCallback(

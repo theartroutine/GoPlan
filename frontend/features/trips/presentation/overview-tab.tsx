@@ -9,11 +9,10 @@ import {
 import { formatTripMoneyAmount } from "@/features/trips/domain/money";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import {
-  Avatar,
-  AvatarFallback,
   AvatarGroup,
   AvatarGroupCount,
 } from "@/shared/ui/avatar";
+import { UserAvatar } from "@/shared/ui/user-avatar";
 
 // ── Overview Tab ──────────────────────────────────────────────────────────
 
@@ -76,11 +75,7 @@ export function OverviewTab() {
               </p>
               <AvatarGroup>
                 {visibleMembers.map((m) => (
-                  <Avatar key={m.membership_id} size="sm">
-                    <AvatarFallback className="text-[10px]">
-                      {m.user.display_name.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar key={m.membership_id} user={m.user} size="sm" />
                 ))}
                 {extraCount > 0 && (
                   <AvatarGroupCount className="text-[10px]">
