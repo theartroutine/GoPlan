@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.test import TestCase
@@ -10,6 +12,7 @@ from rest_framework.test import APITestCase
 from ai.action_types import (
     AI_CONFIRMATION_CAPTAIN,
     AI_CONFIRMATION_TRANSFER_PAYER,
+    AI_CONFIRMATION_TRANSFER_RECIPIENT,
 )
 from ai.agent.drafts import build_action_draft_payload
 from ai.models import (
@@ -19,6 +22,12 @@ from ai.models import (
     AIInteractionStatus,
 )
 from chat.models import ChatMessage, ChatMessageSenderKind
+from expenses.services import (
+    create_expense,
+    finalize_settlement,
+    mark_transfer_sent,
+    set_contribution,
+)
 from test_helpers import create_completed_user
 from trips.models import (
     MemberStatus,
@@ -370,6 +379,99 @@ class AIActionDraftAPITests(APITestCase, AIActionDraftModelTests):
         draft.refresh_from_db()
         self.assertEqual(draft.status, AIActionDraftStatus.CANCELLED)
         self.assertEqual(draft.cancelled_by_id, self.user.id)
+
+    @patch("ai.views.push_chat_message")
+    def test_cancel_expired_draft_marks_expired_and_returns_conflict(self, push_chat_message):
+        self.client.force_authenticate(self.user)
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="expense.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation="CAPTAIN",
+            payload={"title": "Dinner", "total_amount": "1200000"},
+            preview={"title": "Dinner"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        response = self.client.post(self._cancel_url(draft.id))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "AI_DRAFT_EXPIRED")
+        self.assertEqual(response.data["draft"]["status"], AIActionDraftStatus.EXPIRED)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.EXPIRED)
+        push_chat_message.assert_called_once_with(self.response_message)
+
+
+class AIActionDraftTransferRefreshTests(AIActionDraftModelTests):
+    @patch("chat.services.push_chat_message")
+    def test_manual_mark_transfer_sent_refreshes_ai_transfer_drafts(self, push_chat_message):
+        member = create_completed_user(
+            "agent-transfer-member@example.com",
+            "agenttransfer",
+            "AID006",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.user,
+            title="Dinner",
+            total_amount=Decimal("100000"),
+            collector=self.user,
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.user.id,
+            actor=self.user,
+            amount=Decimal("100000"),
+        )
+        settlement = finalize_settlement(trip_id=self.trip.id, actor=self.user)
+        transfer = settlement.transfers.get()
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="settlement.transfer.confirm_received",
+            status=AIActionDraftStatus.READY,
+            payload={"transfer_id": str(transfer.id)},
+            preview={"title": "Confirm received"},
+            missing_fields=[],
+            preconditions={},
+            required_confirmation=AI_CONFIRMATION_TRANSFER_RECIPIENT,
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        previous_updated_at = self.response_message.updated_at
+
+        self.assertFalse(
+            build_action_draft_payload(draft, viewer=self.user)["can_confirm"]
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            mark_transfer_sent(
+                trip_id=self.trip.id,
+                transfer_id=transfer.id,
+                actor=member,
+            )
+
+        self.response_message.refresh_from_db()
+        draft.refresh_from_db()
+        self.assertGreater(self.response_message.updated_at, previous_updated_at)
+        self.assertTrue(
+            build_action_draft_payload(draft, viewer=self.user)["can_confirm"]
+        )
+        push_chat_message.assert_called_once()
+        self.assertEqual(push_chat_message.call_args.args[0].id, self.response_message.id)
 
 
 class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):

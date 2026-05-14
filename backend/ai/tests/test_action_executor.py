@@ -36,6 +36,7 @@ from trips.models import (
     TimelineLocationMode,
     TimelineActivityTimeMode,
     TimelineSystemType,
+    Trip,
     TripMember,
     TripRole,
 )
@@ -531,6 +532,66 @@ class ActionExecutorTests(TestCase):
             _check_preconditions(draft)
 
         select_for_update.assert_called_once()
+
+    def test_confirm_locks_trip_context_before_expense_precondition_target(self):
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Dinner",
+            total_amount=Decimal("1200000"),
+            collector=self.captain,
+        )
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="expense.update",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={"expense_id": str(expense.id), "title": "Dinner from AI"},
+            preview={"title": "Dinner from AI"},
+            missing_fields=[],
+            preconditions={
+                "target": {
+                    "type": "expense",
+                    "id": str(expense.id),
+                    "updated_at": expense.updated_at.isoformat(),
+                }
+            },
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        lock_order = []
+        trip_select_for_update = Trip.objects.select_for_update
+        expense_select_for_update = Expense.objects.select_for_update
+
+        def record_trip_lock(*args, **kwargs):
+            lock_order.append("trip")
+            return trip_select_for_update(*args, **kwargs)
+
+        def record_expense_lock(*args, **kwargs):
+            lock_order.append("expense")
+            return expense_select_for_update(*args, **kwargs)
+
+        with (
+            patch.object(
+                Trip.objects,
+                "select_for_update",
+                side_effect=record_trip_lock,
+            ),
+            patch.object(
+                Expense.objects,
+                "select_for_update",
+                side_effect=record_expense_lock,
+            ),
+        ):
+            confirm_action_draft(
+                draft_id=draft.id,
+                trip_id=self.trip.id,
+                actor=self.captain,
+            )
+
+        self.assertLess(lock_order.index("trip"), lock_order.index("expense"))
 
     def test_confirm_missing_required_payload_raises_not_ready(self):
         draft = AIActionDraft.objects.create(

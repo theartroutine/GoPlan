@@ -35,7 +35,7 @@ from expenses.services import (
     set_contribution,
     update_expense,
 )
-from trips.models import TimelineActivity, TripMember
+from trips.models import MemberStatus, TimelineActivity, Trip, TripMember
 from trips.services import (
     create_timeline_activity,
     delete_timeline_activity,
@@ -136,6 +136,29 @@ def _check_preconditions(draft: AIActionDraft) -> None:
         return
 
     raise AIActionDraftStaleError("Draft target precondition is unsupported.")
+
+
+def _lock_precondition_trip_context(*, draft: AIActionDraft, actor) -> None:
+    expected_target = expected_precondition_target(
+        action_type=draft.action_type,
+        payload=draft.payload,
+    )
+    if expected_target is None:
+        return
+
+    try:
+        TripMember.objects.select_for_update().get(
+            trip_id=draft.trip_id,
+            user=actor,
+            status=MemberStatus.ACTIVE,
+        )
+    except TripMember.DoesNotExist as exc:
+        raise AIActionDraftForbiddenError("You cannot confirm this draft.") from exc
+
+    try:
+        Trip.objects.select_for_update().get(pk=draft.trip_id)
+    except Trip.DoesNotExist as exc:
+        raise AIActionDraftStaleError("Draft trip no longer exists.") from exc
 
 
 def _validate_action_payload_ready(draft: AIActionDraft) -> None:
@@ -477,6 +500,7 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
             if not can_confirm_action_draft(draft, viewer=actor):
                 raise AIActionDraftForbiddenError("You cannot confirm this draft.")
 
+            _lock_precondition_trip_context(draft=draft, actor=actor)
             _check_preconditions(draft)
             result = _execute(draft, actor=actor)
             draft.status = AIActionDraftStatus.CONFIRMED

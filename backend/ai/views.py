@@ -160,6 +160,7 @@ class AIActionDraftCancelAPIView(APIView):
                 status.HTTP_404_NOT_FOUND,
             )
 
+        expired_draft = None
         with transaction.atomic():
             try:
                 draft = (
@@ -175,7 +176,16 @@ class AIActionDraftCancelAPIView(APIView):
                     status.HTTP_404_NOT_FOUND,
                 )
 
-            if draft.status in {
+            if (
+                draft.status in {AIActionDraftStatus.NEEDS_INFO, AIActionDraftStatus.READY}
+                and draft.expires_at <= timezone.now()
+            ):
+                draft.status = AIActionDraftStatus.EXPIRED
+                draft.save(update_fields=["status", "updated_at"])
+                draft.response_message.updated_at = timezone.now()
+                draft.response_message.save(update_fields=["updated_at"])
+                expired_draft = draft
+            elif draft.status in {
                 AIActionDraftStatus.CONFIRMED,
                 AIActionDraftStatus.CANCELLED,
                 AIActionDraftStatus.EXPIRED,
@@ -184,28 +194,37 @@ class AIActionDraftCancelAPIView(APIView):
                 return Response({
                     "draft": build_action_draft_payload(draft, viewer=request.user)
                 })
-
-            if not can_cancel_action_draft(draft, viewer=request.user):
+            elif not can_cancel_action_draft(draft, viewer=request.user):
                 return _error(
                     "You cannot cancel this draft.",
                     "AI_DRAFT_FORBIDDEN",
                     status.HTTP_403_FORBIDDEN,
                 )
+            else:
+                draft.status = AIActionDraftStatus.CANCELLED
+                draft.cancelled_by = request.user
+                draft.cancelled_at = timezone.now()
+                draft.save(
+                    update_fields=[
+                        "status",
+                        "cancelled_by",
+                        "cancelled_at",
+                        "updated_at",
+                    ]
+                )
+                draft.response_message.updated_at = timezone.now()
+                draft.response_message.save(update_fields=["updated_at"])
+                transaction.on_commit(lambda: push_chat_message(draft.response_message))
 
-            draft.status = AIActionDraftStatus.CANCELLED
-            draft.cancelled_by = request.user
-            draft.cancelled_at = timezone.now()
-            draft.save(
-                update_fields=[
-                    "status",
-                    "cancelled_by",
-                    "cancelled_at",
-                    "updated_at",
-                ]
+        if expired_draft is not None:
+            push_chat_message(expired_draft.response_message)
+            return _error(
+                "Draft expired.",
+                "AI_DRAFT_EXPIRED",
+                status.HTTP_409_CONFLICT,
+                draft=expired_draft,
+                viewer=request.user,
             )
-            draft.response_message.updated_at = timezone.now()
-            draft.response_message.save(update_fields=["updated_at"])
-            transaction.on_commit(lambda: push_chat_message(draft.response_message))
 
         return Response({"draft": build_action_draft_payload(draft, viewer=request.user)})
 
