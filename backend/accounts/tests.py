@@ -1065,3 +1065,23 @@ class ChangePasswordServiceTests(TestCase):
         token = AccessToken(access)
         self.user.refresh_from_db()
         self.assertEqual(token.get("auth_version"), self.user.auth_version)
+
+
+# -------- build_user_payload avatar_url Tests --------
+
+from accounts.services import build_user_payload
+
+
+class BuildUserPayloadAvatarTests(TestCase):
+    def setUp(self) -> None:
+        self.user = User.objects.create_user(email="ap@example.com", password="ValidPw123!")
+
+    def test_payload_avatar_url_is_null_when_no_avatar(self):
+        payload = build_user_payload(self.user)
+        self.assertIn("avatar_url", payload)
+        self.assertIsNone(payload["avatar_url"])
+
+    def test_payload_avatar_url_is_storage_url_when_present(self):
+        update_avatar(self.user, _make_image_upload())
+        payload = build_user_payload(self.user)
+        self.assertTrue(payload["avatar_url"].startswith("/media/avatars/"))

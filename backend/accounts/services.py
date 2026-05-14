@@ -163,6 +163,7 @@ def build_user_payload(user: User) -> dict:
         "identify_name": user.identify_name,
         "identify_code": user.identify_code,
         "identify_tag": user.identify_tag,
+        "avatar_url": user.avatar.url if user.avatar else None,
         "email_verified": user.email_verified,
         "is_profile_completed": user.is_profile_completed,
         "requires_profile_setup": user.requires_profile_setup,
