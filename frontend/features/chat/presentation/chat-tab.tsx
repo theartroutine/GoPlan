@@ -24,6 +24,7 @@ export function ChatTab() {
         id: user.id,
         display_name: user.display_name,
         identify_tag: user.identify_tag,
+        avatar_url: user.avatar_url,
       }}
     />
   );

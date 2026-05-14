@@ -457,7 +457,7 @@ function dispatchRecoverableOrAccessLostError(
 
 export function useTripChat(
   tripId: string,
-  currentUser: { id: string; display_name: string; identify_tag: string | null },
+  currentUser: { id: string; display_name: string; identify_tag: string | null; avatar_url: string | null },
 ): UseTripChatResult {
   const [state, dispatch] = useReducer(chatReducer, undefined, initialState);
 
@@ -626,6 +626,7 @@ export function useTripChat(
             id: currentUser.id,
             display_name: currentUser.display_name,
             identify_tag: currentUser.identify_tag,
+            avatar_url: currentUser.avatar_url,
           },
           sender_kind: "USER",
           ai_status: null,
