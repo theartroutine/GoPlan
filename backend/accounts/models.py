@@ -28,6 +28,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    avatar = models.ImageField(
+        upload_to="avatars/%Y/%m/",
+        null=True,
+        blank=True,
+        max_length=255,
+    )
 
     objects = UserManager()
 
