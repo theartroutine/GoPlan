@@ -1085,3 +1085,53 @@ class BuildUserPayloadAvatarTests(TestCase):
         update_avatar(self.user, _make_image_upload())
         payload = build_user_payload(self.user)
         self.assertTrue(payload["avatar_url"].startswith("/media/avatars/"))
+
+
+# -------- Avatar API Tests --------
+
+
+class AvatarAPITests(APITestCase):
+    URL = "/api/auth/avatar"
+
+    def setUp(self) -> None:
+        self.user = User.objects.create_user(email="api@example.com", password="ValidPw123!")
+        self.client.force_authenticate(user=self.user)
+
+    def _upload_image(self, format="JPEG"):
+        buf = io.BytesIO()
+        PILImage.new("RGB", (256, 256), "green").save(buf, format=format)
+        return SimpleUploadedFile(
+            f"a.{format.lower()}", buf.getvalue(), content_type=f"image/{format.lower()}"
+        )
+
+    def test_patch_uploads_avatar_returns_user_with_avatar_url(self):
+        response = self.client.patch(self.URL, {"avatar": self._upload_image()}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("user", response.data)
+        self.assertTrue(response.data["user"]["avatar_url"].startswith("/media/avatars/"))
+
+    def test_patch_rejects_invalid_file_with_AVATAR_INVALID_FORMAT(self):
+        bad = SimpleUploadedFile("bad.jpg", b"not-an-image", content_type="image/jpeg")
+        response = self.client.patch(self.URL, {"avatar": bad}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error_code"], "AVATAR_INVALID_FORMAT")
+
+    def test_delete_clears_avatar_returns_user_with_null_avatar_url(self):
+        self.client.patch(self.URL, {"avatar": self._upload_image()}, format="multipart")
+        response = self.client.delete(self.URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["user"]["avatar_url"])
+
+    def test_delete_when_no_avatar_returns_200_with_null(self):
+        response = self.client.delete(self.URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["user"]["avatar_url"])
+
+    def test_patch_and_delete_require_authentication(self):
+        self.client.force_authenticate(user=None)
+        upload = self._upload_image()
+        self.assertEqual(
+            self.client.patch(self.URL, {"avatar": upload}, format="multipart").status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+        self.assertEqual(self.client.delete(self.URL).status_code, status.HTTP_401_UNAUTHORIZED)
