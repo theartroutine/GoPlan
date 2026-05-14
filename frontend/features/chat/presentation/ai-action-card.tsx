@@ -33,21 +33,45 @@ function previewEntries(preview: Record<string, unknown>): Array<[string, string
   ]);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function errorResponseData(error: unknown): Record<string, unknown> | null {
+  const response = isRecord(error) ? error.response : null;
+  const data = isRecord(response) ? response.data : null;
+  return isRecord(data) ? data : null;
+}
+
+function isAIActionDraft(value: unknown): value is AIActionDraft {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.action_type === "string" &&
+    typeof value.status === "string" &&
+    typeof value.required_confirmation === "string" &&
+    typeof value.can_confirm === "boolean" &&
+    typeof value.can_cancel === "boolean" &&
+    isRecord(value.preview) &&
+    Array.isArray(value.missing_fields) &&
+    isRecord(value.result) &&
+    typeof value.error_code === "string" &&
+    typeof value.error_detail === "string" &&
+    typeof value.expires_at === "string" &&
+    typeof value.created_at === "string" &&
+    typeof value.updated_at === "string"
+  );
+}
+
+function draftFromError(error: unknown): AIActionDraft | null {
+  const data = errorResponseData(error);
+  if (!data) return null;
+  return isAIActionDraft(data.draft) ? data.draft : null;
+}
+
 function errorMessage(error: unknown, fallback: string): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "response" in error &&
-    error.response &&
-    typeof error.response === "object" &&
-    "data" in error.response &&
-    error.response.data &&
-    typeof error.response.data === "object" &&
-    "detail" in error.response.data &&
-    typeof error.response.data.detail === "string"
-  ) {
-    return error.response.data.detail;
-  }
+  const data = errorResponseData(error);
+  if (typeof data?.detail === "string") return data.detail;
   return fallback;
 }
 
@@ -88,6 +112,8 @@ export function AIActionCard({ tripId, draft, onDraftChanged }: Props) {
       const res = await confirmAIActionDraft(tripId, localDraft.id);
       applyDraft(res.draft);
     } catch (caught) {
+      const nextDraft = draftFromError(caught);
+      if (nextDraft) applyDraft(nextDraft);
       setError(errorMessage(caught, "Could not confirm this draft."));
     } finally {
       setPending(null);
@@ -102,6 +128,8 @@ export function AIActionCard({ tripId, draft, onDraftChanged }: Props) {
       const res = await cancelAIActionDraft(tripId, localDraft.id);
       applyDraft(res.draft);
     } catch (caught) {
+      const nextDraft = draftFromError(caught);
+      if (nextDraft) applyDraft(nextDraft);
       setError(errorMessage(caught, "Could not cancel this draft."));
     } finally {
       setPending(null);
@@ -116,6 +144,8 @@ export function AIActionCard({ tripId, draft, onDraftChanged }: Props) {
       const res = await patchAIActionDraft(tripId, localDraft.id, payload);
       applyDraft(res.draft);
     } catch (caught) {
+      const nextDraft = draftFromError(caught);
+      if (nextDraft) applyDraft(nextDraft);
       setError(errorMessage(caught, "Could not update this draft."));
     } finally {
       setPending(null);

@@ -100,6 +100,15 @@ class ActionExecutorTests(TestCase):
             expires_at=timezone.now() + timedelta(hours=24),
         )
 
+    def _expense_preconditions(self, expense: Expense) -> dict:
+        return {
+            "target": {
+                "type": "expense",
+                "id": str(expense.id),
+                "updated_at": expense.updated_at.isoformat(),
+            }
+        }
+
     def test_confirm_expense_create_executes_once(self):
         draft = self._expense_create_draft()
 
@@ -149,7 +158,7 @@ class ActionExecutorTests(TestCase):
             },
             preview={"summary": "Everyone paid"},
             missing_fields=[],
-            preconditions={},
+            preconditions=self._expense_preconditions(expense),
             expires_at=timezone.now() + timedelta(hours=24),
         )
 
@@ -211,7 +220,7 @@ class ActionExecutorTests(TestCase):
             },
             preview={"summary": "Everyone paid"},
             missing_fields=[],
-            preconditions={},
+            preconditions=self._expense_preconditions(expense),
             expires_at=timezone.now() + timedelta(hours=24),
         )
 
@@ -263,7 +272,7 @@ class ActionExecutorTests(TestCase):
             },
             preview={"summary": "Everyone paid"},
             missing_fields=[],
-            preconditions={},
+            preconditions=self._expense_preconditions(expense),
             expires_at=timezone.now() + timedelta(hours=24),
         )
 
@@ -280,6 +289,43 @@ class ActionExecutorTests(TestCase):
         self.assertEqual(contributions[self.captain.id], Decimal("600000"))
         self.assertEqual(contributions[member.id], Decimal("600000"))
         self.assertEqual(confirmed.result["updated_count"], 2)
+
+    def test_stale_expense_contribution_set_draft_is_rejected(self):
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Dinner",
+            total_amount=Decimal("1200000"),
+            collector=self.captain,
+        )
+        stale_preconditions = self._expense_preconditions(expense)
+        expense.title = "Dinner updated elsewhere"
+        expense.save(update_fields=["title", "updated_at"])
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="expense.contribution.set",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "expense_id": str(expense.id),
+                "user_id": str(self.captain.id),
+                "amount": "1200000",
+            },
+            preview={"summary": "Captain paid"},
+            missing_fields=[],
+            preconditions=stale_preconditions,
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        with self.assertRaises(AIActionDraftStaleError):
+            confirm_action_draft(
+                draft_id=draft.id,
+                trip_id=self.trip.id,
+                actor=self.captain,
+            )
 
     def test_double_confirm_does_not_create_duplicate_expense(self):
         draft = self._expense_create_draft()
@@ -769,6 +815,33 @@ class ActionDraftConfirmAPITests(APITestCase):
         self.assertEqual(draft.status, AIActionDraftStatus.FAILED)
         self.assertEqual(draft.error_code, "AI_DRAFT_STALE")
         self.assertIn("changed", draft.error_detail)
+
+    @patch("ai.views.push_chat_message")
+    def test_expired_confirm_response_includes_updated_draft(self, push_chat_message):
+        self.client.force_authenticate(self.captain)
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="expense.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={"title": "Dinner", "total_amount": "1200000"},
+            preview={"title": "Dinner"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        response = self.client.post(self._confirm_url(draft.id))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "AI_DRAFT_EXPIRED")
+        self.assertEqual(response.data["draft"]["status"], AIActionDraftStatus.EXPIRED)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.EXPIRED)
+        push_chat_message.assert_called_once_with(self.response)
 
     def test_confirm_received_before_transfer_sent_does_not_fail_draft(self):
         self.client.force_authenticate(self.captain)

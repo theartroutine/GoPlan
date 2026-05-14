@@ -67,8 +67,18 @@ from trips.services import (
 AI_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 
 
-def _error(detail: str, code: str, http_status: int) -> Response:
-    return Response({"detail": detail, "error_code": code}, status=http_status)
+def _error(
+    detail: str,
+    code: str,
+    http_status: int,
+    *,
+    draft: AIActionDraft | None = None,
+    viewer=None,
+) -> Response:
+    payload = {"detail": detail, "error_code": code}
+    if draft is not None:
+        payload["draft"] = build_action_draft_payload(draft, viewer=viewer)
+    return Response(payload, status=http_status)
 
 
 def _get_draft_or_404(*, trip_id, draft_id) -> AIActionDraft:
@@ -437,6 +447,26 @@ class AIActionDraftConfirmAPIView(APIView):
                 status.HTTP_404_NOT_FOUND,
             )
         except Exception as exc:
+            if isinstance(exc, AIActionDraftExpiredError):
+                try:
+                    expired_draft = _get_draft_or_404(
+                        trip_id=trip_id,
+                        draft_id=draft_id,
+                    )
+                except TripNotFoundError:
+                    return _error(
+                        "Draft not found.",
+                        "AI_DRAFT_NOT_FOUND",
+                        status.HTTP_404_NOT_FOUND,
+                    )
+                push_chat_message(expired_draft.response_message)
+                return _error(
+                    str(exc),
+                    exc.error_code,
+                    status.HTTP_409_CONFLICT,
+                    draft=expired_draft,
+                    viewer=request.user,
+                )
             failed_draft = _persist_confirm_failure(
                 draft_id=draft_id,
                 trip_id=trip_id,

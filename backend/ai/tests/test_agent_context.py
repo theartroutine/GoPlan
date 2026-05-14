@@ -6,7 +6,7 @@ from uuid import uuid4
 from django.test import TestCase, override_settings
 
 from ai.agent.context import build_agent_context
-from chat.models import ChatMessage
+from chat.models import ChatMessage, ChatMessageHiddenForUser
 from expenses.services import create_expense
 from test_helpers import create_completed_user
 from trips.models import (
@@ -120,3 +120,52 @@ class AgentContextTests(TestCase):
         self.assertEqual(activity_count, 1)
         self.assertEqual(len(context["expenses"]["expenses"]), 1)
         self.assertEqual(len(context["recent_chat"]), 1)
+
+    def test_recent_chat_excludes_messages_hidden_for_actor(self):
+        captain = create_completed_user(
+            "ctx-hide-cap@example.com",
+            "ctxhidecap",
+            "CTX004",
+        )
+        member = create_completed_user(
+            "ctx-hide-member@example.com",
+            "ctxhidemem",
+            "CTX005",
+        )
+        trip = create_trip(
+            captain=captain,
+            name="Context Hidden Chat Trip",
+            destination="Da Nang",
+            start_date="2026-06-01",
+            end_date="2026-06-02",
+        )
+        trip.refresh_from_db()
+        TripMember.objects.create(
+            trip=trip,
+            user=member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        visible = ChatMessage.objects.create(
+            trip=trip,
+            sender=captain,
+            sender_display_name_snapshot=captain.display_name,
+            sender_identify_tag_snapshot=captain.identify_tag,
+            content="Visible message",
+            client_message_id=uuid4(),
+        )
+        hidden = ChatMessage.objects.create(
+            trip=trip,
+            sender=captain,
+            sender_display_name_snapshot=captain.display_name,
+            sender_identify_tag_snapshot=captain.identify_tag,
+            content="Hidden message",
+            client_message_id=uuid4(),
+        )
+        ChatMessageHiddenForUser.objects.create(message=hidden, user=member)
+
+        context = build_agent_context(trip=trip, actor=member)
+
+        recent_ids = {message["id"] for message in context["recent_chat"]}
+        self.assertIn(str(visible.id), recent_ids)
+        self.assertNotIn(str(hidden.id), recent_ids)

@@ -75,7 +75,7 @@ def is_missing_value(value) -> bool:
 
 
 def _has_any_value(payload: dict, fields: tuple[str, ...]) -> bool:
-    return any(not is_blank(payload.get(field)) for field in fields)
+    return any(not is_missing_value(payload.get(field)) for field in fields)
 
 
 def _should_mark_all_participants_paid(payload: dict) -> bool:
@@ -116,7 +116,7 @@ def _with_provider_missing(
 
 
 def _require_field(names: list[str], payload: dict, field: str) -> None:
-    if is_blank(payload.get(field)) and field not in names:
+    if is_missing_value(payload.get(field)) and field not in names:
         names.append(field)
 
 

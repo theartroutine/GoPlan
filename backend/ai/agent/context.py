@@ -30,10 +30,11 @@ def _limit_timeline_activities(timeline: dict) -> dict:
     return {**timeline, "sections": sections}
 
 
-def _recent_chat_payload(*, trip, limit: int) -> list[dict]:
+def _recent_chat_payload(*, trip, actor, limit: int) -> list[dict]:
     messages = (
         ChatMessage.objects
         .filter(trip=trip)
+        .exclude(hidden_for_users__user=actor)
         .select_related("sender")
         .order_by("-created_at", "-id")[:limit]
     )
@@ -42,7 +43,9 @@ def _recent_chat_payload(*, trip, limit: int) -> list[dict]:
             "id": str(message.id),
             "sender_kind": message.sender_kind,
             "sender_display_name": message.sender_display_name_snapshot,
-            "content": message.content,
+            "content": (
+                "" if message.deleted_for_everyone_at is not None else message.content
+            ),
             "created_at": message.created_at.isoformat(),
         }
         for message in reversed(list(messages))
@@ -95,6 +98,7 @@ def build_agent_context(*, trip, actor) -> dict:
         "expenses": expenses,
         "recent_chat": _recent_chat_payload(
             trip=trip,
+            actor=actor,
             limit=settings.GOPLAN_AI_CONTEXT_RECENT_CHAT_LIMIT,
         ),
     }

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from django.core.exceptions import ValidationError
 
 from ai.action_types import (
+    AI_ACTION_EXPENSE_CONTRIBUTION_SET,
     AI_ACTION_EXPENSE_DELETE,
     AI_ACTION_EXPENSE_UPDATE,
     AI_ACTION_TIMELINE_ACTIVITY_DELETE,
@@ -15,6 +16,7 @@ from expenses.models import Expense
 from trips.models import TimelineActivity
 
 STALE_PRECONDITION_ACTIONS = {
+    AI_ACTION_EXPENSE_CONTRIBUTION_SET,
     AI_ACTION_EXPENSE_DELETE,
     AI_ACTION_EXPENSE_UPDATE,
     AI_ACTION_TIMELINE_ACTIVITY_DELETE,
@@ -34,7 +36,11 @@ def action_requires_stale_precondition(action_type: str) -> bool:
 
 
 def expected_precondition_target(*, action_type: str, payload: dict) -> DraftTargetSpec | None:
-    if action_type in {AI_ACTION_EXPENSE_DELETE, AI_ACTION_EXPENSE_UPDATE}:
+    if action_type in {
+        AI_ACTION_EXPENSE_CONTRIBUTION_SET,
+        AI_ACTION_EXPENSE_DELETE,
+        AI_ACTION_EXPENSE_UPDATE,
+    }:
         return DraftTargetSpec(
             target_type="expense",
             target_id=payload.get("expense_id"),

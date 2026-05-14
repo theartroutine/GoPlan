@@ -453,41 +453,47 @@ def mark_action_draft_failed(
         return draft
 
 
-@transaction.atomic
 def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
-    draft = (
-        AIActionDraft.objects
-        .select_for_update()
-        .select_related("response_message")
-        .get(pk=draft_id, trip_id=trip_id)
-    )
-    if draft.status == AIActionDraftStatus.CONFIRMED:
-        return draft
-    if draft.status != AIActionDraftStatus.READY:
-        raise AIActionDraftNotReadyError("Draft is not ready.")
-    if draft.expires_at <= timezone.now():
-        draft.status = AIActionDraftStatus.EXPIRED
-        draft.save(update_fields=["status", "updated_at"])
-        raise AIActionDraftExpiredError("Draft expired.")
-    _validate_action_payload_ready(draft)
-    if not can_confirm_action_draft(draft, viewer=actor):
-        raise AIActionDraftForbiddenError("You cannot confirm this draft.")
+    expired = False
+    with transaction.atomic():
+        draft = (
+            AIActionDraft.objects
+            .select_for_update()
+            .select_related("response_message")
+            .get(pk=draft_id, trip_id=trip_id)
+        )
+        if draft.status == AIActionDraftStatus.CONFIRMED:
+            return draft
+        if draft.status != AIActionDraftStatus.READY:
+            raise AIActionDraftNotReadyError("Draft is not ready.")
+        if draft.expires_at <= timezone.now():
+            expired = True
+            draft.status = AIActionDraftStatus.EXPIRED
+            draft.save(update_fields=["status", "updated_at"])
+            draft.response_message.updated_at = timezone.now()
+            draft.response_message.save(update_fields=["updated_at"])
+        else:
+            _validate_action_payload_ready(draft)
+            if not can_confirm_action_draft(draft, viewer=actor):
+                raise AIActionDraftForbiddenError("You cannot confirm this draft.")
 
-    _check_preconditions(draft)
-    result = _execute(draft, actor=actor)
-    draft.status = AIActionDraftStatus.CONFIRMED
-    draft.confirmed_by = actor
-    draft.confirmed_at = timezone.now()
-    draft.result = result
-    draft.save(
-        update_fields=[
-            "status",
-            "confirmed_by",
-            "confirmed_at",
-            "result",
-            "updated_at",
-        ]
-    )
-    draft.response_message.updated_at = timezone.now()
-    draft.response_message.save(update_fields=["updated_at"])
+            _check_preconditions(draft)
+            result = _execute(draft, actor=actor)
+            draft.status = AIActionDraftStatus.CONFIRMED
+            draft.confirmed_by = actor
+            draft.confirmed_at = timezone.now()
+            draft.result = result
+            draft.save(
+                update_fields=[
+                    "status",
+                    "confirmed_by",
+                    "confirmed_at",
+                    "result",
+                    "updated_at",
+                ]
+            )
+            draft.response_message.updated_at = timezone.now()
+            draft.response_message.save(update_fields=["updated_at"])
+    if expired:
+        raise AIActionDraftExpiredError("Draft expired.")
     return draft

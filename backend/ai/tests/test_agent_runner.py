@@ -154,6 +154,22 @@ class AgentDraftValidationTests(TestCase):
             [{"name": "total_amount", "label": "Amount", "type": "money"}],
         )
 
+    def test_empty_container_money_field_keeps_draft_needing_info(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"expense.create",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"title":"Lunch","total_amount":[]},'
+            '"preview":{"title":"Lunch"},"missing_fields":[],'
+            '"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.status, "NEEDS_INFO")
+        self.assertEqual(
+            draft.missing_fields,
+            [{"name": "total_amount", "label": "Amount", "type": "money"}],
+        )
+
     def test_action_specific_missing_fields_prevent_invalid_ready_drafts(self):
         cases = (
             (
@@ -406,6 +422,75 @@ class AgentRunPreconditionTests(TestCase):
                                 "updated_at": "2000-01-01T00:00:00Z",
                             }
                         },
+                    }
+                ],
+            }
+        )
+
+        with patch(
+            "ai.agent.runner.complete_goplan_ai_agent_prompt",
+            return_value=DeepSeekResult(
+                content=provider_content,
+                usage=DeepSeekUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+            ),
+        ):
+            result = run_goplan_ai_agent(interaction)
+
+        target = result.drafts[0].preconditions["target"]
+        self.assertEqual(target["type"], "expense")
+        self.assertEqual(target["id"], str(expense.id))
+        self.assertEqual(target["updated_at"], expense.updated_at.isoformat())
+
+    def test_runner_adds_backend_preconditions_for_contribution_drafts(self):
+        captain = create_completed_user(
+            "runner-contrib@example.com",
+            "runnercontrib",
+            "RUN002",
+        )
+        trip = create_trip(
+            captain=captain,
+            name="Runner Contribution Trip",
+            destination="Da Nang",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 2),
+        )
+        expense = create_expense(
+            trip_id=trip.id,
+            actor=captain,
+            title="Dinner",
+            total_amount=Decimal("1200000"),
+            collector=captain,
+        )
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=captain,
+            sender_display_name_snapshot=captain.display_name,
+            sender_identify_tag_snapshot=captain.identify_tag,
+            content="@GoPlanAI mark dinner paid",
+            client_message_id=uuid4(),
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=captain,
+            prompt_message=prompt,
+            prompt="mark dinner paid",
+            status=AIInteractionStatus.RUNNING,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        provider_content = json.dumps(
+            {
+                "message": "Draft",
+                "drafts": [
+                    {
+                        "action_type": "expense.contribution.set",
+                        "payload": {
+                            "expense_id": str(expense.id),
+                            "user_id": str(captain.id),
+                            "amount": "1200000",
+                        },
+                        "preview": {},
+                        "missing_fields": [],
+                        "preconditions": {},
                     }
                 ],
             }

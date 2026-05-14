@@ -91,6 +91,37 @@ describe("AIActionCard", () => {
     );
   });
 
+  it("applies draft returned by confirm error responses", async () => {
+    const expiredDraft = makeDraft({
+      status: "EXPIRED",
+      can_confirm: false,
+      can_cancel: false,
+    });
+    vi.mocked(confirmAIActionDraft).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: "Draft expired.",
+          draft: expiredDraft,
+        },
+      },
+    });
+    const onDraftChanged = vi.fn();
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft()}
+        onDraftChanged={onDraftChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    expect(await screen.findByText("EXPIRED")).toBeInTheDocument();
+    expect(screen.getByText("Draft expired.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(onDraftChanged).toHaveBeenCalledWith(expiredDraft);
+  });
+
   it("edits missing fields for needs-info drafts", async () => {
     vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
       draft: makeDraft({
