@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
+from decimal import Decimal
+from unittest.mock import patch
+from uuid import uuid4
 
 from django.test import TestCase
+from django.utils import timezone
 
-from ai.agent.runner import parse_agent_response
+from ai.agent.runner import parse_agent_response, run_goplan_ai_agent
+from ai.deepseek import DeepSeekResult, DeepSeekUsage
+from ai.models import AIInteraction, AIInteractionStatus
+from chat.models import ChatMessage
+from expenses.services import create_expense
+from test_helpers import create_completed_user
+from trips.services import create_trip
 
 
 class AgentResponseParsingTests(TestCase):
@@ -289,6 +300,43 @@ class AgentDraftValidationTests(TestCase):
         self.assertEqual(data["location_label"], "Bãi Sau, Vũng Tàu")
         self.assertEqual(data["place"]["provider_id"], "place-1")
 
+    def test_rejects_too_many_provider_drafts(self):
+        drafts = [
+            {
+                "action_type": "expense.create",
+                "payload": {"title": f"Expense {index}", "total_amount": "100000"},
+                "preview": {},
+                "missing_fields": [],
+                "preconditions": {},
+            }
+            for index in range(6)
+        ]
+
+        with self.assertRaises(ValueError):
+            parse_agent_response(json.dumps({"message": "Drafts", "drafts": drafts}))
+
+    def test_rejects_too_many_timeline_create_drafts(self):
+        drafts = [
+            {
+                "action_type": "timeline.activity.create",
+                "payload": {
+                    "section_id": "section-1",
+                    "data": {
+                        "title": f"Stop {index}",
+                        "time_mode": "FLEXIBLE",
+                        "system_type": "SIGHTSEEING",
+                    },
+                },
+                "preview": {},
+                "missing_fields": [],
+                "preconditions": {},
+            }
+            for index in range(4)
+        ]
+
+        with self.assertRaises(ValueError):
+            parse_agent_response(json.dumps({"message": "Drafts", "drafts": drafts}))
+
     def test_rejects_malformed_draft_shapes(self):
         with self.assertRaises(ValueError):
             parse_agent_response(
@@ -304,3 +352,75 @@ class AgentDraftValidationTests(TestCase):
                 '"payload":{},"preview":{},"missing_fields":{},'
                 '"preconditions":{}}]}'
             )
+
+
+class AgentRunPreconditionTests(TestCase):
+    def test_runner_replaces_provider_preconditions_with_backend_target_version(self):
+        captain = create_completed_user("runner-cap@example.com", "runnercap", "RUN001")
+        trip = create_trip(
+            captain=captain,
+            name="Runner Trip",
+            destination="Da Nang",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 2),
+        )
+        expense = create_expense(
+            trip_id=trip.id,
+            actor=captain,
+            title="Dinner",
+            total_amount=Decimal("1200000"),
+            collector=captain,
+        )
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=captain,
+            sender_display_name_snapshot=captain.display_name,
+            sender_identify_tag_snapshot=captain.identify_tag,
+            content="@GoPlanAI rename dinner",
+            client_message_id=uuid4(),
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=captain,
+            prompt_message=prompt,
+            prompt="rename dinner",
+            status=AIInteractionStatus.RUNNING,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        provider_content = json.dumps(
+            {
+                "message": "Draft",
+                "drafts": [
+                    {
+                        "action_type": "expense.update",
+                        "payload": {
+                            "expense_id": str(expense.id),
+                            "title": "Dinner updated",
+                        },
+                        "preview": {},
+                        "missing_fields": [],
+                        "preconditions": {
+                            "target": {
+                                "type": "expense",
+                                "id": str(uuid4()),
+                                "updated_at": "2000-01-01T00:00:00Z",
+                            }
+                        },
+                    }
+                ],
+            }
+        )
+
+        with patch(
+            "ai.agent.runner.complete_goplan_ai_agent_prompt",
+            return_value=DeepSeekResult(
+                content=provider_content,
+                usage=DeepSeekUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+            ),
+        ):
+            result = run_goplan_ai_agent(interaction)
+
+        target = result.drafts[0].preconditions["target"]
+        self.assertEqual(target["type"], "expense")
+        self.assertEqual(target["id"], str(expense.id))
+        self.assertEqual(target["updated_at"], expense.updated_at.isoformat())

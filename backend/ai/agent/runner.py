@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ai.action_types import (
     AI_ACTION_EXPENSE_CREATE,
@@ -22,6 +22,10 @@ from ai.agent.draft_fields import (
     normalize_missing_field_names,
 )
 from ai.agent.payload_validation import missing_payload_field_names
+from ai.agent.preconditions import (
+    action_requires_stale_precondition,
+    build_backend_preconditions,
+)
 from ai.agent.preview import build_action_preview
 from ai.deepseek import complete_goplan_ai_agent_prompt
 from ai.models import AIActionDraftStatus
@@ -51,6 +55,9 @@ ACTION_CONFIRMATION_RULES = {
         for action_type in TRANSFER_RECIPIENT_ACTIONS
     },
 }
+
+MAX_AGENT_DRAFTS = 5
+MAX_TIMELINE_ACTIVITY_CREATE_DRAFTS = 3
 
 
 @dataclass(frozen=True)
@@ -236,8 +243,11 @@ def parse_agent_response(content: str) -> AgentRunResult:
         raise ValueError("Agent response message must be a non-empty string.")
     if not isinstance(drafts_raw, list):
         raise ValueError("Agent response drafts must be a list.")
+    if len(drafts_raw) > MAX_AGENT_DRAFTS:
+        raise ValueError("Agent response includes too many drafts.")
 
     drafts = []
+    timeline_activity_create_count = 0
     for draft in drafts_raw:
         if not isinstance(draft, dict):
             raise ValueError("Each draft must be an object.")
@@ -247,6 +257,10 @@ def parse_agent_response(content: str) -> AgentRunResult:
         )
         if action_type not in SUPPORTED_AI_ACTIONS:
             raise ValueError("Unsupported agent draft action.")
+        if action_type == AI_ACTION_TIMELINE_ACTIVITY_CREATE:
+            timeline_activity_create_count += 1
+            if timeline_activity_create_count > MAX_TIMELINE_ACTIVITY_CREATE_DRAFTS:
+                raise ValueError("Agent response includes too many timeline drafts.")
 
         payload = _coerce_dict(
             draft.get("payload") if "payload" in draft else draft.get("data"),
@@ -293,6 +307,31 @@ def parse_agent_response(content: str) -> AgentRunResult:
     return AgentRunResult(message=normalized_message, drafts=drafts)
 
 
+def _attach_backend_preconditions(
+    *,
+    interaction,
+    drafts: list[AgentDraftSpec],
+) -> list[AgentDraftSpec]:
+    next_drafts = []
+    for draft in drafts:
+        if not action_requires_stale_precondition(draft.action_type):
+            next_drafts.append(replace(draft, preconditions={}))
+            continue
+
+        next_drafts.append(
+            replace(
+                draft,
+                preconditions=build_backend_preconditions(
+                    action_type=draft.action_type,
+                    trip_id=interaction.trip_id,
+                    payload=draft.payload,
+                    required=draft.status == AIActionDraftStatus.READY,
+                ),
+            )
+        )
+    return next_drafts
+
+
 def build_agent_prompt(*, interaction) -> str:
     context = build_agent_context(
         trip=interaction.trip,
@@ -318,15 +357,10 @@ def build_agent_prompt(*, interaction) -> str:
                 "For timeline.activity.create, put section_id at payload.section_id "
                 "and activity fields under payload.data. Create at most 3 timeline "
                 "activity drafts per response and keep preview short. "
-                "For stale-data protection, set preconditions.target only for "
-                "drafts that update, delete, or change status of an expense or "
-                "timeline_activity. Shape it as "
-                "{\"type\":\"expense\",\"id\":\"...\",\"updated_at\":\"...\"} "
-                "or "
-                "{\"type\":\"timeline_activity\",\"id\":\"...\",\"updated_at\":\"...\"}. "
-                "Leave preconditions empty for create, settlement, and transfer "
-                "drafts unless transfer payer/recipient IDs are needed for "
-                "confirmation permission."
+                "Django will build stale-data preconditions for drafts that "
+                "update, delete, or change status of an expense or "
+                "timeline_activity, so leave preconditions empty unless a "
+                "future backend contract explicitly requires otherwise."
             ),
             "user_prompt": interaction.prompt,
             "context": context,
@@ -341,8 +375,12 @@ def run_goplan_ai_agent(interaction) -> AgentRunResult:
     prompt = build_agent_prompt(interaction=interaction)
     provider_result = complete_goplan_ai_agent_prompt(prompt)
     parsed = parse_agent_response(provider_result.content)
+    drafts = _attach_backend_preconditions(
+        interaction=interaction,
+        drafts=parsed.drafts,
+    )
     return AgentRunResult(
         message=parsed.message,
-        drafts=parsed.drafts,
+        drafts=drafts,
         usage=provider_result.usage,
     )

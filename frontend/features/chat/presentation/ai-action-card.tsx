@@ -51,6 +51,19 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function statusMessage(draft: AIActionDraft): string | null {
+  if (draft.status === "READY" && !draft.can_confirm) {
+    return "Waiting for the authorized member to confirm.";
+  }
+  if (draft.status === "EXPIRED") {
+    return "This draft expired. Ask GoPlanAI to regenerate it.";
+  }
+  if (draft.status === "FAILED") {
+    return draft.error_detail || "This draft failed. Ask GoPlanAI to regenerate it.";
+  }
+  return null;
+}
+
 export function AIActionCard({ tripId, draft, onDraftChanged }: Props) {
   const [localDraft, setLocalDraft] = useState(draft);
   const [pending, setPending] = useState<"confirm" | "cancel" | "patch" | null>(
@@ -117,6 +130,7 @@ export function AIActionCard({ tripId, draft, onDraftChanged }: Props) {
   const canShowReadyActions =
     localDraft.status === "READY" &&
     (localDraft.can_confirm || localDraft.can_cancel);
+  const helperText = statusMessage(localDraft);
 
   return (
     <div className="mt-2 rounded-lg border border-border bg-background p-3 text-sm text-foreground shadow-sm">
@@ -149,9 +163,9 @@ export function AIActionCard({ tripId, draft, onDraftChanged }: Props) {
         />
       ) : null}
 
-      {localDraft.status === "READY" && !localDraft.can_confirm ? (
+      {helperText ? (
         <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
-          Waiting for the authorized member to confirm.
+          {helperText}
         </p>
       ) : null}
 

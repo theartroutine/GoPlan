@@ -190,4 +190,48 @@ describe("AIActionCard", () => {
       data: { title: "Museum" },
     });
   });
+
+  it("shows expired drafts without action buttons", () => {
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          status: "EXPIRED",
+          can_confirm: false,
+          can_cancel: false,
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("EXPIRED")).toBeInTheDocument();
+    expect(
+      screen.getByText("This draft expired. Ask GoPlanAI to regenerate it."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("does not render editable controls for missing target identity fields", () => {
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          missing_fields: [
+            { name: "activity_id", label: "Activity", type: "target" },
+          ],
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Ask GoPlanAI to clarify the target."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Activity")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save info" })).toBeNull();
+  });
 });

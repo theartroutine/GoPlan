@@ -24,6 +24,10 @@ from ai.agent.payload_validation import (
     TIMELINE_ACTIVITY_DATA_FIELDS,
     missing_payload_field_names,
 )
+from ai.agent.preconditions import (
+    action_requires_stale_precondition,
+    build_backend_preconditions,
+)
 from ai.agent.preview import build_action_preview
 from ai.action_types import (
     AI_ACTION_TIMELINE_ACTIVITY_CREATE,
@@ -110,6 +114,7 @@ def _disallowed_patch_fields(draft: AIActionDraft, patch_payload: dict) -> list[
             strict=False,
         )
     )
+    allowed_fields.difference_update({"activity_id", "expense_id"})
     return sorted(
         field_name
         for field_name in patch_payload.keys()
@@ -210,12 +215,30 @@ class AIActionDraftDetailAPIView(APIView):
                 patch_payload,
             )
             still_missing = _refresh_missing_fields(draft, next_payload)
+            try:
+                next_preconditions = (
+                    build_backend_preconditions(
+                        action_type=draft.action_type,
+                        trip_id=draft.trip_id,
+                        payload=next_payload,
+                        required=not still_missing,
+                    )
+                    if action_requires_stale_precondition(draft.action_type)
+                    else {}
+                )
+            except ValueError:
+                return _error(
+                    "Draft target could not be resolved.",
+                    "AI_DRAFT_TARGET_NOT_FOUND",
+                    status.HTTP_400_BAD_REQUEST,
+                )
             draft.payload = next_payload
             draft.preview = build_action_preview(
                 action_type=draft.action_type,
                 payload=next_payload,
             )
             draft.missing_fields = still_missing
+            draft.preconditions = next_preconditions
             if not still_missing:
                 draft.status = AIActionDraftStatus.READY
             draft.save(
@@ -223,6 +246,7 @@ class AIActionDraftDetailAPIView(APIView):
                     "payload",
                     "preview",
                     "missing_fields",
+                    "preconditions",
                     "status",
                     "updated_at",
                 ]

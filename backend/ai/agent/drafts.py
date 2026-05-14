@@ -34,6 +34,15 @@ FINAL_DRAFT_STATUSES = {
 }
 
 
+def _effective_draft_status(draft: AIActionDraft) -> str:
+    if (
+        draft.status in {AIActionDraftStatus.NEEDS_INFO, AIActionDraftStatus.READY}
+        and draft.expires_at <= timezone.now()
+    ):
+        return AIActionDraftStatus.EXPIRED
+    return draft.status
+
+
 def _is_active_captain(*, trip_id, user) -> bool:
     if user is None or not getattr(user, "is_authenticated", False):
         return False
@@ -87,9 +96,7 @@ def _can_confirm_transfer(draft: AIActionDraft, viewer) -> bool:
 
 
 def can_confirm_action_draft(draft: AIActionDraft, *, viewer) -> bool:
-    if draft.status != AIActionDraftStatus.READY:
-        return False
-    if draft.expires_at <= timezone.now():
+    if _effective_draft_status(draft) != AIActionDraftStatus.READY:
         return False
     if draft.required_confirmation == AI_CONFIRMATION_CAPTAIN:
         return _is_active_captain(trip_id=draft.trip_id, user=viewer)
@@ -182,6 +189,9 @@ def _custom_type_options(*, trip_id) -> list[dict]:
 def _enrich_missing_field(field: dict, *, draft: AIActionDraft) -> dict:
     enriched = dict(field)
     name = enriched.get("name")
+    if name in {"activity_id", "expense_id"}:
+        enriched["type"] = "target"
+        return enriched
     if name in STATIC_FIELD_OPTIONS:
         enriched["type"] = "select"
         enriched["options"] = STATIC_FIELD_OPTIONS[name]
@@ -209,7 +219,7 @@ def _enrich_missing_field(field: dict, *, draft: AIActionDraft) -> dict:
 
 
 def can_cancel_action_draft(draft: AIActionDraft, *, viewer) -> bool:
-    if draft.status in FINAL_DRAFT_STATUSES:
+    if _effective_draft_status(draft) in FINAL_DRAFT_STATUSES:
         return False
     if viewer is None or not getattr(viewer, "is_authenticated", False):
         return False
@@ -221,6 +231,7 @@ def can_cancel_action_draft(draft: AIActionDraft, *, viewer) -> bool:
 
 
 def build_action_draft_payload(draft: AIActionDraft, *, viewer) -> dict:
+    status = _effective_draft_status(draft)
     missing_fields = [
         _enrich_missing_field(field, draft=draft)
         for field in normalize_missing_fields(draft.missing_fields, strict=False)
@@ -228,7 +239,7 @@ def build_action_draft_payload(draft: AIActionDraft, *, viewer) -> dict:
     return {
         "id": str(draft.id),
         "action_type": draft.action_type,
-        "status": draft.status,
+        "status": status,
         "required_confirmation": draft.required_confirmation,
         "can_confirm": can_confirm_action_draft(draft, viewer=viewer),
         "can_cancel": can_cancel_action_draft(draft, viewer=viewer),

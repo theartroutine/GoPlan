@@ -227,6 +227,47 @@ class AIActionDraftPayloadTests(AIActionDraftModelTests):
             str(self.trip.timeline_sections.order_by("section_date").first().id),
         )
 
+    def test_expired_ready_draft_payload_is_rendered_as_expired(self):
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="expense.create",
+            status=AIActionDraftStatus.READY,
+            payload={"title": "Dinner", "total_amount": "1200000"},
+            preview={"title": "Dinner"},
+            missing_fields=[],
+            preconditions={},
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        payload = build_action_draft_payload(draft, viewer=self.user)
+
+        self.assertEqual(payload["status"], AIActionDraftStatus.EXPIRED)
+        self.assertFalse(payload["can_confirm"])
+        self.assertFalse(payload["can_cancel"])
+
+    def test_missing_target_identity_is_rendered_as_read_only_target_field(self):
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.update",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            payload={"data": {"title": "Museum"}},
+            preview={"title": "Museum"},
+            missing_fields=[{"name": "activity_id", "label": "Activity"}],
+            preconditions={},
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        payload = build_action_draft_payload(draft, viewer=self.user)
+
+        self.assertEqual(payload["missing_fields"][0]["type"], "target")
 
 class AIActionDraftAPITests(APITestCase, AIActionDraftModelTests):
     def _detail_url(self, draft_id):
@@ -318,6 +359,35 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
         self.assertEqual(draft.preview["total_amount"], "500000")
         self.assertEqual(response.data["draft"]["preview"]["total_amount"], "500000")
         self.assertEqual(draft.missing_fields, [])
+
+    def test_patch_missing_target_identity_field_is_rejected(self):
+        self.client.force_authenticate(self.user)
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.update",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={"data": {"title": "Museum"}},
+            preview={"title": "Museum"},
+            missing_fields=[{"name": "activity_id", "label": "Activity"}],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        response = self.client.patch(
+            f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
+            {"payload": {"activity_id": str(uuid4())}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data["error_code"],
+            "AI_DRAFT_PATCH_FIELD_NOT_ALLOWED",
+        )
 
     def test_patch_rejects_payload_fields_that_are_not_currently_missing(self):
         self.client.force_authenticate(self.user)
@@ -413,6 +483,13 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
 
     def test_patch_timeline_update_missing_data_object_updates_nested_payload(self):
         self.client.force_authenticate(self.user)
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        activity = section.activities.create(
+            trip=self.trip,
+            title="Old Museum",
+            time_mode="FLEXIBLE",
+            position=0,
+        )
         draft = AIActionDraft.objects.create(
             trip=self.trip,
             interaction=self.interaction,
@@ -421,7 +498,7 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
             action_type="timeline.activity.update",
             status=AIActionDraftStatus.NEEDS_INFO,
             required_confirmation="CAPTAIN",
-            payload={"activity_id": str(uuid4()), "data": {}},
+            payload={"activity_id": str(activity.id), "data": {}},
             preview={"action_type": "timeline.activity.update"},
             missing_fields=[
                 {

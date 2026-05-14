@@ -13,6 +13,8 @@ type Props = {
   onSave: (payload: Record<string, unknown>) => void;
 };
 
+const TARGET_FIELD_MESSAGE = "Ask GoPlanAI to clarify the target.";
+
 function parseFieldValue(field: AIActionDraftMissingField, rawValue: string): unknown {
   if (field.type !== "json") return rawValue;
   if (!rawValue.trim()) return {};
@@ -22,11 +24,12 @@ function parseFieldValue(field: AIActionDraftMissingField, rawValue: string): un
 export function AIActionFieldEditor({ fields, pending, onSave }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const editableFields = fields.filter((field) => field.type !== "target");
 
   function handleSubmit() {
     const payload: Record<string, unknown> = {};
     try {
-      for (const field of fields) {
+      for (const field of editableFields) {
         if (!(field.name in values)) continue;
         payload[field.name] = parseFieldValue(field, values[field.name] ?? "");
       }
@@ -90,17 +93,28 @@ export function AIActionFieldEditor({ fields, pending, onSave }: Props) {
   return (
     <div className="mt-3 space-y-2 border-t border-border pt-3">
       {fields.map((field) => (
-        <label key={field.name} className="block space-y-1 text-xs">
-          <span className="font-medium text-muted-foreground">{field.label}</span>
-          {renderControl(field)}
-        </label>
+        field.type === "target" ? (
+          <div key={field.name} className="block space-y-1 text-xs">
+            <span className="font-medium text-muted-foreground">{field.label}</span>
+            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-muted-foreground">
+              {TARGET_FIELD_MESSAGE}
+            </p>
+          </div>
+        ) : (
+          <label key={field.name} className="block space-y-1 text-xs">
+            <span className="font-medium text-muted-foreground">{field.label}</span>
+            {renderControl(field)}
+          </label>
+        )
       ))}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
-      <div className="flex justify-end">
-        <Button type="button" size="sm" onClick={handleSubmit} disabled={pending}>
-          Save info
-        </Button>
-      </div>
+      {editableFields.length > 0 ? (
+        <div className="flex justify-end">
+          <Button type="button" size="sm" onClick={handleSubmit} disabled={pending}>
+            Save info
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -22,6 +22,7 @@ from ai.action_types import (
 )
 from ai.agent.drafts import can_confirm_action_draft
 from ai.agent.payload_validation import missing_payload_field_names
+from ai.agent.preconditions import expected_precondition_target
 from ai.models import AIActionDraft, AIActionDraftStatus
 from expenses.models import Expense
 from expenses.services import (
@@ -73,8 +74,6 @@ def _parse_aware_datetime(value: str):
 
 
 def _check_object_precondition(*, current_updated_at, expected_updated_at) -> None:
-    if not expected_updated_at:
-        return
     expected = _parse_aware_datetime(str(expected_updated_at))
     if expected is None:
         raise AIActionDraftStaleError("Draft precondition is invalid.")
@@ -85,18 +84,33 @@ def _check_object_precondition(*, current_updated_at, expected_updated_at) -> No
 
 
 def _check_preconditions(draft: AIActionDraft) -> None:
+    expected_target = expected_precondition_target(
+        action_type=draft.action_type,
+        payload=draft.payload,
+    )
+    if expected_target is None:
+        return
+
     target = draft.preconditions.get("target", {})
     if not isinstance(target, dict) or not target:
-        return
+        raise AIActionDraftStaleError("Draft target precondition is missing.")
 
     target_type = target.get("type")
     target_id = target.get("id")
     expected_updated_at = target.get("updated_at")
+    if (
+        target_type != expected_target.target_type
+        or str(target_id) != str(expected_target.target_id)
+        or not expected_updated_at
+    ):
+        raise AIActionDraftStaleError(
+            "Draft target precondition does not match payload."
+        )
 
     if target_type == "expense":
         try:
             expense = Expense.objects.select_for_update().get(
-                pk=target_id,
+                pk=expected_target.target_id,
                 trip_id=draft.trip_id,
             )
         except Expense.DoesNotExist as exc:
@@ -110,7 +124,7 @@ def _check_preconditions(draft: AIActionDraft) -> None:
     if target_type == "timeline_activity":
         try:
             activity = TimelineActivity.objects.select_for_update().get(
-                pk=target_id,
+                pk=expected_target.target_id,
                 trip_id=draft.trip_id,
             )
         except TimelineActivity.DoesNotExist as exc:
