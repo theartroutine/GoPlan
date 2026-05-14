@@ -342,3 +342,24 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             user=self.validated_data["user"],
             new_password=self.validated_data["password"],
         )
+
+
+# -------- Account Management Serializers --------
+
+
+class AvatarUploadSerializer(serializers.Serializer):
+    """
+    Uses FileField (not ImageField) so all validation — magic bytes, Pillow verify,
+    size, dimensions — happens inside update_avatar() where the error_code contract
+    can emit AVATAR_INVALID_FORMAT / AVATAR_TOO_LARGE / AVATAR_DIMENSIONS_TOO_LARGE
+    correctly. DRF's ImageField would shortcut with its own generic error message.
+    """
+
+    avatar = serializers.FileField(required=True)
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True, trim_whitespace=False)
+    new_password = serializers.CharField(
+        write_only=True, min_length=8, trim_whitespace=False
+    )
