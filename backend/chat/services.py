@@ -8,11 +8,13 @@ from uuid import UUID
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from ai.agent.drafts import build_action_draft_payload
 from ai.services import (
     AIInvalidPromptError,
     create_pending_interaction,
@@ -213,6 +215,19 @@ def build_reactions_payload(message: ChatMessage) -> list[dict]:
     ]
 
 
+def build_action_drafts_payload(message: ChatMessage, *, viewer=None) -> list[dict]:
+    prefetch_cache = getattr(message, "_prefetched_objects_cache", {})
+    if "ai_action_drafts" in prefetch_cache:
+        drafts_iter = prefetch_cache["ai_action_drafts"]
+    else:
+        drafts_iter = message.ai_action_drafts.all().order_by("created_at", "id")
+
+    return [
+        build_action_draft_payload(draft, viewer=viewer)
+        for draft in drafts_iter
+    ]
+
+
 def _fresh_reactions_payload(message_id) -> list[dict]:
     """Query reactions fresh from DB for use inside atomic mutations."""
     grouped: dict[str, list[str]] = {}
@@ -273,6 +288,9 @@ def build_chat_message_payload(message: ChatMessage, *, viewer=None) -> dict:
         ),
         "can_delete_for_everyone": _can_viewer_delete_for_everyone(message, viewer),
         "reactions": [] if is_deleted else build_reactions_payload(message),
+        "action_drafts": (
+            [] if is_deleted else build_action_drafts_payload(message, viewer=viewer)
+        ),
         "sender_kind": message.sender_kind,
         "ai_status": message.ai_status,
     }
@@ -318,6 +336,34 @@ def personalize_chat_event_payload_for_viewer(event_payload: dict, viewer) -> di
             viewer,
         )
     return personalized
+
+
+def build_personalized_chat_event_payload_for_viewer(
+    event_payload: dict,
+    viewer,
+) -> dict:
+    message = event_payload.get("message")
+    if not isinstance(message, dict):
+        return event_payload
+
+    message_id = message.get("id")
+    if not message_id:
+        return personalize_chat_event_payload_for_viewer(event_payload, viewer)
+
+    try:
+        chat_message = (
+            ChatMessage.objects
+            .select_related("sender")
+            .prefetch_related("reactions", "ai_action_drafts")
+            .get(pk=message_id)
+        )
+    except (ChatMessage.DoesNotExist, TypeError, ValueError, ValidationError):
+        return personalize_chat_event_payload_for_viewer(event_payload, viewer)
+
+    return {
+        **event_payload,
+        "message": build_chat_message_payload(chat_message, viewer=viewer),
+    }
 
 
 def build_chat_message_ws_payload(message: ChatMessage) -> dict:
@@ -485,7 +531,7 @@ def _history_page(trip: Trip, *, user, cursor: str | None, limit: int) -> dict:
         ChatMessage.objects.filter(trip=trip)
         .exclude(hidden_for_users__user=user)
         .select_related("sender")
-        .prefetch_related("reactions")
+        .prefetch_related("reactions", "ai_action_drafts")
     )
     if cursor:
         created_at, message_id = _decode_cursor(cursor)
@@ -519,7 +565,7 @@ def _gap_fill_page(trip: Trip, *, user, since, limit: int) -> dict:
             | Q(created_at=anchor.created_at, id__gt=anchor.id)
         )
         .select_related("sender")
-        .prefetch_related("reactions")
+        .prefetch_related("reactions", "ai_action_drafts")
         .order_by("created_at", "id")[: limit + 1]
     )
     page = rows[:limit]
@@ -555,7 +601,7 @@ def _updated_since_page(
     rows = list(
         queryset
         .select_related("sender")
-        .prefetch_related("reactions")
+        .prefetch_related("reactions", "ai_action_drafts")
         .order_by("updated_at", "id")[: limit + 1]
     )
     page = rows[:limit]

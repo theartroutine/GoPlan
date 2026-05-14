@@ -16,6 +16,8 @@ class DeepSeekClientTests(SimpleTestCase):
         DEEPSEEK_MODEL="deepseek-v4-flash",
         DEEPSEEK_TIMEOUT_SECONDS=60,
         DEEPSEEK_MAX_OUTPUT_TOKENS=800,
+        GOPLAN_AI_THINKING_ENABLED=True,
+        GOPLAN_AI_REASONING_EFFORT="high",
         GOPLAN_AI_SYSTEM_PROMPT="system prompt",
     )
     @patch("ai.deepseek.OpenAI")
@@ -51,10 +53,52 @@ class DeepSeekClientTests(SimpleTestCase):
             ],
             stream=False,
             max_tokens=800,
-            extra_body={"thinking": {"type": "disabled"}},
+            reasoning_effort="high",
+            extra_body={"thinking": {"type": "enabled"}},
         )
         self.assertEqual(result.content, "AI answer")
         self.assertEqual(result.usage.total_tokens, 7)
+
+    @override_settings(
+        DEEPSEEK_API_KEY="test-key",
+        DEEPSEEK_BASE_URL="https://api.deepseek.com",
+        DEEPSEEK_MODEL="deepseek-v4-flash",
+        DEEPSEEK_TIMEOUT_SECONDS=60,
+        DEEPSEEK_MAX_OUTPUT_TOKENS=800,
+        GOPLAN_AI_THINKING_ENABLED=False,
+        GOPLAN_AI_REASONING_EFFORT="high",
+        GOPLAN_AI_SYSTEM_PROMPT="system prompt",
+    )
+    @patch("ai.deepseek.OpenAI")
+    def test_complete_prompt_can_disable_thinking(self, mock_openai):
+        response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content=" AI answer "),
+                )
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=3,
+                completion_tokens=4,
+                total_tokens=7,
+            ),
+        )
+        client = mock_openai.return_value
+        client.chat.completions.create.return_value = response
+
+        complete_goplan_ai_prompt("plan day 1")
+
+        client.chat.completions.create.assert_called_once_with(
+            model="deepseek-v4-flash",
+            messages=[
+                {"role": "system", "content": "system prompt"},
+                {"role": "user", "content": "plan day 1"},
+            ],
+            stream=False,
+            max_tokens=800,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
 
     @override_settings(DEEPSEEK_API_KEY="")
     def test_missing_api_key_maps_to_config_missing(self):

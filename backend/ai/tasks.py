@@ -5,7 +5,8 @@ import logging
 from billiard.exceptions import SoftTimeLimitExceeded
 from celery import shared_task
 
-from ai.deepseek import DeepSeekProviderError, complete_goplan_ai_prompt
+from ai.agent.runner import run_goplan_ai_agent
+from ai.deepseek import DeepSeekProviderError
 from ai.lifecycle import (
     InteractionAlreadyRunningError,
     claim_interaction_for_run,
@@ -32,11 +33,12 @@ def run_goplan_ai_interaction(self, interaction_id: str) -> None:
     try:
         push_ai_typing_started(interaction)
         typing_started = True
-        result = complete_goplan_ai_prompt(interaction.prompt)
+        result = run_goplan_ai_agent(interaction)
         finish_interaction_success(
             interaction=interaction,
-            content=result.content,
+            content=result.message,
             usage=result.usage,
+            drafts=result.drafts,
         )
     except DeepSeekProviderError as exc:
         finish_interaction_failure(interaction=interaction, error_code=exc.error_code)

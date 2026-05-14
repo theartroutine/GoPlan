@@ -8,6 +8,7 @@ import type {
   DeleteChatMessageMode,
 } from "@/features/chat/domain/types";
 import { AIMentionToken } from "@/features/chat/presentation/ai-mention-token";
+import { AIActionCard } from "@/features/chat/presentation/ai-action-card";
 import { AiMessageContent } from "@/features/chat/presentation/ai-message-content";
 import { ChatAvatar } from "@/features/chat/presentation/chat-avatar";
 import { EmojiPicker } from "@/features/chat/presentation/emoji-picker-popover";
@@ -24,6 +25,7 @@ import {
 } from "@/shared/ui/dialog";
 
 type Props = {
+  tripId?: string;
   message: ChatMessage;
   isOwn: boolean;
   isPending: boolean;
@@ -69,9 +71,35 @@ function senderLabel(message: ChatMessage): string {
   return "Deleted user";
 }
 
-function renderMessageContent(message: ChatMessage, isOwn: boolean) {
+function renderActionDrafts(message: ChatMessage, tripId: string) {
+  if (message.sender_kind !== "AI" || message.action_drafts.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      {message.action_drafts.map((draft) => (
+        <AIActionCard
+          key={draft.id}
+          tripId={tripId}
+          draft={draft}
+          onDraftChanged={() => {
+            // The websocket updated-sync path refreshes the authoritative message.
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function renderMessageContent(message: ChatMessage, isOwn: boolean, tripId: string) {
   if (message.sender_kind === "AI") {
-    return <AiMessageContent content={message.content} />;
+    return (
+      <>
+        <AiMessageContent content={message.content} />
+        {renderActionDrafts(message, tripId)}
+      </>
+    );
   }
   if (message.content.startsWith("@GoPlanAI ")) {
     return (
@@ -91,6 +119,7 @@ function canDeleteForEveryone(message: ChatMessage, isOwn: boolean): boolean {
 }
 
 export function MessageBubble({
+  tripId,
   message,
   isOwn,
   isPending,
@@ -113,6 +142,7 @@ export function MessageBubble({
   onDeleteMessage,
   onToggleSelected,
 }: Props) {
+  const effectiveTripId = tripId ?? message.trip_id;
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState<DeleteChatMessageMode>("for_me");
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -266,7 +296,7 @@ export function MessageBubble({
             : "bg-muted text-foreground"
         }`}
       >
-        {renderMessageContent(message, isOwn)}
+        {renderMessageContent(message, isOwn, effectiveTripId)}
       </div>
     )
   );

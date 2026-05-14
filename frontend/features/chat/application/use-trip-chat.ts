@@ -639,6 +639,7 @@ export function useTripChat(
           delete_for_everyone_until: null,
           can_delete_for_everyone: false,
           reactions: [],
+          action_drafts: [],
         };
         dispatch({ type: "ADD_PENDING", message: optimistic });
       } else {

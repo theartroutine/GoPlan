@@ -37,7 +37,7 @@ def _map_status_error(exc: APIStatusError) -> str:
     return AIInteractionErrorCode.PROVIDER_BAD_RESPONSE
 
 
-def complete_goplan_ai_prompt(prompt: str) -> DeepSeekResult:
+def _complete_prompt(*, prompt: str, system_prompt: str) -> DeepSeekResult:
     if not settings.DEEPSEEK_API_KEY:
         raise DeepSeekProviderError(AIInteractionErrorCode.CONFIG_MISSING)
 
@@ -46,16 +46,23 @@ def complete_goplan_ai_prompt(prompt: str) -> DeepSeekResult:
         base_url=settings.DEEPSEEK_BASE_URL,
         timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
     )
+    thinking_kwargs = {"extra_body": {"thinking": {"type": "disabled"}}}
+    if settings.GOPLAN_AI_THINKING_ENABLED:
+        thinking_kwargs = {
+            "reasoning_effort": settings.GOPLAN_AI_REASONING_EFFORT,
+            "extra_body": {"thinking": {"type": "enabled"}},
+        }
+
     try:
         response = client.chat.completions.create(
             model=settings.DEEPSEEK_MODEL,
             messages=[
-                {"role": "system", "content": settings.GOPLAN_AI_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             stream=False,
             max_tokens=settings.DEEPSEEK_MAX_OUTPUT_TOKENS,
-            extra_body={"thinking": {"type": "disabled"}},
+            **thinking_kwargs,
         )
     except APITimeoutError as exc:
         raise DeepSeekProviderError(AIInteractionErrorCode.TIMEOUT) from exc
@@ -82,5 +89,23 @@ def complete_goplan_ai_prompt(prompt: str) -> DeepSeekResult:
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
             total_tokens=getattr(usage, "total_tokens", None),
+        ),
+    )
+
+
+def complete_goplan_ai_prompt(prompt: str) -> DeepSeekResult:
+    return _complete_prompt(
+        prompt=prompt,
+        system_prompt=settings.GOPLAN_AI_SYSTEM_PROMPT,
+    )
+
+
+def complete_goplan_ai_agent_prompt(prompt: str) -> DeepSeekResult:
+    return _complete_prompt(
+        prompt=prompt,
+        system_prompt=(
+            "You are GoPlanAI, a backend-owned trip planning agent. "
+            "Use only the provided context. Return only valid JSON with keys "
+            "message and drafts. Do not wrap the JSON in Markdown fences."
         ),
     )

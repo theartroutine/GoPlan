@@ -6,6 +6,14 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # -------- Core Flags --------
 DEBUG = os.environ.get('DJANGO_DEBUG') == '1'
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
@@ -195,6 +203,8 @@ REST_FRAMEWORK = {
         'expenses_contributions': '240/hour',
         'chat_send': '60/minute',
         'chat_ai_prompt': '20/hour',
+        'ai_action_draft': '60/hour',
+        'ai_action_confirm': '30/hour',
         'chat_reaction': '120/minute',
         'chat_delete': '60/minute',
         'settlement_finalize': '30/hour',
@@ -257,9 +267,23 @@ DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_TIMEOUT_SECONDS = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60"))
-DEEPSEEK_MAX_OUTPUT_TOKENS = int(os.environ.get("DEEPSEEK_MAX_OUTPUT_TOKENS", "800"))
+DEEPSEEK_MAX_OUTPUT_TOKENS = int(os.environ.get("DEEPSEEK_MAX_OUTPUT_TOKENS", "4000"))
+GOPLAN_AI_THINKING_ENABLED = env_bool("GOPLAN_AI_THINKING_ENABLED", default=True)
+GOPLAN_AI_REASONING_EFFORT = os.environ.get("GOPLAN_AI_REASONING_EFFORT", "high")
 GOPLAN_AI_LOCK_TTL_SECONDS = int(os.environ.get("GOPLAN_AI_LOCK_TTL_SECONDS", "120"))
 GOPLAN_AI_MAX_ATTEMPTS = int(os.environ.get("GOPLAN_AI_MAX_ATTEMPTS", "3"))
+GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS = int(
+    os.environ.get("GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS", str(60 * 60 * 24))
+)
+GOPLAN_AI_CONTEXT_RECENT_CHAT_LIMIT = int(
+    os.environ.get("GOPLAN_AI_CONTEXT_RECENT_CHAT_LIMIT", "20")
+)
+GOPLAN_AI_CONTEXT_TIMELINE_ACTIVITY_LIMIT = int(
+    os.environ.get("GOPLAN_AI_CONTEXT_TIMELINE_ACTIVITY_LIMIT", "120")
+)
+GOPLAN_AI_CONTEXT_EXPENSE_LIMIT = int(
+    os.environ.get("GOPLAN_AI_CONTEXT_EXPENSE_LIMIT", "80")
+)
 GOPLAN_AI_SYSTEM_PROMPT = (
     "You are GoPlanAI, a concise assistant inside a group trip planning chat. "
     "Answer the user's prompt helpfully. Do not claim access to trip data, "

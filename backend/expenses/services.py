@@ -224,6 +224,15 @@ def _get_transfer_action_context(trip_id, transfer_id, actor) -> tuple[Trip, Set
     return trip, transfer
 
 
+def _refresh_transfer_ai_action_drafts(*, trip_id, transfer_id) -> None:
+    from ai.agent.draft_notifications import refresh_transfer_action_draft_messages
+
+    refresh_transfer_action_draft_messages(
+        trip_id=trip_id,
+        transfer_id=transfer_id,
+    )
+
+
 def currency_minor_unit_factor(currency_code: str) -> int:
     normalized_code = currency_code.upper()
     if normalized_code in ZERO_DECIMAL_CURRENCIES:
@@ -933,6 +942,10 @@ def mark_transfer_sent(*, trip_id, transfer_id, actor) -> SettlementTransfer:
             "transfer_id": str(transfer.id),
         },
     )
+    _refresh_transfer_ai_action_drafts(
+        trip_id=trip.id,
+        transfer_id=transfer.id,
+    )
 
     return transfer
 
@@ -960,6 +973,10 @@ def confirm_transfer_received(*, trip_id, transfer_id, actor) -> SettlementTrans
             "settlement_id": str(transfer.settlement_id),
             "transfer_id": str(transfer.id),
         },
+    )
+    _refresh_transfer_ai_action_drafts(
+        trip_id=trip.id,
+        transfer_id=transfer.id,
     )
 
     return transfer
