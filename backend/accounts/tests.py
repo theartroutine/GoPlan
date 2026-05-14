@@ -1135,3 +1135,77 @@ class AvatarAPITests(APITestCase):
             status.HTTP_401_UNAUTHORIZED,
         )
         self.assertEqual(self.client.delete(self.URL).status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# -------- Change Password API Tests --------
+
+
+class ChangePasswordAPITests(APITestCase):
+    URL = "/api/auth/password/change"
+
+    def setUp(self) -> None:
+        self.current = "OldValidPw123!"
+        self.user = User.objects.create_user(email="cp@example.com", password=self.current)
+        self.client.force_authenticate(user=self.user)
+
+    def test_post_success_returns_user_and_fresh_tokens(self):
+        response = self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": "BrandNewPw456!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("user", response.data)
+        self.assertIn("tokens", response.data)
+        self.assertIn("access", response.data["tokens"])
+        self.assertIn("refresh", response.data["tokens"])
+
+    def test_post_wrong_current_returns_INVALID_CURRENT_PASSWORD(self):
+        response = self.client.post(
+            self.URL,
+            {"current_password": "Wrong!", "new_password": "BrandNewPw456!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error_code"], "INVALID_CURRENT_PASSWORD")
+
+    def test_post_same_password_returns_SAME_PASSWORD(self):
+        response = self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": self.current},
+            format="json",
+        )
+        self.assertEqual(response.data["error_code"], "SAME_PASSWORD")
+
+    def test_post_weak_password_returns_WEAK_PASSWORD(self):
+        response = self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": "12345678"},
+            format="json",
+        )
+        self.assertEqual(response.data["error_code"], "WEAK_PASSWORD")
+
+    def test_post_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": "BrandNewPw456!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_old_access_token_invalidated_after_change(self):
+        from accounts.tokens import RefreshToken as _Refresh
+        old_refresh = _Refresh.for_user(self.user)
+        old_access = str(old_refresh.access_token)
+
+        self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": "BrandNewPw456!"},
+            format="json",
+        )
+
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {old_access}")
+        me = self.client.get("/api/auth/me")
+        self.assertEqual(me.status_code, status.HTTP_401_UNAUTHORIZED)
