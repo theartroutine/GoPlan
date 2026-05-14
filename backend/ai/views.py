@@ -8,9 +8,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ai.agent.drafts import build_action_draft_payload, can_cancel_action_draft
-from ai.agent.draft_fields import (
-    build_missing_fields,
-    normalize_missing_field_names,
+from ai.agent.draft_mutations import (
+    AIActionDraftPatchFieldNotAllowedError,
+    AIActionDraftTargetNotFoundError,
+    patch_action_draft,
 )
 from ai.agent.executor import (
     AIActionDraftExpiredError,
@@ -19,19 +20,6 @@ from ai.agent.executor import (
     AIActionDraftStaleError,
     confirm_action_draft,
     mark_action_draft_failed,
-)
-from ai.agent.payload_validation import (
-    TIMELINE_ACTIVITY_DATA_FIELDS,
-    missing_payload_field_names,
-)
-from ai.agent.preconditions import (
-    action_requires_stale_precondition,
-    build_backend_preconditions,
-)
-from ai.agent.preview import build_action_preview
-from ai.action_types import (
-    AI_ACTION_TIMELINE_ACTIVITY_CREATE,
-    AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
 )
 from ai.models import AIActionDraft, AIActionDraftStatus
 from ai.serializers import AIActionDraftPatchSerializer
@@ -92,59 +80,6 @@ def _get_draft_or_404(*, trip_id, draft_id) -> AIActionDraft:
         raise TripNotFoundError("Draft not found.") from exc
 
 
-def _apply_draft_patch_payload(draft: AIActionDraft, patch_payload: dict) -> dict:
-    next_payload = dict(draft.payload)
-    if draft.action_type in {
-        AI_ACTION_TIMELINE_ACTIVITY_CREATE,
-        AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
-    }:
-        data = dict(next_payload.get("data") or {})
-        data_overridden = False
-        for key, value in patch_payload.items():
-            if key == "data":
-                if isinstance(value, dict):
-                    data.update(value)
-                else:
-                    next_payload["data"] = value
-                    data_overridden = True
-            elif key in TIMELINE_ACTIVITY_DATA_FIELDS:
-                data[key] = value
-            else:
-                next_payload[key] = value
-        if not data_overridden:
-            next_payload["data"] = data
-        return next_payload
-    return {**next_payload, **patch_payload}
-
-
-def _disallowed_patch_fields(draft: AIActionDraft, patch_payload: dict) -> list[str]:
-    allowed_fields = set(
-        normalize_missing_field_names(
-            draft.missing_fields,
-            strict=False,
-        )
-    )
-    allowed_fields.difference_update({"activity_id", "expense_id"})
-    return sorted(
-        field_name
-        for field_name in patch_payload.keys()
-        if field_name not in allowed_fields
-    )
-
-
-def _refresh_missing_fields(draft: AIActionDraft, payload: dict) -> list[dict]:
-    current_missing_names = normalize_missing_field_names(
-        draft.missing_fields,
-        strict=False,
-    )
-    missing_names = missing_payload_field_names(
-        action_type=draft.action_type,
-        payload=payload,
-        provider_missing_names=current_missing_names,
-    )
-    return build_missing_fields(missing_names)
-
-
 class AIActionDraftDetailAPIView(APIView):
     permission_classes = AI_PERMISSIONS
     throttle_scope = "ai_action_draft"
@@ -174,97 +109,40 @@ class AIActionDraftDetailAPIView(APIView):
                 status.HTTP_404_NOT_FOUND,
             )
 
-        with transaction.atomic():
-            try:
-                draft = (
-                    AIActionDraft.objects
-                    .select_for_update()
-                    .select_related("response_message")
-                    .get(pk=draft_id, trip_id=trip_id)
-                )
-            except AIActionDraft.DoesNotExist:
-                return _error(
-                    "Draft not found.",
-                    "AI_DRAFT_NOT_FOUND",
-                    status.HTTP_404_NOT_FOUND,
-                )
-
-            draft_payload = build_action_draft_payload(draft, viewer=request.user)
-            can_edit = (
-                str(draft.requested_by_id) == str(request.user.id)
-                or draft_payload["can_confirm"]
-                or draft_payload["can_cancel"]
+        patch_payload = serializer.validated_data.get("payload", {})
+        try:
+            draft = patch_action_draft(
+                draft_id=draft_id,
+                trip_id=trip_id,
+                actor=request.user,
+                patch_payload=patch_payload,
             )
-            if not can_edit:
-                return _error(
-                    "You cannot update this draft.",
-                    "AI_DRAFT_FORBIDDEN",
-                    status.HTTP_403_FORBIDDEN,
-                )
-            if draft.status != AIActionDraftStatus.NEEDS_INFO:
-                return _error(
-                    "Draft is not waiting for more information.",
-                    "AI_DRAFT_NOT_READY",
-                    status.HTTP_409_CONFLICT,
-                )
-
-            patch_payload = serializer.validated_data.get("payload", {})
-            disallowed_fields = _disallowed_patch_fields(draft, patch_payload)
-            if disallowed_fields:
-                return _error(
-                    (
-                        "Only fields currently requested by this draft can be "
-                        f"updated. Unsupported field(s): {', '.join(disallowed_fields)}."
-                    ),
-                    "AI_DRAFT_PATCH_FIELD_NOT_ALLOWED",
-                    status.HTTP_400_BAD_REQUEST,
-                )
-
-            next_payload = _apply_draft_patch_payload(
-                draft,
-                patch_payload,
+        except AIActionDraft.DoesNotExist:
+            return _error(
+                "Draft not found.",
+                "AI_DRAFT_NOT_FOUND",
+                status.HTTP_404_NOT_FOUND,
             )
-            still_missing = _refresh_missing_fields(draft, next_payload)
-            try:
-                next_preconditions = (
-                    build_backend_preconditions(
-                        action_type=draft.action_type,
-                        trip_id=draft.trip_id,
-                        payload=next_payload,
-                        required=not still_missing,
-                    )
-                    if action_requires_stale_precondition(draft.action_type)
-                    else {}
-                )
-            except ValueError:
-                return _error(
-                    "Draft target could not be resolved.",
-                    "AI_DRAFT_TARGET_NOT_FOUND",
-                    status.HTTP_400_BAD_REQUEST,
-                )
-            draft.payload = next_payload
-            draft.preview = build_action_preview(
-                action_type=draft.action_type,
-                payload=next_payload,
+        except AIActionDraftExpiredError as exc:
+            expired_draft = _get_draft_or_404(trip_id=trip_id, draft_id=draft_id)
+            push_chat_message(expired_draft.response_message)
+            return _error(
+                str(exc),
+                exc.error_code,
+                status.HTTP_409_CONFLICT,
+                draft=expired_draft,
+                viewer=request.user,
             )
-            draft.missing_fields = still_missing
-            draft.preconditions = next_preconditions
-            if not still_missing:
-                draft.status = AIActionDraftStatus.READY
-            draft.save(
-                update_fields=[
-                    "payload",
-                    "preview",
-                    "missing_fields",
-                    "preconditions",
-                    "status",
-                    "updated_at",
-                ]
-            )
-            draft.response_message.updated_at = timezone.now()
-            draft.response_message.save(update_fields=["updated_at"])
-            transaction.on_commit(lambda: push_chat_message(draft.response_message))
+        except AIActionDraftForbiddenError as exc:
+            return _error(str(exc), exc.error_code, status.HTTP_403_FORBIDDEN)
+        except AIActionDraftNotReadyError as exc:
+            return _error(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
+        except AIActionDraftPatchFieldNotAllowedError as exc:
+            return _error(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
+        except AIActionDraftTargetNotFoundError as exc:
+            return _error(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
 
+        push_chat_message(draft.response_message)
         return Response({"draft": build_action_draft_payload(draft, viewer=request.user)})
 
 
@@ -332,13 +210,36 @@ class AIActionDraftCancelAPIView(APIView):
         return Response({"draft": build_action_draft_payload(draft, viewer=request.user)})
 
 
-def _confirm_error_response(exc: Exception) -> Response | None:
+def _confirm_error_response(
+    exc: Exception,
+    *,
+    draft: AIActionDraft | None = None,
+    viewer=None,
+) -> Response | None:
     if isinstance(exc, AIActionDraftForbiddenError):
-        return _error(str(exc), exc.error_code, status.HTTP_403_FORBIDDEN)
+        return _error(
+            str(exc),
+            exc.error_code,
+            status.HTTP_403_FORBIDDEN,
+            draft=draft,
+            viewer=viewer,
+        )
     if isinstance(exc, AIActionDraftStaleError):
-        return _error(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
+        return _error(
+            str(exc),
+            exc.error_code,
+            status.HTTP_409_CONFLICT,
+            draft=draft,
+            viewer=viewer,
+        )
     if isinstance(exc, (AIActionDraftExpiredError, AIActionDraftNotReadyError)):
-        return _error(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
+        return _error(
+            str(exc),
+            exc.error_code,
+            status.HTTP_409_CONFLICT,
+            draft=draft,
+            viewer=viewer,
+        )
     if isinstance(
         exc,
         (
@@ -348,7 +249,13 @@ def _confirm_error_response(exc: Exception) -> Response | None:
             TimelineSectionNotFoundError,
         ),
     ):
-        return _error(str(exc), exc.error_code, status.HTTP_404_NOT_FOUND)
+        return _error(
+            str(exc),
+            exc.error_code,
+            status.HTTP_404_NOT_FOUND,
+            draft=draft,
+            viewer=viewer,
+        )
     if isinstance(
         exc,
         (
@@ -358,7 +265,13 @@ def _confirm_error_response(exc: Exception) -> Response | None:
             NotTransferRecipientError,
         ),
     ):
-        return _error(str(exc), exc.error_code, status.HTTP_403_FORBIDDEN)
+        return _error(
+            str(exc),
+            exc.error_code,
+            status.HTTP_403_FORBIDDEN,
+            draft=draft,
+            viewer=viewer,
+        )
     if isinstance(
         exc,
         (
@@ -372,7 +285,13 @@ def _confirm_error_response(exc: Exception) -> Response | None:
             StatusTransitionError,
         ),
     ):
-        return _error(str(exc), exc.error_code, status.HTTP_409_CONFLICT)
+        return _error(
+            str(exc),
+            exc.error_code,
+            status.HTTP_409_CONFLICT,
+            draft=draft,
+            viewer=viewer,
+        )
     if isinstance(
         exc,
         (
@@ -383,12 +302,20 @@ def _confirm_error_response(exc: Exception) -> Response | None:
             TimelineInvalidCustomTypeError,
         ),
     ):
-        return _error(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
+        return _error(
+            str(exc),
+            exc.error_code,
+            status.HTTP_400_BAD_REQUEST,
+            draft=draft,
+            viewer=viewer,
+        )
     if isinstance(exc, drf_serializers.ValidationError):
         return _error(
             "Draft payload is invalid.",
             "AI_DRAFT_VALIDATION_FAILED",
             status.HTTP_400_BAD_REQUEST,
+            draft=draft,
+            viewer=viewer,
         )
     return None
 
@@ -477,13 +404,25 @@ class AIActionDraftConfirmAPIView(APIView):
                 and failed_draft.status == AIActionDraftStatus.FAILED
             ):
                 push_chat_message(failed_draft.response_message)
-            mapped = _confirm_error_response(exc)
+            error_draft = (
+                failed_draft
+                if failed_draft is not None
+                and failed_draft.status == AIActionDraftStatus.FAILED
+                else None
+            )
+            mapped = _confirm_error_response(
+                exc,
+                draft=error_draft,
+                viewer=request.user,
+            )
             if mapped is not None:
                 return mapped
             return _error(
                 "Draft execution failed.",
                 "AI_DRAFT_EXECUTION_FAILED",
                 status.HTTP_409_CONFLICT,
+                draft=error_draft,
+                viewer=request.user,
             )
 
         push_chat_message(draft.response_message)

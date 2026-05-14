@@ -811,6 +811,8 @@ class ActionDraftConfirmAPITests(APITestCase):
         response = self.client.post(self._confirm_url(draft.id))
 
         self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["draft"]["status"], AIActionDraftStatus.FAILED)
+        self.assertEqual(response.data["draft"]["error_code"], "AI_DRAFT_STALE")
         draft.refresh_from_db()
         self.assertEqual(draft.status, AIActionDraftStatus.FAILED)
         self.assertEqual(draft.error_code, "AI_DRAFT_STALE")
