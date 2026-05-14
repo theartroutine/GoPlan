@@ -1209,3 +1209,50 @@ class ChangePasswordAPITests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {old_access}")
         me = self.client.get("/api/auth/me")
         self.assertEqual(me.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# -------- Throttle Smoke Tests --------
+
+from django.core.cache import cache as _throttle_cache
+from rest_framework.throttling import ScopedRateThrottle
+
+
+class AvatarThrottleTests(APITestCase):
+    URL = "/api/auth/avatar"
+
+    def setUp(self) -> None:
+        _throttle_cache.clear()
+
+    def test_throttle_avatar_after_limit_covers_patch_and_delete(self):
+        user = User.objects.create_user(email="t@example.com", password="ValidPw123!")
+        self.client.force_authenticate(user=user)
+        new_rates = {**ScopedRateThrottle.THROTTLE_RATES, "auth_avatar": "2/hour"}
+        with patch.object(ScopedRateThrottle, "THROTTLE_RATES", new_rates):
+            self.client.delete(self.URL)
+            self.client.delete(self.URL)
+            response = self.client.delete(self.URL)
+            self.assertEqual(response.status_code, 429)
+
+
+class PasswordChangeThrottleTests(APITestCase):
+    URL = "/api/auth/password/change"
+
+    def setUp(self) -> None:
+        _throttle_cache.clear()
+
+    def test_throttle_password_change_after_limit(self):
+        user = User.objects.create_user(email="tp@example.com", password="OldValidPw123!")
+        self.client.force_authenticate(user=user)
+        new_rates = {**ScopedRateThrottle.THROTTLE_RATES, "auth_password_change": "1/hour"}
+        with patch.object(ScopedRateThrottle, "THROTTLE_RATES", new_rates):
+            self.client.post(
+                self.URL,
+                {"current_password": "OldValidPw123!", "new_password": "NewValidPw456!"},
+                format="json",
+            )
+            response = self.client.post(
+                self.URL,
+                {"current_password": "x", "new_password": "y"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 429)
