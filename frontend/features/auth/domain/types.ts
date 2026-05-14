@@ -7,6 +7,7 @@ export type AuthUser = {
   identify_name: string | null;
   identify_code: string | null;
   identify_tag: string | null;
+  avatar_url: string | null;
   email_verified: boolean;
   is_profile_completed: boolean;
   requires_profile_setup: boolean;

@@ -23,6 +23,7 @@ export type ChatSender = {
   id: string | null;
   display_name: string;
   identify_tag: string | null;
+  avatar_url: string | null;
 };
 
 export type ChatMessage = {

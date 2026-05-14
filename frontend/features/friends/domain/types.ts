@@ -2,6 +2,7 @@ export type FriendUser = {
   id: string;
   display_name: string;
   identify_tag: string;
+  avatar_url: string | null;
 };
 
 export type FriendRequest = {

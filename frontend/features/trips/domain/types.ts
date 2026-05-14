@@ -67,6 +67,7 @@ export type TripMemberItem = {
     id: string;
     display_name: string;
     identify_tag: string | null;
+    avatar_url: string | null;
   };
   role: TripRole;
   joined_at: string;
