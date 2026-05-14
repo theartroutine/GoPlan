@@ -364,3 +364,23 @@ def update_avatar(user, image_file):
             pass
 
     return user
+
+
+def delete_avatar(user):
+    """
+    Idempotent. Removes the avatar file from storage and clears the field.
+    No-op (returns user untouched) if user has no avatar.
+    """
+    if not user.avatar:
+        return user
+
+    old_name = user.avatar.name
+    old_storage = user.avatar.storage
+    user.avatar = None
+    user.save(update_fields=["avatar", "updated_at"])
+    if old_name and old_storage is not None:
+        try:
+            old_storage.delete(old_name)
+        except Exception:
+            pass
+    return user

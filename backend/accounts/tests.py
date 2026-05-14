@@ -938,6 +938,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from accounts.services import (
     AvatarValidationError,
     update_avatar,
+    delete_avatar,
     MAX_AVATAR_BYTES,
 )
 
@@ -998,3 +999,16 @@ class AvatarServiceTests(TestCase):
         import os
         self.assertFalse(os.path.exists(old_path), "Old avatar file should be deleted from storage")
         self.assertTrue(os.path.exists(new_path))
+
+    def test_delete_avatar_after_upload_clears_field_and_file(self):
+        update_avatar(self.user, _make_image_upload())
+        path = self.user.avatar.path
+        delete_avatar(self.user)
+        import os
+        self.assertFalse(bool(self.user.avatar))
+        self.assertFalse(os.path.exists(path))
+
+    def test_delete_avatar_idempotent_on_user_without_avatar(self):
+        # Should not raise even if avatar field is empty.
+        result = delete_avatar(self.user)
+        self.assertFalse(bool(result.avatar))
