@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from django.conf import settings
 
 from chat.models import ChatMessage
@@ -8,6 +10,12 @@ from expenses.services import build_expense_dashboard
 from trips.models import MemberStatus, TripRole, TripStatus
 from trips.serializers import build_timeline_response
 from trips.services import get_trip_timeline
+
+
+@dataclass(frozen=True)
+class AgentContextBundle:
+    context: dict
+    target_versions: dict
 
 
 def _member_payload(membership) -> dict:
@@ -28,6 +36,48 @@ def _limit_timeline_activities(timeline: dict) -> dict:
         remaining = max(remaining - len(limited_activities), 0)
         sections.append({**section, "activities": limited_activities})
     return {**timeline, "sections": sections}
+
+
+def _included_timeline_activity_ids(timeline: dict) -> set[str]:
+    return {
+        str(activity["id"])
+        for section in timeline["sections"]
+        for activity in section.get("activities", [])
+        if activity.get("id")
+    }
+
+
+def _timeline_activity_target_versions(*, sections, timeline: dict) -> dict:
+    included_ids = _included_timeline_activity_ids(timeline)
+    versions = {}
+    for section in sections:
+        for activity in section.activities.all():
+            activity_id = str(activity.id)
+            if activity_id not in included_ids:
+                continue
+            versions[activity_id] = {
+                "type": "timeline_activity",
+                "id": activity_id,
+                "updated_at": activity.updated_at.isoformat(),
+                "title": activity.title,
+                "status": activity.status,
+            }
+    return versions
+
+
+def _expense_target_versions(*, expense_rows: list[dict]) -> dict:
+    versions = {}
+    for row in expense_rows:
+        expense = row["expense"]
+        expense_id = str(expense.id)
+        versions[expense_id] = {
+            "type": "expense",
+            "id": expense_id,
+            "updated_at": expense.updated_at.isoformat(),
+            "title": expense.title,
+            "total_amount": str(expense.total_amount),
+        }
+    return versions
 
 
 def _recent_chat_payload(*, trip, actor, limit: int) -> list[dict]:
@@ -52,7 +102,7 @@ def _recent_chat_payload(*, trip, actor, limit: int) -> list[dict]:
     ]
 
 
-def build_agent_context(*, trip, actor) -> dict:
+def build_agent_context_bundle(*, trip, actor) -> AgentContextBundle:
     memberships = list(
         trip.memberships
         .filter(status=MemberStatus.ACTIVE)
@@ -72,13 +122,17 @@ def build_agent_context(*, trip, actor) -> dict:
         is_terminal=trip.status in {TripStatus.COMPLETED, TripStatus.CANCELLED},
         viewer_user_id=actor.id,
     )
+    timeline = _limit_timeline_activities(timeline)
     dashboard = build_expense_dashboard(trip_id=trip.id, actor=actor)
+    limited_expense_rows = dashboard["expenses"][
+        :settings.GOPLAN_AI_CONTEXT_EXPENSE_LIMIT
+    ]
     expenses = serialize_dashboard_response(dashboard, request_user=actor)
     expenses["expenses"] = expenses["expenses"][
         :settings.GOPLAN_AI_CONTEXT_EXPENSE_LIMIT
     ]
 
-    return {
+    context = {
         "trip": {
             "id": str(trip.id),
             "name": trip.name,
@@ -94,7 +148,7 @@ def build_agent_context(*, trip, actor) -> dict:
             "display_name": actor.display_name,
         },
         "members": [_member_payload(membership) for membership in memberships],
-        "timeline": _limit_timeline_activities(timeline),
+        "timeline": timeline,
         "expenses": expenses,
         "recent_chat": _recent_chat_payload(
             trip=trip,
@@ -102,3 +156,17 @@ def build_agent_context(*, trip, actor) -> dict:
             limit=settings.GOPLAN_AI_CONTEXT_RECENT_CHAT_LIMIT,
         ),
     }
+    return AgentContextBundle(
+        context=context,
+        target_versions={
+            "expense": _expense_target_versions(expense_rows=limited_expense_rows),
+            "timeline_activity": _timeline_activity_target_versions(
+                sections=sections,
+                timeline=timeline,
+            ),
+        },
+    )
+
+
+def build_agent_context(*, trip, actor) -> dict:
+    return build_agent_context_bundle(trip=trip, actor=actor).context

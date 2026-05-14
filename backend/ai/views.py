@@ -345,6 +345,7 @@ def _should_persist_confirm_failure(exc: Exception) -> bool:
         (
             AIActionDraftForbiddenError,
             AIActionDraftExpiredError,
+            AIActionDraftNotReadyError,
             AIActionDraft.DoesNotExist,
             TransferNotSentError,
         ),

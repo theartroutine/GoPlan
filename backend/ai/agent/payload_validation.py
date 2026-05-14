@@ -206,6 +206,51 @@ def _append_invalid_contribution_amounts(names: list[str], payload: dict) -> Non
                 _append_once(names, "amount")
 
 
+def _has_valid_contribution_amount(payload: dict) -> bool:
+    for field in EXPENSE_CONTRIBUTION_AMOUNT_FIELDS:
+        if field not in payload:
+            continue
+        value = payload.get(field)
+        if is_missing_value(value):
+            continue
+        return not _is_invalid_money_value(value, allow_zero=True)
+    return False
+
+
+def _has_valid_member_contribution_amount(value) -> bool:
+    if isinstance(value, dict):
+        return _has_valid_contribution_amount(value)
+    if is_missing_value(value):
+        return False
+    return not _is_invalid_money_value(value, allow_zero=True)
+
+
+def _append_invalid_explicit_contribution_payloads(
+    names: list[str],
+    payload: dict,
+) -> None:
+    contributions = payload.get("contributions")
+    if isinstance(contributions, list) and contributions:
+        has_invalid_item = any(
+            not isinstance(contribution, dict)
+            or not _has_any_value(contribution, EXPENSE_CONTRIBUTION_USER_FIELDS)
+            or not _has_valid_contribution_amount(contribution)
+            for contribution in contributions
+        )
+        if has_invalid_item:
+            _append_once(names, "contributions")
+
+    member_contributions = payload.get("member_contributions")
+    if isinstance(member_contributions, dict) and member_contributions:
+        has_invalid_item = any(
+            is_missing_value(member_id)
+            or not _has_valid_member_contribution_amount(contribution)
+            for member_id, contribution in member_contributions.items()
+        )
+        if has_invalid_item:
+            _append_once(names, "member_contributions")
+
+
 def _serializer_error_field_names(errors, *, allowed_names: set[str]) -> list[str]:
     if not isinstance(errors, dict):
         return []
@@ -361,14 +406,20 @@ def missing_payload_field_names(
     if action_type == AI_ACTION_EXPENSE_CONTRIBUTION_SET:
         names = _with_provider_missing(
             provider_missing_names,
-            allowed_names={"expense_id", "user_id", "amount"},
+            allowed_names={
+                "expense_id",
+                "user_id",
+                "amount",
+                "contributions",
+                "member_contributions",
+            },
             payload=payload,
         )
         _require_field(names, payload, "expense_id")
-        if (
-            not _has_explicit_contributions(payload)
-            and not _should_mark_all_participants_paid(payload)
-        ):
+        has_explicit_contributions = _has_explicit_contributions(payload)
+        if has_explicit_contributions:
+            _append_invalid_explicit_contribution_payloads(names, payload)
+        elif not _should_mark_all_participants_paid(payload):
             if not _has_any_value(payload, EXPENSE_CONTRIBUTION_USER_FIELDS):
                 names.append("user_id")
             if not _has_any_value(payload, EXPENSE_CONTRIBUTION_AMOUNT_FIELDS):

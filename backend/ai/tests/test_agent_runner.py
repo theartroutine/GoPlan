@@ -13,6 +13,7 @@ from ai.agent.runner import parse_agent_response, run_goplan_ai_agent
 from ai.deepseek import DeepSeekResult, DeepSeekUsage
 from ai.models import AIInteraction, AIInteractionStatus
 from chat.models import ChatMessage
+from expenses.models import Expense
 from expenses.services import create_expense
 from test_helpers import create_completed_user
 from trips.services import create_trip
@@ -255,6 +256,28 @@ class AgentDraftValidationTests(TestCase):
             [{"name": "title", "label": "Title"}],
         )
 
+    def test_nested_contribution_draft_requires_complete_contribution_items(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"expense.contribution.set",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"expense_id":"expense-1",'
+            '"contributions":[{"user_id":"user-1"}]},'
+            '"preview":{},"missing_fields":[],"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.status, "NEEDS_INFO")
+        self.assertEqual(
+            draft.missing_fields,
+            [
+                {
+                    "name": "contributions",
+                    "label": "Contributions",
+                    "type": "json",
+                }
+            ],
+        )
+
     def test_missing_target_identity_returns_clarification_without_draft(self):
         cases = (
             ("expense.update", {"title": "Dinner"}),
@@ -465,6 +488,83 @@ class AgentRunPreconditionTests(TestCase):
         self.assertEqual(target["type"], "expense")
         self.assertEqual(target["id"], str(expense.id))
         self.assertEqual(target["updated_at"], expense.updated_at.isoformat())
+
+    def test_runner_uses_pre_provider_context_version_for_preconditions(self):
+        captain = create_completed_user(
+            "runner-race@example.com",
+            "runnerrace",
+            "RUN003",
+        )
+        trip = create_trip(
+            captain=captain,
+            name="Runner Race Trip",
+            destination="Da Nang",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 2),
+        )
+        expense = create_expense(
+            trip_id=trip.id,
+            actor=captain,
+            title="Dinner",
+            total_amount=Decimal("1200000"),
+            collector=captain,
+        )
+        original_updated_at = expense.updated_at
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=captain,
+            sender_display_name_snapshot=captain.display_name,
+            sender_identify_tag_snapshot=captain.identify_tag,
+            content="@GoPlanAI rename dinner",
+            client_message_id=uuid4(),
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=captain,
+            prompt_message=prompt,
+            prompt="rename dinner",
+            status=AIInteractionStatus.RUNNING,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        provider_content = json.dumps(
+            {
+                "message": "Draft",
+                "drafts": [
+                    {
+                        "action_type": "expense.update",
+                        "payload": {
+                            "expense_id": str(expense.id),
+                            "title": "Dinner updated",
+                        },
+                        "preview": {},
+                        "missing_fields": [],
+                        "preconditions": {},
+                    }
+                ],
+            }
+        )
+
+        def provider_response(_prompt):
+            later = original_updated_at + timedelta(seconds=5)
+            Expense.objects.filter(pk=expense.pk).update(
+                title="Changed while provider was running",
+                updated_at=later,
+            )
+            return DeepSeekResult(
+                content=provider_content,
+                usage=DeepSeekUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+            )
+
+        with patch(
+            "ai.agent.runner.complete_goplan_ai_agent_prompt",
+            side_effect=provider_response,
+        ):
+            result = run_goplan_ai_agent(interaction)
+
+        target = result.drafts[0].preconditions["target"]
+        self.assertEqual(target["type"], "expense")
+        self.assertEqual(target["id"], str(expense.id))
+        self.assertEqual(target["updated_at"], original_updated_at.isoformat())
 
     def test_runner_adds_backend_preconditions_for_contribution_drafts(self):
         captain = create_completed_user(

@@ -945,6 +945,47 @@ class ActionDraftConfirmAPITests(APITestCase):
         self.assertEqual(draft.status, AIActionDraftStatus.EXPIRED)
         push_chat_message.assert_called_once_with(self.response)
 
+    def test_not_ready_confirm_failure_is_not_persisted_as_failed(self):
+        self.client.force_authenticate(self.captain)
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Dinner",
+            total_amount=Decimal("1200000"),
+            collector=self.captain,
+        )
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="expense.contribution.set",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "expense_id": str(expense.id),
+                "contributions": [{"user_id": str(self.captain.id)}],
+            },
+            preview={"title": "Mark paid"},
+            missing_fields=[],
+            preconditions={
+                "target": {
+                    "type": "expense",
+                    "id": str(expense.id),
+                    "updated_at": expense.updated_at.isoformat(),
+                }
+            },
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        response = self.client.post(self._confirm_url(draft.id))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "AI_DRAFT_NOT_READY")
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.READY)
+        self.assertEqual(draft.error_code, "")
+
     def test_confirm_received_before_transfer_sent_does_not_fail_draft(self):
         self.client.force_authenticate(self.captain)
         member = create_completed_user(

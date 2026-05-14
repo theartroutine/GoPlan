@@ -79,12 +79,35 @@ def _resolve_timeline_activity_target(*, trip_id, target_id) -> dict:
     }
 
 
+def _snapshot_target_version(
+    *,
+    target_versions: dict | None,
+    target_spec: DraftTargetSpec,
+) -> dict | None:
+    if not isinstance(target_versions, dict):
+        return None
+    versions = target_versions.get(target_spec.target_type)
+    if not isinstance(versions, dict):
+        return None
+    target = versions.get(str(target_spec.target_id))
+    if not isinstance(target, dict):
+        return None
+    if (
+        target.get("type") != target_spec.target_type
+        or str(target.get("id")) != str(target_spec.target_id)
+        or not target.get("updated_at")
+    ):
+        return None
+    return dict(target)
+
+
 def build_backend_preconditions(
     *,
     action_type: str,
     trip_id,
     payload: dict,
     required: bool = False,
+    target_versions: dict | None = None,
 ) -> dict:
     target_spec = expected_precondition_target(
         action_type=action_type,
@@ -96,6 +119,17 @@ def build_backend_preconditions(
     if not target_spec.target_id:
         if required:
             raise ValueError("Draft target is required.")
+        return {}
+
+    snapshot_target = _snapshot_target_version(
+        target_versions=target_versions,
+        target_spec=target_spec,
+    )
+    if snapshot_target is not None:
+        return {"target": snapshot_target}
+    if target_versions is not None:
+        if required:
+            raise ValueError("Draft target was not present in agent context.")
         return {}
 
     try:

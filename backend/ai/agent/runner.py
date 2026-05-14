@@ -16,7 +16,7 @@ from ai.action_types import (
     TRANSFER_PAYER_ACTIONS,
     TRANSFER_RECIPIENT_ACTIONS,
 )
-from ai.agent.context import build_agent_context
+from ai.agent.context import build_agent_context_bundle
 from ai.agent.draft_fields import (
     build_missing_fields,
     normalize_missing_field_names,
@@ -77,6 +77,12 @@ class AgentRunResult:
     message: str
     drafts: list[AgentDraftSpec]
     usage: object | None = None
+
+
+@dataclass(frozen=True)
+class AgentPromptBundle:
+    prompt: str
+    target_versions: dict
 
 
 def _parse_json_object(content: str) -> dict:
@@ -334,6 +340,7 @@ def _attach_backend_preconditions(
     *,
     interaction,
     drafts: list[AgentDraftSpec],
+    target_versions: dict | None = None,
 ) -> list[AgentDraftSpec]:
     next_drafts = []
     for draft in drafts:
@@ -349,18 +356,19 @@ def _attach_backend_preconditions(
                     trip_id=interaction.trip_id,
                     payload=draft.payload,
                     required=draft.status == AIActionDraftStatus.READY,
+                    target_versions=target_versions,
                 ),
             )
         )
     return next_drafts
 
 
-def build_agent_prompt(*, interaction) -> str:
-    context = build_agent_context(
+def build_agent_prompt_bundle(*, interaction) -> AgentPromptBundle:
+    context_bundle = build_agent_context_bundle(
         trip=interaction.trip,
         actor=interaction.requested_by,
     )
-    return json.dumps(
+    prompt = json.dumps(
         {
             "instruction": (
                 "You are GoPlanAI. Use the provided GoPlan trip context. "
@@ -389,21 +397,30 @@ def build_agent_prompt(*, interaction) -> str:
                 "future backend contract explicitly requires otherwise."
             ),
             "user_prompt": interaction.prompt,
-            "context": context,
+            "context": context_bundle.context,
             "supported_actions": sorted(SUPPORTED_AI_ACTIONS),
         },
         ensure_ascii=False,
         default=str,
     )
+    return AgentPromptBundle(
+        prompt=prompt,
+        target_versions=context_bundle.target_versions,
+    )
+
+
+def build_agent_prompt(*, interaction) -> str:
+    return build_agent_prompt_bundle(interaction=interaction).prompt
 
 
 def run_goplan_ai_agent(interaction) -> AgentRunResult:
-    prompt = build_agent_prompt(interaction=interaction)
-    provider_result = complete_goplan_ai_agent_prompt(prompt)
+    prompt_bundle = build_agent_prompt_bundle(interaction=interaction)
+    provider_result = complete_goplan_ai_agent_prompt(prompt_bundle.prompt)
     parsed = parse_agent_response(provider_result.content)
     drafts = _attach_backend_preconditions(
         interaction=interaction,
         drafts=parsed.drafts,
+        target_versions=prompt_bundle.target_versions,
     )
     return AgentRunResult(
         message=parsed.message,
