@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import secrets
 import string
+import uuid
+from pathlib import Path
 
+from PIL import Image, UnidentifiedImageError
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core import signing
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.template.loader import render_to_string
@@ -48,6 +54,36 @@ class ProfileNotCompletedError(IdentityProfileConflictError):
 
 class IdentifyCodeGenerationError(Exception):
     pass
+
+
+# -------- Avatar Validation Constants --------
+
+ALLOWED_AVATAR_FORMATS = {"JPEG", "PNG", "WEBP"}
+MAX_AVATAR_BYTES = 500 * 1024
+MAX_AVATAR_DIMENSION = 1024
+AVATAR_MAGIC_SIGNATURES = (
+    b"\xff\xd8\xff",          # JPEG
+    b"\x89PNG\r\n\x1a\n",     # PNG
+    b"RIFF",                  # WebP (RIFF container — followed by 4 bytes size + "WEBP")
+)
+
+
+class AvatarValidationError(Exception):
+    """Raised by update_avatar when an uploaded file fails validation. Carries an error_code."""
+
+    def __init__(self, error_code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.error_code = error_code
+        self.detail = detail
+
+
+class PasswordChangeError(Exception):
+    """Raised by change_password_with_current when validation fails."""
+
+    def __init__(self, error_code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.error_code = error_code
+        self.detail = detail
 
 
 def generate_identify_code() -> str:
