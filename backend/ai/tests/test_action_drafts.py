@@ -20,7 +20,13 @@ from ai.models import (
 )
 from chat.models import ChatMessage, ChatMessageSenderKind
 from test_helpers import create_completed_user
-from trips.models import MemberStatus, TripMember, TripRole
+from trips.models import (
+    MemberStatus,
+    TimelineActivityAssigneeScope,
+    TimelineActivityStatus,
+    TripMember,
+    TripRole,
+)
 from trips.services import create_trip
 
 
@@ -181,6 +187,48 @@ class AIActionDraftPayloadTests(AIActionDraftModelTests):
         payload = build_action_draft_payload(draft, viewer=member)
 
         self.assertTrue(payload["can_confirm"])
+
+    def test_assignee_can_edit_timeline_status_needs_info_draft(self):
+        member = create_completed_user(
+            "agent-edit-status-member@example.com",
+            "agenteditstatus",
+            "AID004",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        activity = section.activities.create(
+            trip=self.trip,
+            title="Museum",
+            time_mode="FLEXIBLE",
+            assignee_scope=TimelineActivityAssigneeScope.USER,
+            assignee_user=member,
+            position=0,
+        )
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.status.update",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            payload={"activity_id": str(activity.id)},
+            preview={"title": "Museum"},
+            missing_fields=[{"name": "status", "label": "Status"}],
+            preconditions={},
+            required_confirmation="TIMELINE_ACTIVITY_STATUS",
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        payload = build_action_draft_payload(draft, viewer=member)
+
+        self.assertFalse(payload["can_confirm"])
+        self.assertFalse(payload["can_cancel"])
+        self.assertTrue(payload["can_edit"])
 
     def test_malformed_transfer_id_cannot_break_draft_payload_rendering(self):
         draft = AIActionDraft.objects.create(
@@ -552,3 +600,52 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
         self.assertEqual(draft.status, AIActionDraftStatus.READY)
         self.assertEqual(draft.payload["data"], {"title": "Museum"})
         self.assertEqual(response.data["draft"]["preview"]["title"], "Museum")
+
+    def test_assignee_patches_timeline_status_missing_info(self):
+        member = create_completed_user(
+            "agent-patch-status-member@example.com",
+            "agentpatchstatus",
+            "AID005",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        activity = section.activities.create(
+            trip=self.trip,
+            title="Museum",
+            time_mode="FLEXIBLE",
+            assignee_scope=TimelineActivityAssigneeScope.USER,
+            assignee_user=member,
+            position=0,
+        )
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.status.update",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            required_confirmation="TIMELINE_ACTIVITY_STATUS",
+            payload={"activity_id": str(activity.id)},
+            preview={"title": "Museum"},
+            missing_fields=[{"name": "status", "label": "Status"}],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        self.client.force_authenticate(member)
+
+        response = self.client.patch(
+            f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
+            {"payload": {"status": TimelineActivityStatus.IN_PROGRESS}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.READY)
+        self.assertEqual(draft.payload["status"], TimelineActivityStatus.IN_PROGRESS)
+        self.assertTrue(response.data["draft"]["can_confirm"])

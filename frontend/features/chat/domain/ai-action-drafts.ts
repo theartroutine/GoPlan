@@ -26,6 +26,7 @@ export type AIActionDraft = {
   required_confirmation: AIActionDraftConfirmation;
   can_confirm: boolean;
   can_cancel: boolean;
+  can_edit: boolean;
   preview: Record<string, unknown>;
   missing_fields: AIActionDraftMissingField[];
   result: Record<string, unknown>;

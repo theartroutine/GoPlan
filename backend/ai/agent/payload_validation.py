@@ -37,6 +37,13 @@ EXPENSE_CONTRIBUTION_AMOUNT_FIELDS = (
     "contribution_amount",
 )
 
+EXPENSE_UPDATE_FIELDS = (
+    "title",
+    "description",
+    "total_amount",
+    "collector_id",
+)
+
 TIMELINE_ACTIVITY_DATA_FIELDS = {
     "assignee_scope",
     "assignee_user_id",
@@ -76,6 +83,17 @@ def is_missing_value(value) -> bool:
 
 def _has_any_value(payload: dict, fields: tuple[str, ...]) -> bool:
     return any(not is_missing_value(payload.get(field)) for field in fields)
+
+
+def _has_any_expense_update_field(payload: dict) -> bool:
+    for field in EXPENSE_UPDATE_FIELDS:
+        if field not in payload:
+            continue
+        if field == "description":
+            return payload.get(field) is not None
+        if not is_missing_value(payload.get(field)):
+            return True
+    return False
 
 
 def _should_mark_all_participants_paid(payload: dict) -> bool:
@@ -322,10 +340,12 @@ def missing_payload_field_names(
     if action_type == AI_ACTION_EXPENSE_UPDATE:
         names = _with_provider_missing(
             provider_missing_names,
-            allowed_names={"expense_id", "title", "total_amount", "description"},
+            allowed_names={"expense_id", *EXPENSE_UPDATE_FIELDS},
             payload=payload,
         )
         _require_field(names, payload, "expense_id")
+        if not _has_any_expense_update_field(payload):
+            _append_once(names, "title")
         _append_invalid_money_field(names, payload, "total_amount")
         return names
 

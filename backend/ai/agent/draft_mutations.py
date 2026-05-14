@@ -12,7 +12,7 @@ from ai.agent.draft_fields import (
     normalize_missing_field_names,
 )
 from ai.agent.drafts import (
-    build_action_draft_payload,
+    can_edit_action_draft,
 )
 from ai.agent.executor import (
     AIActionDraftExpiredError,
@@ -137,13 +137,7 @@ def patch_action_draft(
                 "Draft is not waiting for more information."
             )
         else:
-            draft_payload = build_action_draft_payload(draft, viewer=actor)
-            can_edit = (
-                str(draft.requested_by_id) == str(actor.id)
-                or draft_payload["can_confirm"]
-                or draft_payload["can_cancel"]
-            )
-            if not can_edit:
+            if not can_edit_action_draft(draft, viewer=actor):
                 raise AIActionDraftForbiddenError("You cannot update this draft.")
 
             disallowed_fields = _disallowed_patch_fields(draft, patch_payload)

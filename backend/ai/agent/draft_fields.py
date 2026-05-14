@@ -5,6 +5,7 @@ from collections.abc import Iterable
 MISSING_FIELD_DEFINITIONS = {
     "activity_id": {"label": "Activity"},
     "amount": {"label": "Amount", "type": "money"},
+    "collector_id": {"label": "Collector", "type": "select"},
     "custom_type_id": {"label": "Custom activity type", "type": "select"},
     "data": {"label": "Activity details", "type": "json"},
     "end_time": {"label": "End time"},

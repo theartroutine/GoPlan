@@ -15,6 +15,8 @@ from ai.models import AIActionDraft, AIActionDraftStatus
 from expenses.models import SettlementStatus, SettlementTransfer
 from trips.models import (
     MemberStatus,
+    TimelineActivity,
+    TimelineActivityAssigneeScope,
     TimelineActivityStatus,
     TimelineActivityTimeMode,
     TimelineCustomType,
@@ -23,6 +25,7 @@ from trips.models import (
     TimelineSystemType,
     TripMember,
     TripRole,
+    TripStatus,
 )
 from trips.services import can_update_timeline_activity_status
 
@@ -230,6 +233,55 @@ def can_cancel_action_draft(draft: AIActionDraft, *, viewer) -> bool:
     return can_confirm_action_draft(draft, viewer=viewer)
 
 
+def _can_edit_timeline_status_draft(draft: AIActionDraft, viewer) -> bool:
+    if viewer is None or not getattr(viewer, "is_authenticated", False):
+        return False
+    activity_id = draft.payload.get("activity_id")
+    if not activity_id:
+        return False
+    try:
+        activity = TimelineActivity.objects.select_related("trip").get(
+            pk=activity_id,
+            trip_id=draft.trip_id,
+            trip__status__in={TripStatus.PLANNING, TripStatus.ONGOING},
+        )
+    except (
+        TimelineActivity.DoesNotExist,
+        TypeError,
+        ValueError,
+        ValidationError,
+    ):
+        return False
+    if _is_active_captain(trip_id=draft.trip_id, user=viewer):
+        return True
+    if not TripMember.objects.filter(
+        trip_id=draft.trip_id,
+        user=viewer,
+        status=MemberStatus.ACTIVE,
+    ).exists():
+        return False
+    if activity.assignee_scope == TimelineActivityAssigneeScope.EVERYONE:
+        return True
+    return (
+        activity.assignee_scope == TimelineActivityAssigneeScope.USER
+        and activity.assignee_user_id == viewer.id
+    )
+
+
+def can_edit_action_draft(draft: AIActionDraft, *, viewer) -> bool:
+    if _effective_draft_status(draft) != AIActionDraftStatus.NEEDS_INFO:
+        return False
+    if viewer is None or not getattr(viewer, "is_authenticated", False):
+        return False
+    if str(draft.requested_by_id) == str(viewer.id):
+        return True
+    if draft.required_confirmation == AI_CONFIRMATION_CAPTAIN:
+        return _is_active_captain(trip_id=draft.trip_id, user=viewer)
+    if draft.required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
+        return _can_edit_timeline_status_draft(draft, viewer)
+    return _can_confirm_transfer(draft, viewer)
+
+
 def build_action_draft_payload(draft: AIActionDraft, *, viewer) -> dict:
     status = _effective_draft_status(draft)
     missing_fields = [
@@ -243,6 +295,7 @@ def build_action_draft_payload(draft: AIActionDraft, *, viewer) -> dict:
         "required_confirmation": draft.required_confirmation,
         "can_confirm": can_confirm_action_draft(draft, viewer=viewer),
         "can_cancel": can_cancel_action_draft(draft, viewer=viewer),
+        "can_edit": can_edit_action_draft(draft, viewer=viewer),
         "preview": draft.preview,
         "missing_fields": missing_fields,
         "result": draft.result,

@@ -58,6 +58,7 @@ ACTION_CONFIRMATION_RULES = {
 
 MAX_AGENT_DRAFTS = 5
 MAX_TIMELINE_ACTIVITY_CREATE_DRAFTS = 3
+TARGET_IDENTITY_MISSING_FIELDS = {"activity_id", "expense_id", "transfer_id"}
 
 
 @dataclass(frozen=True)
@@ -235,6 +236,18 @@ def _build_draft_pending_message(drafts: list[AgentDraftSpec]) -> str:
     return "Mình đã chuẩn bị bản nháp thao tác. Kiểm tra rồi xác nhận nếu đúng."
 
 
+def _has_missing_target_identity(missing_fields: list) -> bool:
+    missing_names = set(normalize_missing_field_names(missing_fields, strict=False))
+    return bool(missing_names & TARGET_IDENTITY_MISSING_FIELDS)
+
+
+def _build_target_clarification_message() -> str:
+    return (
+        "Mình cần bạn nói rõ đối tượng cần thao tác trước khi tạo bản nháp "
+        "(ví dụ khoản chi, hoạt động, hoặc giao dịch chuyển tiền cụ thể)."
+    )
+
+
 def parse_agent_response(content: str) -> AgentRunResult:
     raw = _parse_json_object(content)
     message = raw.get("message")
@@ -247,6 +260,7 @@ def parse_agent_response(content: str) -> AgentRunResult:
         raise ValueError("Agent response includes too many drafts.")
 
     drafts = []
+    skipped_missing_target = False
     timeline_activity_create_count = 0
     for draft in drafts_raw:
         if not isinstance(draft, dict):
@@ -272,6 +286,9 @@ def parse_agent_response(content: str) -> AgentRunResult:
             payload=payload,
             missing_fields=normalize_missing_field_names(draft.get("missing_fields")),
         )
+        if _has_missing_target_identity(missing_fields):
+            skipped_missing_target = True
+            continue
         status = _normalize_status(draft.get("status"), missing_fields=missing_fields)
         required_confirmation = _normalize_confirmation(
             draft.get("required_confirmation"),
@@ -303,6 +320,12 @@ def parse_agent_response(content: str) -> AgentRunResult:
     normalized_message = message.strip()
     if drafts and _message_claims_completed_action(normalized_message):
         normalized_message = _build_draft_pending_message(drafts)
+    if skipped_missing_target:
+        clarification_message = _build_target_clarification_message()
+        if drafts:
+            normalized_message = f"{normalized_message}\n\n{clarification_message}"
+        else:
+            normalized_message = clarification_message
 
     return AgentRunResult(message=normalized_message, drafts=drafts)
 
@@ -357,6 +380,9 @@ def build_agent_prompt(*, interaction) -> str:
                 "For timeline.activity.create, put section_id at payload.section_id "
                 "and activity fields under payload.data. Create at most 3 timeline "
                 "activity drafts per response and keep preview short. "
+                "If an action needs an existing expense, timeline activity, or "
+                "transfer but the target is ambiguous, ask a clarification question "
+                "in message and do not create a draft for that action. "
                 "Django will build stale-data preconditions for drafts that "
                 "update, delete, or change status of an expense or "
                 "timeline_activity, so leave preconditions empty unless a "

@@ -173,19 +173,9 @@ class AgentDraftValidationTests(TestCase):
     def test_action_specific_missing_fields_prevent_invalid_ready_drafts(self):
         cases = (
             (
-                "expense.update",
-                {"title": "Dinner"},
-                [{"name": "expense_id", "label": "Expense"}],
-            ),
-            (
                 "timeline.activity.status.update",
                 {"activity_id": "activity-1"},
                 [{"name": "status", "label": "Status", "type": "select"}],
-            ),
-            (
-                "settlement.transfer.mark_sent",
-                {},
-                [{"name": "transfer_id", "label": "Transfer"}],
             ),
         )
 
@@ -249,6 +239,41 @@ class AgentDraftValidationTests(TestCase):
             draft.missing_fields,
             [{"name": "data", "label": "Activity details", "type": "json"}],
         )
+
+    def test_expense_update_requires_at_least_one_change_before_ready(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"expense.update",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"expense_id":"expense-1"},'
+            '"preview":{},"missing_fields":[],"preconditions":{}}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.status, "NEEDS_INFO")
+        self.assertEqual(
+            draft.missing_fields,
+            [{"name": "title", "label": "Title"}],
+        )
+
+    def test_missing_target_identity_returns_clarification_without_draft(self):
+        cases = (
+            ("expense.update", {"title": "Dinner"}),
+            ("timeline.activity.update", {"data": {"title": "Museum"}}),
+            ("settlement.transfer.mark_sent", {}),
+        )
+
+        for action_type, payload in cases:
+            with self.subTest(action_type=action_type):
+                parsed = parse_agent_response(
+                    '{"message":"I prepared a draft.","drafts":[{'
+                    f'"action_type":"{action_type}",'
+                    '"required_confirmation":"CAPTAIN","status":"READY",'
+                    f'"payload":{json.dumps(payload)},'
+                    '"preview":{},"missing_fields":[],"preconditions":{}}]}'
+                )
+
+                self.assertEqual(parsed.drafts, [])
+                self.assertIn("đối tượng", parsed.message)
 
     def test_timeline_status_update_requires_known_status_before_ready(self):
         parsed = parse_agent_response(

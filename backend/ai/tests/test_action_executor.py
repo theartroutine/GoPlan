@@ -455,6 +455,45 @@ class ActionExecutorTests(TestCase):
                 actor=self.captain,
             )
 
+    def test_confirm_expense_update_without_changes_raises_not_ready(self):
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Dinner",
+            total_amount=Decimal("1200000"),
+            collector=self.captain,
+        )
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="expense.update",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={"expense_id": str(expense.id)},
+            preview={"title": "Dinner"},
+            missing_fields=[],
+            preconditions={
+                "target": {
+                    "type": "expense",
+                    "id": str(expense.id),
+                    "updated_at": expense.updated_at.isoformat(),
+                }
+            },
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        with self.assertRaises(AIActionDraftNotReadyError):
+            confirm_action_draft(
+                draft_id=draft.id,
+                trip_id=self.trip.id,
+                actor=self.captain,
+            )
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.READY)
+        self.assertEqual(draft.result, {})
+
     def test_precondition_check_locks_expense_target(self):
         expense = create_expense(
             trip_id=self.trip.id,

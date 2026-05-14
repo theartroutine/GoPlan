@@ -52,6 +52,7 @@ function isAIActionDraft(value: unknown): value is AIActionDraft {
     typeof value.required_confirmation === "string" &&
     typeof value.can_confirm === "boolean" &&
     typeof value.can_cancel === "boolean" &&
+    typeof value.can_edit === "boolean" &&
     isRecord(value.preview) &&
     Array.isArray(value.missing_fields) &&
     isRecord(value.result) &&
@@ -185,7 +186,7 @@ export function AIActionCard({ tripId, draft, onDraftChanged }: Props) {
         ))}
       </dl>
 
-      {localDraft.status === "NEEDS_INFO" && localDraft.can_cancel ? (
+      {localDraft.status === "NEEDS_INFO" && localDraft.can_edit ? (
         <AIActionFieldEditor
           fields={localDraft.missing_fields}
           pending={pending === "patch"}

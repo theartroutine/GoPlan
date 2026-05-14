@@ -22,6 +22,7 @@ function makeDraft(overrides: Partial<AIActionDraft> = {}): AIActionDraft {
     required_confirmation: "CAPTAIN",
     can_confirm: true,
     can_cancel: true,
+    can_edit: false,
     preview: { title: "Dinner", amount: "1,200,000 VND" },
     missing_fields: [],
     result: {},
@@ -138,6 +139,7 @@ describe("AIActionCard", () => {
           status: "NEEDS_INFO",
           can_confirm: false,
           can_cancel: true,
+          can_edit: true,
           missing_fields: [{ name: "total_amount", label: "Amount" }],
           preview: { title: "Lunch" },
         })}
@@ -156,6 +158,50 @@ describe("AIActionCard", () => {
     expect(await screen.findByText("READY")).toBeInTheDocument();
   });
 
+  it("edits missing fields when can_edit is true without cancel permission", async () => {
+    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({
+        status: "READY",
+        can_confirm: true,
+        can_cancel: false,
+        can_edit: false,
+        missing_fields: [],
+        preview: { title: "Museum", status: "IN_PROGRESS" },
+      }),
+    });
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: false,
+          can_edit: true,
+          missing_fields: [
+            {
+              name: "status",
+              label: "Status",
+              type: "select",
+              options: [{ label: "In Progress", value: "IN_PROGRESS" }],
+            },
+          ],
+          preview: { title: "Museum" },
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "IN_PROGRESS" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
+      status: "IN_PROGRESS",
+    });
+    expect(await screen.findByText("READY")).toBeInTheDocument();
+  });
+
   it("sends selected field option values when editing missing fields", async () => {
     vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
       draft: makeDraft({ status: "READY", missing_fields: [] }),
@@ -167,6 +213,7 @@ describe("AIActionCard", () => {
           status: "NEEDS_INFO",
           can_confirm: false,
           can_cancel: true,
+          can_edit: true,
           missing_fields: [
             {
               name: "section_id",
@@ -204,6 +251,7 @@ describe("AIActionCard", () => {
           status: "NEEDS_INFO",
           can_confirm: false,
           can_cancel: true,
+          can_edit: true,
           missing_fields: [
             { name: "data", label: "Activity details", type: "json" },
           ],
@@ -251,6 +299,7 @@ describe("AIActionCard", () => {
           status: "NEEDS_INFO",
           can_confirm: false,
           can_cancel: true,
+          can_edit: true,
           missing_fields: [
             { name: "activity_id", label: "Activity", type: "target" },
           ],
