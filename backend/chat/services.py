@@ -263,6 +263,11 @@ def build_chat_message_payload(message: ChatMessage, *, viewer=None) -> dict:
             "id": str(message.sender_id) if message.sender_id else None,
             "display_name": message.sender_display_name_snapshot,
             "identify_tag": message.sender_identify_tag_snapshot,
+            "avatar_url": (
+                message.sender.avatar.url
+                if message.sender_id and message.sender and message.sender.avatar
+                else None
+            ),
         },
         "content": "" if is_deleted else message.content,
         "client_message_id": (
@@ -698,7 +703,8 @@ def delete_message_for_everyone(*, user, trip_id, message_id) -> ChatMessage:
         _ensure_trip_is_mutable(trip)
         try:
             message = (
-                ChatMessage.objects.select_for_update()
+                ChatMessage.objects.select_for_update(of=("self",))
+                .select_related("sender")
                 .get(pk=normalized_message_id, trip=trip)
             )
         except ChatMessage.DoesNotExist as exc:
