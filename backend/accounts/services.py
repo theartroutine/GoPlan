@@ -384,3 +384,48 @@ def delete_avatar(user):
         except Exception:
             pass
     return user
+
+
+# -------- Password Change Service --------
+
+
+def change_password_with_current(user, current_password: str, new_password: str):
+    """
+    Atomically: verify current password, validate new, set_password, bump auth_version,
+    issue a fresh access+refresh pair using the same path login uses.
+
+    Returns (user, access_token_str, refresh_token_str).
+
+    Tokens are minted *after* auth_version is incremented so they encode the new
+    version and remain valid; every previously issued token for this user (other
+    devices, other tabs) now fails the auth_version check in authentication.py.
+    """
+    with transaction.atomic():
+        locked = User.objects.select_for_update().get(pk=user.pk)
+
+        if not locked.check_password(current_password):
+            raise PasswordChangeError(
+                "INVALID_CURRENT_PASSWORD",
+                "Current password is incorrect.",
+            )
+
+        if current_password == new_password:
+            raise PasswordChangeError(
+                "SAME_PASSWORD",
+                "New password must differ from current password.",
+            )
+
+        try:
+            validate_password(new_password, user=locked)
+        except DjangoValidationError as exc:
+            raise PasswordChangeError(
+                "WEAK_PASSWORD",
+                "; ".join(exc.messages),
+            ) from exc
+
+        locked.set_password(new_password)
+        locked.auth_version = (locked.auth_version or 0) + 1
+        locked.save(update_fields=["password", "auth_version", "updated_at"])
+
+        refresh = RefreshToken.for_user(locked)
+        return locked, str(refresh.access_token), str(refresh)

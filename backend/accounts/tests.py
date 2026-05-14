@@ -1012,3 +1012,56 @@ class AvatarServiceTests(TestCase):
         # Should not raise even if avatar field is empty.
         result = delete_avatar(self.user)
         self.assertFalse(bool(result.avatar))
+
+
+# -------- Password Change Service Tests --------
+
+from accounts.services import (
+    change_password_with_current,
+    PasswordChangeError,
+)
+
+
+class ChangePasswordServiceTests(TestCase):
+    def setUp(self) -> None:
+        self.current_password = "OldValidPw123!"
+        self.user = User.objects.create_user(
+            email="pw@example.com", password=self.current_password
+        )
+
+    def test_change_password_success_increments_auth_version(self):
+        before_version = self.user.auth_version
+        user, access, refresh = change_password_with_current(
+            self.user, self.current_password, "BrandNewPw456!"
+        )
+        user.refresh_from_db()
+        self.assertEqual(user.auth_version, before_version + 1)
+        self.assertTrue(user.check_password("BrandNewPw456!"))
+        self.assertTrue(access and isinstance(access, str))
+        self.assertTrue(refresh and isinstance(refresh, str))
+
+    def test_change_password_rejects_wrong_current(self):
+        with self.assertRaises(PasswordChangeError) as ctx:
+            change_password_with_current(self.user, "WrongCurrent!", "BrandNewPw456!")
+        self.assertEqual(ctx.exception.error_code, "INVALID_CURRENT_PASSWORD")
+
+    def test_change_password_rejects_same_as_current(self):
+        with self.assertRaises(PasswordChangeError) as ctx:
+            change_password_with_current(
+                self.user, self.current_password, self.current_password
+            )
+        self.assertEqual(ctx.exception.error_code, "SAME_PASSWORD")
+
+    def test_change_password_rejects_weak(self):
+        with self.assertRaises(PasswordChangeError) as ctx:
+            change_password_with_current(self.user, self.current_password, "12345678")
+        self.assertEqual(ctx.exception.error_code, "WEAK_PASSWORD")
+
+    def test_change_password_issued_tokens_carry_new_auth_version(self):
+        _, access, _ = change_password_with_current(
+            self.user, self.current_password, "BrandNewPw456!"
+        )
+        from accounts.tokens import AccessToken
+        token = AccessToken(access)
+        self.user.refresh_from_db()
+        self.assertEqual(token.get("auth_version"), self.user.auth_version)
