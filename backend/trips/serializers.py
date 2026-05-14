@@ -177,6 +177,7 @@ class TripMemberSerializer(serializers.ModelSerializer):
             "id": str(obj.user.id),
             "display_name": obj.user.display_name,
             "identify_tag": obj.user.identify_tag,
+            "avatar_url": obj.user.avatar.url if obj.user.avatar else None,
         }
 
 

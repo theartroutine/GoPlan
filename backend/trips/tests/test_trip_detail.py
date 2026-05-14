@@ -51,3 +51,48 @@ class TripDetailTests(APITestCase):
         import uuid
         res = self.client.get(f"/api/trips/{uuid.uuid4()}", **_auth(self.captain))
         self.assertEqual(res.status_code, 404)
+
+
+# -------- Trip Member avatar_url --------
+
+import io
+from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image as PILImage
+from accounts.services import update_avatar
+
+
+class TripMemberAvatarUrlTests(APITestCase):
+    """Asserts trip detail member.user payload includes avatar_url."""
+
+    def setUp(self):
+        self.captain = create_completed_user("ava_cap@example.com", "avacap", "AVA001")
+        self.member  = create_completed_user("ava_mem@example.com", "avamem", "AVA002")
+        self.trip = _make_trip(self.captain)
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+
+    def test_member_payload_includes_avatar_url_null_by_default(self):
+        res = self.client.get(_detail_url(self.trip.id), **_auth(self.captain))
+        self.assertEqual(res.status_code, 200)
+        member_payload = next(
+            m for m in res.data["members"] if m["user"]["id"] == str(self.member.id)
+        )
+        self.assertIn("avatar_url", member_payload["user"])
+        self.assertIsNone(member_payload["user"]["avatar_url"])
+
+    def test_member_payload_includes_avatar_url_when_uploaded(self):
+        buf = io.BytesIO()
+        PILImage.new("RGB", (256, 256), "blue").save(buf, format="JPEG")
+        update_avatar(
+            self.member,
+            SimpleUploadedFile("a.jpg", buf.getvalue(), content_type="image/jpeg"),
+        )
+        res = self.client.get(_detail_url(self.trip.id), **_auth(self.captain))
+        member_payload = next(
+            m for m in res.data["members"] if m["user"]["id"] == str(self.member.id)
+        )
+        self.assertTrue(member_payload["user"]["avatar_url"].startswith("/media/avatars/"))
