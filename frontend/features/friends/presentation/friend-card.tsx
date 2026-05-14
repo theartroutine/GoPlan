@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import type { FriendUser } from "@/features/friends/domain/types";
-import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
+import { UserAvatar } from "@/shared/ui/user-avatar";
 
 type FriendCardProps = {
   user: FriendUser;
@@ -11,19 +11,9 @@ type FriendCardProps = {
 };
 
 export function FriendCard({ user, actions }: FriendCardProps) {
-  const initials = user.display_name
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-      <Avatar>
-        <AvatarFallback>{initials}</AvatarFallback>
-      </Avatar>
+      <UserAvatar user={user} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{user.display_name}</p>
         <p className="truncate text-xs text-muted-foreground">
