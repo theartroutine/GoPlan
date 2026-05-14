@@ -382,6 +382,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "First name contains invalid characters.",
+        )
         self.assertIn("detail", response.data)
 
     def test_profile_setup_rejects_first_name_with_spaces(self):
@@ -397,6 +401,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "First name must be a single word (no spaces).",
+        )
 
     def test_profile_setup_rejects_last_name_with_spaces(self):
         user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
@@ -411,6 +419,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_LAST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "Last name must be a single word (no spaces).",
+        )
 
     def test_profile_setup_accepts_hyphenated_name(self):
         user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
@@ -581,6 +593,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "First name must be a single word (no spaces).",
+        )
 
     def test_profile_name_update_rejects_invalid_last_name_with_error_code(self):
         user = self.create_completed_user(email="owner@example.com", password="StrongPass#2026")
@@ -595,6 +611,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_LAST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "Last name contains invalid characters.",
+        )
 
     # -------- Refresh --------
 
