@@ -927,3 +927,74 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("password", response.data)
+
+
+# -------- Avatar Service Tests --------
+
+import io
+from django.test import TestCase
+from PIL import Image as PILImage
+from django.core.files.uploadedfile import SimpleUploadedFile
+from accounts.services import (
+    AvatarValidationError,
+    update_avatar,
+    MAX_AVATAR_BYTES,
+)
+
+
+def _make_image_upload(
+    *, format="JPEG", size=(256, 256), filename=None, content=None
+) -> SimpleUploadedFile:
+    if content is None:
+        buf = io.BytesIO()
+        PILImage.new("RGB", size, "blue").save(buf, format=format)
+        content = buf.getvalue()
+    return SimpleUploadedFile(
+        filename or f"avatar.{format.lower()}",
+        content,
+        content_type=f"image/{format.lower()}",
+    )
+
+
+class AvatarServiceTests(TestCase):
+    def setUp(self) -> None:
+        self.user = User.objects.create_user(email="avatar@example.com", password="ValidPw123!")
+
+    def test_update_avatar_success_persists_file_and_user(self):
+        upload = _make_image_upload(format="JPEG")
+        result = update_avatar(self.user, upload)
+        self.assertTrue(bool(result.avatar))
+        self.assertTrue(result.avatar.name.startswith("avatars/"))
+
+    def test_update_avatar_rejects_oversize_bytes(self):
+        big_content = b"\xff\xd8\xff" + b"A" * (MAX_AVATAR_BYTES + 1)
+        upload = SimpleUploadedFile("big.jpg", big_content, content_type="image/jpeg")
+        with self.assertRaises(AvatarValidationError) as ctx:
+            update_avatar(self.user, upload)
+        self.assertEqual(ctx.exception.error_code, "AVATAR_TOO_LARGE")
+
+    def test_update_avatar_rejects_invalid_format_by_magic_bytes(self):
+        upload = SimpleUploadedFile("evil.jpg", b"not-an-image-at-all", content_type="image/jpeg")
+        with self.assertRaises(AvatarValidationError) as ctx:
+            update_avatar(self.user, upload)
+        self.assertEqual(ctx.exception.error_code, "AVATAR_INVALID_FORMAT")
+
+    def test_update_avatar_rejects_oversize_dimensions(self):
+        upload = _make_image_upload(format="PNG", size=(2000, 2000))
+        with self.assertRaises(AvatarValidationError) as ctx:
+            update_avatar(self.user, upload)
+        self.assertEqual(ctx.exception.error_code, "AVATAR_DIMENSIONS_TOO_LARGE")
+
+    def test_update_avatar_replaces_old_file(self):
+        first = _make_image_upload(format="JPEG")
+        update_avatar(self.user, first)
+        old_path = self.user.avatar.path
+
+        second = _make_image_upload(format="WEBP")
+        update_avatar(self.user, second)
+        new_path = self.user.avatar.path
+
+        self.assertNotEqual(old_path, new_path)
+        import os
+        self.assertFalse(os.path.exists(old_path), "Old avatar file should be deleted from storage")
+        self.assertTrue(os.path.exists(new_path))

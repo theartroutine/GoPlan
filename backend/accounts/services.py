@@ -272,3 +272,95 @@ def reset_user_password(user: User, new_password: str) -> User:
         locked_user.save(update_fields=["password", "auth_version", "updated_at"])
         blacklist_all_user_refresh_tokens(locked_user)
     return locked_user
+
+
+# -------- Avatar Services --------
+
+
+def _check_avatar_magic_bytes(image_file) -> bool:
+    image_file.seek(0)
+    header = image_file.read(12)
+    image_file.seek(0)
+    if header.startswith(b"\xff\xd8\xff"):
+        return True
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return True
+    return False
+
+
+def update_avatar(user, image_file):
+    """
+    Validates an uploaded image and stores it as the user's avatar.
+
+    Validation order (cheapest first, fail fast):
+      1. size <= MAX_AVATAR_BYTES
+      2. magic-byte sniffing for JPEG / PNG / WebP
+      3. Pillow Image.verify() — refuses malformed/decompression-bomb files
+      4. format in ALLOWED_AVATAR_FORMATS and dimensions <= MAX_AVATAR_DIMENSION
+
+    Replacement strategy: write new file first, save user pointing at it,
+    then delete the old file. If old-file deletion fails we log and move on —
+    an orphan file is a leak, not a correctness issue.
+    """
+    if image_file.size > MAX_AVATAR_BYTES:
+        raise AvatarValidationError(
+            "AVATAR_TOO_LARGE",
+            f"Avatar file exceeds {MAX_AVATAR_BYTES // 1024}KB limit.",
+        )
+
+    if not _check_avatar_magic_bytes(image_file):
+        raise AvatarValidationError(
+            "AVATAR_INVALID_FORMAT",
+            "Unsupported image format. Use JPEG, PNG, or WebP.",
+        )
+
+    image_file.seek(0)
+    try:
+        with Image.open(image_file) as probe:
+            probe.verify()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise AvatarValidationError(
+            "AVATAR_INVALID_FORMAT",
+            "Image could not be parsed safely.",
+        ) from exc
+
+    image_file.seek(0)
+    with Image.open(image_file) as probed:
+        if probed.format not in ALLOWED_AVATAR_FORMATS:
+            raise AvatarValidationError(
+                "AVATAR_INVALID_FORMAT",
+                f"Unsupported image format: {probed.format}.",
+            )
+        if probed.width > MAX_AVATAR_DIMENSION or probed.height > MAX_AVATAR_DIMENSION:
+            raise AvatarValidationError(
+                "AVATAR_DIMENSIONS_TOO_LARGE",
+                f"Image dimensions exceed {MAX_AVATAR_DIMENSION}x{MAX_AVATAR_DIMENSION}.",
+            )
+        ext = probed.format.lower().replace("jpeg", "jpg")
+
+    image_file.seek(0)
+    new_name = f"{uuid.uuid4().hex}.{ext}"
+
+    # FieldFile.save() mutates the same FieldFile instance (rebinds .name to the
+    # new path). Capture the previous name and storage BEFORE saving so we can
+    # delete the old file without touching the newly-written one.
+    if user.avatar:
+        old_name = user.avatar.name
+        old_storage = user.avatar.storage
+    else:
+        old_name = None
+        old_storage = None
+
+    user.avatar.save(new_name, image_file, save=False)
+    user.save(update_fields=["avatar", "updated_at"])
+
+    if old_name and old_storage is not None:
+        try:
+            old_storage.delete(old_name)
+        except Exception:
+            # Orphan file; intentional best-effort cleanup.
+            pass
+
+    return user
