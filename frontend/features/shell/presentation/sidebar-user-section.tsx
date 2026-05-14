@@ -5,10 +5,9 @@ import { Check, Copy } from "lucide-react";
 
 import { useAuth } from "@/features/auth/application/auth-context";
 import { useSidebar } from "@/features/shell/application/sidebar-context";
-import { getInitials } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
-import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
 import { Button } from "@/shared/ui/button";
+import { UserAvatar } from "@/shared/ui/user-avatar";
 import {
   Tooltip,
   TooltipContent,
@@ -34,8 +33,6 @@ export function SidebarUserSection() {
   }, [user?.identify_tag]);
 
   if (!user) return null;
-
-  const initials = getInitials(user.display_name || user.email);
 
   const copyButton = (
     <Tooltip>
@@ -66,11 +63,7 @@ export function SidebarUserSection() {
         "flex items-center gap-3 overflow-hidden px-4 py-3",
       )}
     >
-      <Avatar className="h-8 w-8 shrink-0">
-        <AvatarFallback className="bg-muted text-xs font-medium">
-          {initials}
-        </AvatarFallback>
-      </Avatar>
+      <UserAvatar user={user} size="default" className="shrink-0" />
       <div
         className={cn(
           "min-w-0 overflow-hidden transition-[opacity,transform] duration-300 ease-out",
@@ -97,11 +90,7 @@ export function SidebarUserSection() {
       <div className="flex flex-col items-center gap-2 py-2">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Avatar className="h-8 w-8 shrink-0">
-              <AvatarFallback className="bg-muted text-xs font-medium">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar user={user} size="default" className="shrink-0" />
           </TooltipTrigger>
           <TooltipContent side="right">
             <p className="font-medium">{user.display_name}</p>
