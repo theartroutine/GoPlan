@@ -292,3 +292,32 @@ class NotificationIntegrationTests(TransactionTestCase):
         initial_count = Notification.objects.count()
         cancel_friend_request(fr.id, self.alice)
         self.assertEqual(Notification.objects.count(), initial_count)
+
+
+# -------- Friend User Payload avatar_url --------
+
+import io
+from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image as PILImage
+from django.test import TestCase
+from accounts.services import update_avatar
+from friends.serializers import _build_friend_user_payload
+
+
+class FriendUserPayloadAvatarUrlTests(TestCase):
+    def test_payload_avatar_url_is_null_when_no_avatar(self):
+        user = User.objects.create_user(email="fa@example.com", password="Pw1234567!")
+        payload = _build_friend_user_payload(user)
+        self.assertIn("avatar_url", payload)
+        self.assertIsNone(payload["avatar_url"])
+
+    def test_payload_avatar_url_is_storage_url_when_present(self):
+        user = User.objects.create_user(email="fb@example.com", password="Pw1234567!")
+        buf = io.BytesIO()
+        PILImage.new("RGB", (256, 256), "red").save(buf, format="JPEG")
+        update_avatar(
+            user,
+            SimpleUploadedFile("a.jpg", buf.getvalue(), content_type="image/jpeg"),
+        )
+        payload = _build_friend_user_payload(user)
+        self.assertTrue(payload["avatar_url"].startswith("/media/avatars/"))

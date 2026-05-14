@@ -12,6 +12,7 @@ def _build_friend_user_payload(user):
         "id": str(user.id),
         "display_name": user.display_name,
         "identify_tag": user.identify_tag,
+        "avatar_url": user.avatar.url if user.avatar else None,
     }
 
 
