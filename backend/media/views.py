@@ -4,9 +4,16 @@ import os
 import uuid
 
 from django.conf import settings
+from django.http import FileResponse, Http404
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from media.services import (
+    PUBLIC_MEDIA_CACHE_CONTROL,
+    PublicMediaNotFoundError,
+    open_public_media_file,
+)
 
 MAX_SIZE_BYTES = settings.UPLOAD_MAX_BYTES
 EXTENSION_MAP = {
@@ -72,3 +79,21 @@ class TripCoverUploadAPIView(APIView):
 
         url = f"{settings.MEDIA_URL}trip-covers/{filename}"
         return Response({"url": url}, status=status.HTTP_201_CREATED)
+
+
+class PublicMediaFileAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, file_path: str):
+        try:
+            media_file = open_public_media_file(file_path)
+        except PublicMediaNotFoundError as exc:
+            raise Http404("Media file not found.") from exc
+
+        response = FileResponse(
+            media_file.file_obj,
+            content_type=media_file.content_type,
+        )
+        response.headers["Cache-Control"] = PUBLIC_MEDIA_CACHE_CONTROL
+        return response
