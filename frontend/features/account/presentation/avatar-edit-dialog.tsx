@@ -5,7 +5,10 @@ import Cropper, { type Area } from "react-easy-crop";
 import { toast } from "sonner";
 
 import { useUpdateAvatar } from "@/features/account/application/use-update-avatar";
-import { compressImageToWebP } from "@/shared/lib/image";
+import {
+  loadImageElement,
+  renderCroppedImageToWebP,
+} from "@/shared/lib/image";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -23,27 +26,6 @@ type Props = {
 const TARGET_PX = 512;
 const MAX_SOURCE_DIMENSION_PX = 1024;
 const ALLOWED_SOURCE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Failed to load image for cropping."));
-    img.src = src;
-  });
-}
-
-async function renderCroppedWebp(imageSrc: string, area: Area): Promise<Blob> {
-  const img = await loadImage(imageSrc);
-  const canvas = document.createElement("canvas");
-  canvas.width = TARGET_PX;
-  canvas.height = TARGET_PX;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context unavailable.");
-  ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, TARGET_PX, TARGET_PX);
-  return compressImageToWebP(canvas, 0.85);
-}
 
 export function AvatarEditDialog({ open, onOpenChange }: Props) {
   const { upload, uploading, error } = useUpdateAvatar();
@@ -68,7 +50,7 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
 
     const nextFileUrl = URL.createObjectURL(file);
     try {
-      const image = await loadImage(nextFileUrl);
+      const image = await loadImageElement(nextFileUrl);
       if (
         image.naturalWidth > MAX_SOURCE_DIMENSION_PX ||
         image.naturalHeight > MAX_SOURCE_DIMENSION_PX
@@ -111,7 +93,10 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
     if (!fileUrl || !croppedAreaPixels) return;
     setLocalError(null);
     try {
-      const blob = await renderCroppedWebp(fileUrl, croppedAreaPixels);
+      const blob = await renderCroppedImageToWebP(fileUrl, croppedAreaPixels, {
+        targetPx: TARGET_PX,
+        quality: 0.85,
+      });
       const ok = await upload(blob);
       if (ok) {
         toast.success("Avatar updated.");

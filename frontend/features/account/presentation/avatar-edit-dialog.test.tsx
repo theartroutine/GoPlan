@@ -8,7 +8,8 @@ const avatarHookMock = vi.hoisted(() => ({
 }));
 
 const imageMock = vi.hoisted(() => ({
-  compressImageToWebP: vi.fn(),
+  loadImageElement: vi.fn(),
+  renderCroppedImageToWebP: vi.fn(),
 }));
 
 vi.mock("@/features/account/application/use-update-avatar", () => avatarHookMock);
@@ -28,19 +29,8 @@ vi.mock("react-easy-crop", () => ({
   },
 }));
 
-class StubImage {
-  static nextNaturalWidth = 512;
-  static nextNaturalHeight = 512;
-
-  crossOrigin = "";
-  naturalWidth = StubImage.nextNaturalWidth;
-  naturalHeight = StubImage.nextNaturalHeight;
-  onload: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-
-  set src(_: string) {
-    queueMicrotask(() => this.onload?.());
-  }
+function mockLoadedImage(width: number, height: number): HTMLImageElement {
+  return { naturalWidth: width, naturalHeight: height } as HTMLImageElement;
 }
 
 describe("AvatarEditDialog", () => {
@@ -53,9 +43,10 @@ describe("AvatarEditDialog", () => {
       uploading: false,
       error: null,
     });
-    StubImage.nextNaturalWidth = 512;
-    StubImage.nextNaturalHeight = 512;
-    vi.stubGlobal("Image", StubImage);
+    imageMock.loadImageElement.mockResolvedValue(mockLoadedImage(512, 512));
+    imageMock.renderCroppedImageToWebP.mockResolvedValue(
+      new Blob(["avatar"], { type: "image/webp" }),
+    );
     Object.defineProperty(URL, "createObjectURL", {
       configurable: true,
       value: vi.fn(() => "blob:avatar"),
@@ -64,9 +55,6 @@ describe("AvatarEditDialog", () => {
       configurable: true,
       value: vi.fn(),
     });
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-      drawImage: vi.fn(),
-    } as unknown as CanvasRenderingContext2D);
   });
 
   afterEach(() => {
@@ -75,7 +63,7 @@ describe("AvatarEditDialog", () => {
   });
 
   it("shows a local error when browser image encoding fails", async () => {
-    imageMock.compressImageToWebP.mockRejectedValue(
+    imageMock.renderCroppedImageToWebP.mockRejectedValue(
       new Error("Canvas could not be encoded to WebP."),
     );
 
@@ -104,8 +92,7 @@ describe("AvatarEditDialog", () => {
   });
 
   it("rejects source images above the avatar dimension limit before cropping", async () => {
-    StubImage.nextNaturalWidth = 6000;
-    StubImage.nextNaturalHeight = 6000;
+    imageMock.loadImageElement.mockResolvedValue(mockLoadedImage(6000, 6000));
 
     render(<AvatarEditDialog open onOpenChange={vi.fn()} />);
     const input = document.querySelector('input[type="file"]');
