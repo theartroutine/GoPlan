@@ -22,7 +22,7 @@ describe("GET /api/location-search/suggest", () => {
     vi.stubGlobal("fetch", vi.fn());
     process.env.ENABLE_HERE_LOCATION_SEARCH = "true";
     process.env.HERE_API_KEY = "demo-key";
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     protectedUpstreamMock.buildProtectedResponse.mockImplementation(
       (data: unknown, refreshedAccessToken?: string, status = 200) => {
         const response = Response.json(data, { status });

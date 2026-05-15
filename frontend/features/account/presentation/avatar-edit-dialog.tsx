@@ -43,10 +43,13 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   const handleFile = useCallback((file: File) => {
+    if (fileUrl) URL.revokeObjectURL(fileUrl);
+    setLocalError(null);
     setFileUrl(URL.createObjectURL(file));
-  }, []);
+  }, [fileUrl]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -56,6 +59,7 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
         setCrop({ x: 0, y: 0 });
         setZoom(1);
         setCroppedAreaPixels(null);
+        setLocalError(null);
       }
       onOpenChange(next);
     },
@@ -68,11 +72,18 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
 
   async function handleSave() {
     if (!fileUrl || !croppedAreaPixels) return;
-    const blob = await renderCroppedWebp(fileUrl, croppedAreaPixels);
-    const ok = await upload(blob);
-    if (ok) {
-      toast.success("Avatar updated.");
-      handleOpenChange(false);
+    setLocalError(null);
+    try {
+      const blob = await renderCroppedWebp(fileUrl, croppedAreaPixels);
+      const ok = await upload(blob);
+      if (ok) {
+        toast.success("Avatar updated.");
+        handleOpenChange(false);
+      }
+    } catch (err) {
+      setLocalError(
+        err instanceof Error ? err.message : "Could not prepare avatar image.",
+      );
     }
   }
 
@@ -117,7 +128,11 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
               onChange={(e) => setZoom(parseFloat(e.target.value))}
               className="w-full"
             />
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {(localError || error) && (
+              <p className="text-xs text-destructive" role="alert">
+                {localError ?? error}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={uploading}>
                 Cancel

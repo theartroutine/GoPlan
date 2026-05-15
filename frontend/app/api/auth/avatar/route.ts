@@ -50,7 +50,7 @@ async function callAvatarUpstream(
   method: "PATCH" | "DELETE",
   bearer: string,
   body?: BodyInit,
-): Promise<{ data: unknown; status: number }> {
+): Promise<{ data: unknown; status: number; headers?: Headers }> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/auth/avatar`, {
       method,
@@ -64,7 +64,7 @@ async function callAvatarUpstream(
     } catch {
       data = { detail: text || "Avatar request failed." };
     }
-    return { data, status: res.status };
+    return { data, status: res.status, headers: res.headers };
   } catch {
     return {
       data: { detail: "Avatar service unavailable." },
@@ -74,10 +74,14 @@ async function callAvatarUpstream(
 }
 
 function finalize(
-  result: { data: unknown; status: number },
+  result: { data: unknown; status: number; headers?: Headers },
   refreshedAccessToken: string | null,
 ): NextResponse {
   const response = NextResponse.json(result.data, { status: result.status });
+  const retryAfter = result.headers?.get("Retry-After");
+  if (retryAfter) {
+    response.headers.set("Retry-After", retryAfter);
+  }
   if (refreshedAccessToken) {
     response.headers.set("X-Access-Token", refreshedAccessToken);
     setNoStoreHeaders(response);

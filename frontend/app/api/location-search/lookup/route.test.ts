@@ -22,7 +22,7 @@ describe("GET /api/location-search/lookup", () => {
     vi.stubGlobal("fetch", vi.fn());
     process.env.ENABLE_HERE_LOCATION_SEARCH = "true";
     process.env.HERE_API_KEY = "demo-key";
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
   });
 
   it("rejects requests when session validation fails", async () => {

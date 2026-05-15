@@ -987,6 +987,31 @@ class AvatarServiceTests(TestCase):
         self.assertTrue(bool(result.avatar))
         self.assertTrue(result.avatar.name.startswith("avatars/"))
 
+    def test_update_avatar_reencodes_to_clean_square_webp(self):
+        upload = _make_image_upload(format="PNG", size=(900, 600))
+        result = update_avatar(self.user, upload)
+
+        self.assertTrue(result.avatar.name.endswith(".webp"))
+        with PILImage.open(result.avatar.path) as saved:
+            self.assertEqual(saved.format, "WEBP")
+            self.assertEqual(saved.size, (512, 512))
+
+    def test_update_avatar_strips_exif_metadata(self):
+        exif = PILImage.Exif()
+        exif[0x010E] = "sensitive-description"
+        buf = io.BytesIO()
+        PILImage.new("RGB", (512, 512), "blue").save(buf, format="JPEG", exif=exif)
+        upload = _make_image_upload(
+            format="JPEG",
+            filename="avatar.jpg",
+            content=buf.getvalue(),
+        )
+
+        result = update_avatar(self.user, upload)
+
+        with PILImage.open(result.avatar.path) as saved:
+            self.assertEqual(dict(saved.getexif()), {})
+
     def test_update_avatar_rejects_oversize_bytes(self):
         big_content = b"\xff\xd8\xff" + b"A" * (MAX_AVATAR_BYTES + 1)
         upload = SimpleUploadedFile("big.jpg", big_content, content_type="image/jpeg")

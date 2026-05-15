@@ -6,7 +6,7 @@ import {
   resolveWebSocketBaseUrl,
 } from "@/features/realtime/infrastructure/ws-manager";
 
-type TestableWebSocketManager = WebSocketManager & {
+type WebSocketManagerEmitter = {
   emit: (type: string, data: WsMessage) => void;
 };
 
@@ -30,7 +30,7 @@ describe("WebSocketManager", () => {
 
   it("keeps message listeners registered after disconnect", () => {
     const manager = new WebSocketManager();
-    const testManager = manager as TestableWebSocketManager;
+    const testManager = manager as unknown as WebSocketManagerEmitter;
     const listener = vi.fn();
     const message: WsMessage = { type: "notification", event: "read_all" };
 

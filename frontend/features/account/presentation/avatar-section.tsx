@@ -12,7 +12,7 @@ import { UserAvatar } from "@/shared/ui/user-avatar";
 
 export function AvatarSection() {
   const { user } = useAuth();
-  const { remove, uploading } = useUpdateAvatar();
+  const { remove, uploading, error } = useUpdateAvatar();
   const [editing, setEditing] = useState(false);
 
   if (!user) return null;
@@ -58,6 +58,11 @@ export function AvatarSection() {
               </Button>
             )}
           </div>
+          {error && (
+            <p className="mt-2 text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          )}
         </div>
       </div>
 

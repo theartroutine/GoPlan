@@ -5,15 +5,15 @@ import io
 import secrets
 import string
 import uuid
-from pathlib import Path
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.template.loader import render_to_string
@@ -61,6 +61,8 @@ class IdentifyCodeGenerationError(Exception):
 ALLOWED_AVATAR_FORMATS = {"JPEG", "PNG", "WEBP"}
 MAX_AVATAR_BYTES = 500 * 1024
 MAX_AVATAR_DIMENSION = 1024
+AVATAR_OUTPUT_SIZE = 512
+AVATAR_OUTPUT_QUALITIES = (85, 75, 65)
 AVATAR_MAGIC_SIGNATURES = (
     b"\xff\xd8\xff",          # JPEG
     b"\x89PNG\r\n\x1a\n",     # PNG
@@ -299,6 +301,59 @@ def _check_avatar_magic_bytes(image_file) -> bool:
     return False
 
 
+def _image_has_alpha(image: Image.Image) -> bool:
+    return "A" in image.getbands() or "transparency" in image.info
+
+
+def _render_clean_avatar_webp(image_file) -> ContentFile:
+    """
+    Re-encode every accepted avatar server-side.
+
+    This strips EXIF/GPS metadata, normalizes orientation, center-crops to a
+    stable square, and avoids trusting client-side crop/encode behavior.
+    """
+    image_file.seek(0)
+    try:
+        with Image.open(image_file) as source:
+            if getattr(source, "is_animated", False):
+                raise AvatarValidationError(
+                    "AVATAR_INVALID_FORMAT",
+                    "Animated avatar images are not supported.",
+                )
+
+            normalized = ImageOps.exif_transpose(source)
+            target_mode = "RGBA" if _image_has_alpha(normalized) else "RGB"
+            if normalized.mode != target_mode:
+                normalized = normalized.convert(target_mode)
+
+            clean = ImageOps.fit(
+                normalized,
+                (AVATAR_OUTPUT_SIZE, AVATAR_OUTPUT_SIZE),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5),
+            )
+            for quality in AVATAR_OUTPUT_QUALITIES:
+                output = io.BytesIO()
+                clean.save(output, format="WEBP", quality=quality, method=6)
+                content = output.getvalue()
+                if len(content) <= MAX_AVATAR_BYTES:
+                    return ContentFile(content)
+    except AvatarValidationError:
+        raise
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise AvatarValidationError(
+            "AVATAR_INVALID_FORMAT",
+            "Image could not be parsed safely.",
+        ) from exc
+    finally:
+        image_file.seek(0)
+
+    raise AvatarValidationError(
+        "AVATAR_TOO_LARGE",
+        f"Avatar file exceeds {MAX_AVATAR_BYTES // 1024}KB limit after processing.",
+    )
+
+
 def update_avatar(user, image_file):
     """
     Validates an uploaded image and stores it as the user's avatar.
@@ -347,10 +402,10 @@ def update_avatar(user, image_file):
                 "AVATAR_DIMENSIONS_TOO_LARGE",
                 f"Image dimensions exceed {MAX_AVATAR_DIMENSION}x{MAX_AVATAR_DIMENSION}.",
             )
-        ext = probed.format.lower().replace("jpeg", "jpg")
+        probed.load()
 
-    image_file.seek(0)
-    new_name = f"{uuid.uuid4().hex}.{ext}"
+    clean_avatar = _render_clean_avatar_webp(image_file)
+    new_name = f"{uuid.uuid4().hex}.webp"
 
     old_name = None
     old_storage = None
@@ -364,7 +419,7 @@ def update_avatar(user, image_file):
             old_name = locked_user.avatar.name
             old_storage = locked_user.avatar.storage
 
-        locked_user.avatar.save(new_name, image_file, save=False)
+        locked_user.avatar.save(new_name, clean_avatar, save=False)
         locked_user.save(update_fields=["avatar", "updated_at"])
 
     user.avatar = locked_user.avatar.name

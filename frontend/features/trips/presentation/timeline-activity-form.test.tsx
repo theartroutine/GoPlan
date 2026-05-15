@@ -27,7 +27,12 @@ const CUSTOM_TYPES: TimelineCustomTypeMeta[] = [];
 const MEMBERS: TripMemberItem[] = [
   {
     membership_id: "m1",
-    user: { id: "user-1", display_name: "Linh", identify_tag: "linh#ABC123" },
+    user: {
+      id: "user-1",
+      display_name: "Linh",
+      identify_tag: "linh#ABC123",
+      avatar_url: null,
+    },
     role: "MEMBER",
     joined_at: "2026-04-01",
   },
