@@ -230,6 +230,8 @@ class SearchTests(APITestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["display_name"], "Test User")
         self.assertEqual(result["identify_tag"], "bob#DEF456")
+        self.assertIn("avatar_url", result)
+        self.assertIsNone(result["avatar_url"])
         self.assertNotIn("email", result)
 
     def test_search_no_match(self):

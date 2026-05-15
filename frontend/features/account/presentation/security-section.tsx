@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
@@ -48,10 +48,10 @@ export function SecuritySection() {
     handleSubmit,
     formState: { errors },
     reset,
-    watch,
+    control,
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
-  const newPassword = watch("new_password") ?? "";
+  const newPassword = useWatch({ control, name: "new_password" }) ?? "";
   const strength = scoreStrength(newPassword);
 
   async function onSubmit(values: FormValues) {
@@ -68,14 +68,31 @@ export function SecuritySection() {
   async function sendResetLink() {
     if (!user) return;
     try {
-      await fetch("/api/auth/password-reset/request", {
+      const response = await fetch("/api/auth/password-reset/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: user.email }),
       });
+      if (!response.ok) {
+        let detail = "Could not send reset link.";
+        try {
+          const payload: unknown = await response.json();
+          if (
+            typeof payload === "object" &&
+            payload !== null &&
+            !Array.isArray(payload) &&
+            typeof (payload as { detail?: unknown }).detail === "string"
+          ) {
+            detail = (payload as { detail: string }).detail;
+          }
+        } catch {
+          // Keep the generic message when the server does not return JSON.
+        }
+        throw new Error(detail);
+      }
       toast.success(`Reset link sent to ${user.email}.`);
-    } catch {
-      toast.error("Could not send reset link.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send reset link.");
     }
   }
 

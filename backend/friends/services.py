@@ -130,6 +130,7 @@ def search_user_by_identify_tag(query, requester):
         "id": str(user.id),
         "display_name": user.display_name,
         "identify_tag": user.identify_tag,
+        "avatar_url": user.avatar.url if user.avatar else None,
     }
 
 

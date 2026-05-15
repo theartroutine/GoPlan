@@ -86,6 +86,14 @@ class PasswordChangeError(Exception):
         self.detail = detail
 
 
+def _delete_storage_file(storage, name: str) -> None:
+    try:
+        storage.delete(name)
+    except Exception:
+        # Orphan file; intentional best-effort cleanup.
+        pass
+
+
 def generate_identify_code() -> str:
     return "".join(secrets.choice(IDENTIFY_CODE_ALPHABET) for _ in range(IDENTIFY_CODE_LENGTH))
 
@@ -344,25 +352,25 @@ def update_avatar(user, image_file):
     image_file.seek(0)
     new_name = f"{uuid.uuid4().hex}.{ext}"
 
-    # FieldFile.save() mutates the same FieldFile instance (rebinds .name to the
-    # new path). Capture the previous name and storage BEFORE saving so we can
-    # delete the old file without touching the newly-written one.
-    if user.avatar:
-        old_name = user.avatar.name
-        old_storage = user.avatar.storage
-    else:
-        old_name = None
-        old_storage = None
+    old_name = None
+    old_storage = None
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
 
-    user.avatar.save(new_name, image_file, save=False)
-    user.save(update_fields=["avatar", "updated_at"])
+        # FieldFile.save() mutates the same FieldFile instance (rebinds .name to
+        # the new path). Capture the previous name and storage BEFORE saving so
+        # we can delete the old file without touching the newly-written one.
+        if locked_user.avatar:
+            old_name = locked_user.avatar.name
+            old_storage = locked_user.avatar.storage
 
+        locked_user.avatar.save(new_name, image_file, save=False)
+        locked_user.save(update_fields=["avatar", "updated_at"])
+
+    user.avatar = locked_user.avatar.name
+    user.updated_at = locked_user.updated_at
     if old_name and old_storage is not None:
-        try:
-            old_storage.delete(old_name)
-        except Exception:
-            # Orphan file; intentional best-effort cleanup.
-            pass
+        _delete_storage_file(old_storage, old_name)
 
     return user
 
@@ -372,18 +380,24 @@ def delete_avatar(user):
     Idempotent. Removes the avatar file from storage and clears the field.
     No-op (returns user untouched) if user has no avatar.
     """
-    if not user.avatar:
-        return user
+    old_name = None
+    old_storage = None
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
+        if not locked_user.avatar:
+            user.avatar = None
+            user.updated_at = locked_user.updated_at
+            return user
 
-    old_name = user.avatar.name
-    old_storage = user.avatar.storage
+        old_name = locked_user.avatar.name
+        old_storage = locked_user.avatar.storage
+        locked_user.avatar = None
+        locked_user.save(update_fields=["avatar", "updated_at"])
+
     user.avatar = None
-    user.save(update_fields=["avatar", "updated_at"])
+    user.updated_at = locked_user.updated_at
     if old_name and old_storage is not None:
-        try:
-            old_storage.delete(old_name)
-        except Exception:
-            pass
+        _delete_storage_file(old_storage, old_name)
     return user
 
 

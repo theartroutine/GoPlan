@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Lock } from "lucide-react";
 import { toast } from "sonner";
@@ -12,9 +12,35 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 
+const NAME_MAX_LENGTH = 15;
+const HUMAN_NAME_PATTERN = /^[\p{L}\p{M}'-]+$/u;
+const ADJACENT_SEPARATOR_PATTERN = /[-']{2,}/;
+
+function humanNameSchema(label: string) {
+  return z
+    .string()
+    .trim()
+    .min(1, "Required")
+    .max(NAME_MAX_LENGTH, `${label} must be at most ${NAME_MAX_LENGTH} characters.`)
+    .refine((value) => !/\s/.test(value), `${label} must be a single word.`)
+    .refine(
+      (value) => !value.startsWith("-") && !value.startsWith("'") &&
+        !value.endsWith("-") && !value.endsWith("'"),
+      `${label} cannot start or end with a separator.`,
+    )
+    .refine(
+      (value) => !ADJACENT_SEPARATOR_PATTERN.test(value),
+      `${label} cannot contain adjacent separators.`,
+    )
+    .refine(
+      (value) => HUMAN_NAME_PATTERN.test(value),
+      `${label} contains invalid characters.`,
+    );
+}
+
 const schema = z.object({
-  first_name: z.string().trim().min(1, "Required").max(80, "Too long"),
-  last_name: z.string().trim().min(1, "Required").max(80, "Too long"),
+  first_name: humanNameSchema("First name"),
+  last_name: humanNameSchema("Last name"),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -25,8 +51,8 @@ export function PersonalInfoSection() {
     register,
     handleSubmit,
     formState: { errors, isDirty },
-    watch,
     reset,
+    control,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -35,10 +61,13 @@ export function PersonalInfoSection() {
     },
   });
 
+  const firstName = useWatch({ control, name: "first_name" });
+  const lastName = useWatch({ control, name: "last_name" });
+
   if (!user) return null;
 
   const previewName =
-    [watch("first_name")?.trim(), watch("last_name")?.trim()]
+    [firstName?.trim(), lastName?.trim()]
       .filter(Boolean)
       .join(" ") || "—";
 

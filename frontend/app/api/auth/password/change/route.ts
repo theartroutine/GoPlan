@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { protectedUpstreamCall } from "@/app/api/_lib/protected-upstream";
 import {
   clearRefreshAuthErrorMarker,
   setNoStoreHeaders,
@@ -8,22 +9,11 @@ import {
 } from "@/app/api/auth/_lib/session-state";
 import {
   asObject,
-  callAuthUpstream,
-  extractDetail,
   extractUserPayload,
   getString,
-  normalizeErrorPayload,
 } from "@/app/api/auth/_lib/upstream";
 
 export async function POST(request: NextRequest) {
-  const authorization = request.headers.get("Authorization");
-  if (!authorization) {
-    return NextResponse.json(
-      { detail: "Authorization header is required." },
-      { status: 401 },
-    );
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -31,27 +21,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ detail: "Invalid request payload." }, { status: 400 });
   }
 
-  const upstream = await callAuthUpstream("/api/auth/password/change", {
+  const upstream = await protectedUpstreamCall({
+    path: "/api/auth/password/change",
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: authorization,
-    },
     body: JSON.stringify(body),
+    authorization: request.headers.get("Authorization"),
   });
 
-  if (upstream.kind === "network_error") {
-    return NextResponse.json({ detail: upstream.detail }, { status: 503 });
-  }
-
   if (!upstream.ok) {
-    return NextResponse.json(
-      normalizeErrorPayload(
-        upstream.data,
-        extractDetail(upstream.data, "Password change failed."),
-      ),
-      { status: upstream.status },
-    );
+    return upstream.response;
   }
 
   const payload = asObject(upstream.data);
