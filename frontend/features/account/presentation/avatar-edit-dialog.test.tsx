@@ -29,7 +29,12 @@ vi.mock("react-easy-crop", () => ({
 }));
 
 class StubImage {
+  static nextNaturalWidth = 512;
+  static nextNaturalHeight = 512;
+
   crossOrigin = "";
+  naturalWidth = StubImage.nextNaturalWidth;
+  naturalHeight = StubImage.nextNaturalHeight;
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
 
@@ -48,6 +53,8 @@ describe("AvatarEditDialog", () => {
       uploading: false,
       error: null,
     });
+    StubImage.nextNaturalWidth = 512;
+    StubImage.nextNaturalHeight = 512;
     vi.stubGlobal("Image", StubImage);
     Object.defineProperty(URL, "createObjectURL", {
       configurable: true,
@@ -94,5 +101,36 @@ describe("AvatarEditDialog", () => {
       await screen.findByText("Canvas could not be encoded to WebP."),
     ).toBeInTheDocument();
     expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects source images above the avatar dimension limit before cropping", async () => {
+    StubImage.nextNaturalWidth = 6000;
+    StubImage.nextNaturalHeight = 6000;
+
+    render(<AvatarEditDialog open onOpenChange={vi.fn()} />);
+    const input = document.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("Avatar file input was not rendered.");
+    }
+
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["avatar"], "huge.png", { type: "image/png" })],
+      },
+    });
+
+    expect(
+      await screen.findByText("Avatar image must be at most 1024x1024 pixels."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("cropper")).not.toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("renders an accessible description for the avatar dialog", () => {
+    render(<AvatarEditDialog open onOpenChange={vi.fn()} />);
+
+    expect(
+      screen.getByText("Choose a JPEG, PNG, or WebP image, then crop it into a square avatar."),
+    ).toBeInTheDocument();
   });
 });

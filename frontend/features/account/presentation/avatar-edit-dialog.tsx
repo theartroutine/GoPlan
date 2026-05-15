@@ -7,7 +7,13 @@ import { toast } from "sonner";
 import { useUpdateAvatar } from "@/features/account/application/use-update-avatar";
 import { compressImageToWebP } from "@/shared/lib/image";
 import { Button } from "@/shared/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/dialog";
 
 type Props = {
   open: boolean;
@@ -15,6 +21,8 @@ type Props = {
 };
 
 const TARGET_PX = 512;
+const MAX_SOURCE_DIMENSION_PX = 1024;
+const ALLOWED_SOURCE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -45,10 +53,39 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const handleFile = useCallback((file: File) => {
+  const handleFile = useCallback(async (file: File) => {
     if (fileUrl) URL.revokeObjectURL(fileUrl);
+    setFileUrl(null);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
     setLocalError(null);
-    setFileUrl(URL.createObjectURL(file));
+
+    if (file.type && !ALLOWED_SOURCE_TYPES.has(file.type)) {
+      setLocalError("Selected file must be a JPEG, PNG, or WebP image.");
+      return;
+    }
+
+    const nextFileUrl = URL.createObjectURL(file);
+    try {
+      const image = await loadImage(nextFileUrl);
+      if (
+        image.naturalWidth > MAX_SOURCE_DIMENSION_PX ||
+        image.naturalHeight > MAX_SOURCE_DIMENSION_PX
+      ) {
+        URL.revokeObjectURL(nextFileUrl);
+        setLocalError(
+          `Avatar image must be at most ${MAX_SOURCE_DIMENSION_PX}x${MAX_SOURCE_DIMENSION_PX} pixels.`,
+        );
+        return;
+      }
+    } catch {
+      URL.revokeObjectURL(nextFileUrl);
+      setLocalError("Selected file could not be read as an image.");
+      return;
+    }
+
+    setFileUrl(nextFileUrl);
   }, [fileUrl]);
 
   const handleOpenChange = useCallback(
@@ -92,18 +129,31 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>Change avatar</DialogTitle>
+          <DialogDescription className="sr-only">
+            Choose a JPEG, PNG, or WebP image, then crop it into a square avatar.
+          </DialogDescription>
         </DialogHeader>
 
         {!fileUrl ? (
-          <label className="flex h-40 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border text-sm text-muted-foreground hover:border-primary">
-            Click to choose an image
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-            />
-          </label>
+          <>
+            <label className="flex h-40 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border text-sm text-muted-foreground hover:border-primary">
+              Click to choose an image
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleFile(file);
+                }}
+              />
+            </label>
+            {localError && (
+              <p className="text-xs text-destructive" role="alert">
+                {localError}
+              </p>
+            )}
+          </>
         ) : (
           <>
             <div className="relative h-72 w-full overflow-hidden rounded-lg bg-muted">

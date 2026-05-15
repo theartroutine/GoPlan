@@ -62,4 +62,25 @@ describe("PATCH /api/auth/avatar", () => {
       detail: "Request was throttled.",
     });
   });
+
+  it("does not relay non-JSON upstream error bodies to the browser", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response("<!doctype html><title>debug traceback</title>", {
+        status: 500,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+    const formData = new FormData();
+    formData.append("avatar", new File(["avatar"], "avatar.webp", { type: "image/webp" }));
+
+    const response = await PATCH({
+      headers: new Headers({ Authorization: "Bearer access-token" }),
+      formData: vi.fn().mockResolvedValue(formData),
+    } as never);
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      detail: "Avatar request failed.",
+    });
+  });
 });

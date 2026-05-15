@@ -68,6 +68,13 @@ AVATAR_MAGIC_SIGNATURES = (
     b"\x89PNG\r\n\x1a\n",     # PNG
     b"RIFF",                  # WebP (RIFF container — followed by 4 bytes size + "WEBP")
 )
+AVATAR_IMAGE_PARSE_ERRORS = (
+    UnidentifiedImageError,
+    OSError,
+    ValueError,
+    SyntaxError,
+    Image.DecompressionBombError,
+)
 
 
 class AvatarValidationError(Exception):
@@ -340,7 +347,7 @@ def _render_clean_avatar_webp(image_file) -> ContentFile:
                     return ContentFile(content)
     except AvatarValidationError:
         raise
-    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+    except AVATAR_IMAGE_PARSE_ERRORS as exc:
         raise AvatarValidationError(
             "AVATAR_INVALID_FORMAT",
             "Image could not be parsed safely.",
@@ -384,25 +391,33 @@ def update_avatar(user, image_file):
     try:
         with Image.open(image_file) as probe:
             probe.verify()
-    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+    except AVATAR_IMAGE_PARSE_ERRORS as exc:
         raise AvatarValidationError(
             "AVATAR_INVALID_FORMAT",
             "Image could not be parsed safely.",
         ) from exc
 
     image_file.seek(0)
-    with Image.open(image_file) as probed:
-        if probed.format not in ALLOWED_AVATAR_FORMATS:
-            raise AvatarValidationError(
-                "AVATAR_INVALID_FORMAT",
-                f"Unsupported image format: {probed.format}.",
-            )
-        if probed.width > MAX_AVATAR_DIMENSION or probed.height > MAX_AVATAR_DIMENSION:
-            raise AvatarValidationError(
-                "AVATAR_DIMENSIONS_TOO_LARGE",
-                f"Image dimensions exceed {MAX_AVATAR_DIMENSION}x{MAX_AVATAR_DIMENSION}.",
-            )
-        probed.load()
+    try:
+        with Image.open(image_file) as probed:
+            if probed.format not in ALLOWED_AVATAR_FORMATS:
+                raise AvatarValidationError(
+                    "AVATAR_INVALID_FORMAT",
+                    f"Unsupported image format: {probed.format}.",
+                )
+            if probed.width > MAX_AVATAR_DIMENSION or probed.height > MAX_AVATAR_DIMENSION:
+                raise AvatarValidationError(
+                    "AVATAR_DIMENSIONS_TOO_LARGE",
+                    f"Image dimensions exceed {MAX_AVATAR_DIMENSION}x{MAX_AVATAR_DIMENSION}.",
+                )
+            probed.load()
+    except AvatarValidationError:
+        raise
+    except AVATAR_IMAGE_PARSE_ERRORS as exc:
+        raise AvatarValidationError(
+            "AVATAR_INVALID_FORMAT",
+            "Image could not be parsed safely.",
+        ) from exc
 
     clean_avatar = _render_clean_avatar_webp(image_file)
     new_name = f"{uuid.uuid4().hex}.webp"

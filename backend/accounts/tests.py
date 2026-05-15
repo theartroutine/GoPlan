@@ -1025,6 +1025,21 @@ class AvatarServiceTests(TestCase):
             update_avatar(self.user, upload)
         self.assertEqual(ctx.exception.error_code, "AVATAR_INVALID_FORMAT")
 
+    def test_update_avatar_rejects_corrupt_png_with_valid_magic_bytes(self):
+        corrupt_png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00 \x00\x00\x00 "
+            b"\x08\x02\x00\x00\x00\xfc\x18\xed\xa3\x00\x00\x00.IDATx\x9c"
+            b"\xed\xcd1\x01\x00\x00\x08\x03\xa0\x9b\xdc\xe8Q\xc4\x0b\xa1"
+            b"\tbl\xbag@\x92$IIIIIIIIII\x92\xa4\x0e\x01n8\x02\x01\xe6"
+            b"\x00}H\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        upload = SimpleUploadedFile("broken.png", corrupt_png, content_type="image/png")
+
+        with self.assertRaises(AvatarValidationError) as ctx:
+            update_avatar(self.user, upload)
+
+        self.assertEqual(ctx.exception.error_code, "AVATAR_INVALID_FORMAT")
+
     def test_update_avatar_rejects_oversize_dimensions(self):
         upload = _make_image_upload(format="PNG", size=(2000, 2000))
         with self.assertRaises(AvatarValidationError) as ctx:

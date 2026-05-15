@@ -62,7 +62,7 @@ async function callAvatarUpstream(
     try {
       data = text ? JSON.parse(text) : {};
     } catch {
-      data = { detail: text || "Avatar request failed." };
+      data = { detail: "Avatar request failed." };
     }
     return { data, status: res.status, headers: res.headers };
   } catch {
