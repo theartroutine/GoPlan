@@ -194,6 +194,7 @@ REST_FRAMEWORK = {
         'friends_remove': '30/hour',
         'friends_search': '60/hour',
         'media_upload': '30/hour',
+        'public_media': '600/hour',
         'trips_list_create': '60/hour',
         'trips_detail_update': '120/hour',
         'trips_send_invitations': '10/hour',

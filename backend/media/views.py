@@ -84,6 +84,7 @@ class TripCoverUploadAPIView(APIView):
 class PublicMediaFileAPIView(APIView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
+    throttle_scope = "public_media"
 
     def get(self, request, file_path: str):
         try:
