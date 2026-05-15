@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { toast } from "sonner";
 
@@ -34,6 +34,15 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  // Render+upload spans an async gap before `uploading` flips on; this ref
+  // blocks re-entry during that window so a double-click can't fire two encodes.
+  const submittingRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (fileUrl) URL.revokeObjectURL(fileUrl);
+    };
+  }, [fileUrl]);
 
   const handleFile = useCallback(async (file: File) => {
     if (fileUrl) URL.revokeObjectURL(fileUrl);
@@ -91,6 +100,8 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
 
   async function handleSave() {
     if (!fileUrl || !croppedAreaPixels) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLocalError(null);
     try {
       const blob = await renderCroppedImageToWebP(fileUrl, croppedAreaPixels, {
@@ -106,6 +117,8 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
       setLocalError(
         err instanceof Error ? err.message : "Could not prepare avatar image.",
       );
+    } finally {
+      submittingRef.current = false;
     }
   }
 

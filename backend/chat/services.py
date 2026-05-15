@@ -14,6 +14,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from accounts.services import resolve_avatar_url
 from ai.agent.drafts import build_action_draft_payload
 from ai.services import (
     AIInvalidPromptError,
@@ -264,8 +265,8 @@ def build_chat_message_payload(message: ChatMessage, *, viewer=None) -> dict:
             "display_name": message.sender_display_name_snapshot,
             "identify_tag": message.sender_identify_tag_snapshot,
             "avatar_url": (
-                message.sender.avatar.url
-                if message.sender_id and message.sender and message.sender.avatar
+                resolve_avatar_url(message.sender)
+                if message.sender_id and message.sender
                 else None
             ),
         },

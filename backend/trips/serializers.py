@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from accounts.services import resolve_avatar_url
 from trips.models import (
     MemberStatus,
     TimelineActivity,
@@ -177,7 +178,7 @@ class TripMemberSerializer(serializers.ModelSerializer):
             "id": str(obj.user.id),
             "display_name": obj.user.display_name,
             "identify_tag": obj.user.identify_tag,
-            "avatar_url": obj.user.avatar.url if obj.user.avatar else None,
+            "avatar_url": resolve_avatar_url(obj.user),
         }
 
 

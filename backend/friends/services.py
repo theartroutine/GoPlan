@@ -3,6 +3,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from accounts.services import resolve_avatar_url
 from friends.models import FriendRequest, FriendRequestStatus, Friendship
 from friends.validators import parse_identify_tag
 from notifications.models import NotificationType
@@ -130,7 +131,7 @@ def search_user_by_identify_tag(query, requester):
         "id": str(user.id),
         "display_name": user.display_name,
         "identify_tag": user.identify_tag,
-        "avatar_url": user.avatar.url if user.avatar else None,
+        "avatar_url": resolve_avatar_url(user),
     }
 
 

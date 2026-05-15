@@ -91,7 +91,8 @@ function finalize(
 
 export async function PATCH(request: NextRequest) {
   const jar = await cookies();
-  const auth = await resolveBearer(jar, request.headers.get("Authorization"));
+  const incomingAuth = request.headers.get("Authorization");
+  const auth = await resolveBearer(jar, incomingAuth);
   if (!auth.ok) return auth.response;
 
   let formData: FormData;
@@ -111,7 +112,10 @@ export async function PATCH(request: NextRequest) {
   let result = await callAvatarUpstream("PATCH", auth.bearer, djangoForm);
   let refreshedAccessToken = auth.refreshedAccessToken;
 
-  if (result.status === 401) {
+  // Only retry when the first call used the caller-provided bearer; if we
+  // already refreshed and still got 401, a second refresh would consume another
+  // rotation slot without changing the outcome.
+  if (result.status === 401 && incomingAuth && refreshedAccessToken === null) {
     const retry = await resolveBearer(jar, null);
     if (!retry.ok) return retry.response;
     refreshedAccessToken = retry.refreshedAccessToken ?? refreshedAccessToken;
@@ -125,13 +129,14 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const jar = await cookies();
-  const auth = await resolveBearer(jar, request.headers.get("Authorization"));
+  const incomingAuth = request.headers.get("Authorization");
+  const auth = await resolveBearer(jar, incomingAuth);
   if (!auth.ok) return auth.response;
 
   let result = await callAvatarUpstream("DELETE", auth.bearer);
   let refreshedAccessToken = auth.refreshedAccessToken;
 
-  if (result.status === 401) {
+  if (result.status === 401 && incomingAuth && refreshedAccessToken === null) {
     const retry = await resolveBearer(jar, null);
     if (!retry.ok) return retry.response;
     refreshedAccessToken = retry.refreshedAccessToken ?? refreshedAccessToken;

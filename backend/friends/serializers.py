@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from accounts.services import resolve_avatar_url
 from friends.validators import normalize_identify_tag
 
 
@@ -12,7 +13,7 @@ def _build_friend_user_payload(user):
         "id": str(user.id),
         "display_name": user.display_name,
         "identify_tag": user.identify_tag,
-        "avatar_url": user.avatar.url if user.avatar else None,
+        "avatar_url": resolve_avatar_url(user),
     }
 
 

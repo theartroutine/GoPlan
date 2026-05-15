@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import secrets
 import string
 import uuid
@@ -26,6 +27,7 @@ from accounts.models import EmailVerificationToken
 from accounts.tokens import RefreshToken
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 IDENTIFY_CODE_ALPHABET = string.ascii_uppercase + string.digits
 IDENTIFY_CODE_LENGTH = 6
 MAX_IDENTIFY_CODE_GENERATION_ATTEMPTS = 20
@@ -63,11 +65,6 @@ MAX_AVATAR_BYTES = 500 * 1024
 MAX_AVATAR_DIMENSION = 1024
 AVATAR_OUTPUT_SIZE = 512
 AVATAR_OUTPUT_QUALITIES = (85, 75, 65)
-AVATAR_MAGIC_SIGNATURES = (
-    b"\xff\xd8\xff",          # JPEG
-    b"\x89PNG\r\n\x1a\n",     # PNG
-    b"RIFF",                  # WebP (RIFF container — followed by 4 bytes size + "WEBP")
-)
 AVATAR_IMAGE_PARSE_ERRORS = (
     UnidentifiedImageError,
     OSError,
@@ -99,8 +96,13 @@ def _delete_storage_file(storage, name: str) -> None:
     try:
         storage.delete(name)
     except Exception:
-        # Orphan file; intentional best-effort cleanup.
-        pass
+        # Best-effort cleanup; the new avatar is already saved, so an orphan
+        # file is a leak, not a correctness issue. Log so it stays diagnosable.
+        logger.warning("Failed to delete avatar storage file %s", name, exc_info=True)
+
+
+def resolve_avatar_url(user) -> str | None:
+    return user.avatar.url if user.avatar else None
 
 
 def generate_identify_code() -> str:
@@ -180,7 +182,7 @@ def build_user_payload(user: User) -> dict:
         "identify_name": user.identify_name,
         "identify_code": user.identify_code,
         "identify_tag": user.identify_tag,
-        "avatar_url": user.avatar.url if user.avatar else None,
+        "avatar_url": resolve_avatar_url(user),
         "email_verified": user.email_verified,
         "is_profile_completed": user.is_profile_completed,
         "requires_profile_setup": user.requires_profile_setup,
@@ -484,6 +486,8 @@ def change_password_with_current(user, current_password: str, new_password: str)
     Tokens are minted *after* auth_version is incremented so they encode the new
     version and remain valid; every previously issued token for this user (other
     devices, other tabs) now fails the auth_version check in authentication.py.
+    Outstanding refresh tokens are also blacklisted explicitly to keep
+    `token_blacklist` rows in sync with the version bump (mirrors reset path).
     """
     with transaction.atomic():
         locked = User.objects.select_for_update().get(pk=user.pk)
@@ -511,6 +515,7 @@ def change_password_with_current(user, current_password: str, new_password: str)
         locked.set_password(new_password)
         locked.auth_version = (locked.auth_version or 0) + 1
         locked.save(update_fields=["password", "auth_version", "updated_at"])
+        blacklist_all_user_refresh_tokens(locked)
 
         refresh = RefreshToken.for_user(locked)
         return locked, str(refresh.access_token), str(refresh)
