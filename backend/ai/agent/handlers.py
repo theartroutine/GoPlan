@@ -22,6 +22,15 @@ def _to_payload(args, extra: dict | None = None) -> dict:
     return payload
 
 
+def _to_activity_data_payload(args, *, id_field: str) -> dict:
+    payload = _to_payload(args)
+    target_id = payload.pop(id_field)
+    return {
+        id_field: target_id,
+        "data": payload,
+    }
+
+
 def _create(*, trip, interaction, action_type: str, args) -> HandlerResult:
     draft = create_action_draft(
         trip=trip,
@@ -33,11 +42,23 @@ def _create(*, trip, interaction, action_type: str, args) -> HandlerResult:
 
 
 def create_timeline_activity(*, trip, interaction, actor, args: schemas.CreateTimelineActivityArgs):
-    return _create(trip=trip, interaction=interaction, action_type="timeline.activity.create", args=args)
+    draft = create_action_draft(
+        trip=trip,
+        interaction=interaction,
+        action_type="timeline.activity.create",
+        payload=_to_activity_data_payload(args, id_field="section_id"),
+    )
+    return HandlerResult(draft=draft)
 
 
 def update_timeline_activity(*, trip, interaction, actor, args: schemas.UpdateTimelineActivityArgs):
-    return _create(trip=trip, interaction=interaction, action_type="timeline.activity.update", args=args)
+    draft = create_action_draft(
+        trip=trip,
+        interaction=interaction,
+        action_type="timeline.activity.update",
+        payload=_to_activity_data_payload(args, id_field="activity_id"),
+    )
+    return HandlerResult(draft=draft)
 
 
 def delete_timeline_activity(*, trip, interaction, actor, args: schemas.DeleteTimelineActivityArgs):

@@ -83,7 +83,46 @@ class ToolHandlerTests(TestCase):
         )
         self.assertIsInstance(result.draft, AIActionDraft)
         self.assertEqual(result.draft.action_type, "timeline.activity.create")
+        self.assertEqual(
+            result.draft.payload,
+            {
+                "section_id": str(section_id),
+                "data": {
+                    "title": "X",
+                    "system_type": "SIGHTSEEING",
+                    "time_mode": "ANCHOR",
+                    "assignee_scope": "GROUP",
+                },
+            },
+        )
         self.assertEqual(result.draft.display["icon"], "activity")
+
+    def test_update_timeline_activity_persists_nested_patch_data(self):
+        from ai.agent import handlers, schemas
+        from ai.models import AIActionDraft
+
+        activity_id = uuid4()
+        result = handlers.update_timeline_activity(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.UpdateTimelineActivityArgs(
+                activity_id=activity_id,
+                title="Updated stop",
+            ),
+        )
+
+        self.assertIsInstance(result.draft, AIActionDraft)
+        self.assertEqual(result.draft.action_type, "timeline.activity.update")
+        self.assertEqual(
+            result.draft.payload,
+            {
+                "activity_id": str(activity_id),
+                "data": {
+                    "title": "Updated stop",
+                },
+            },
+        )
 
     def test_respond_to_user_returns_message_without_draft(self):
         from ai.agent import handlers, schemas
