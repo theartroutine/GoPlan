@@ -109,3 +109,63 @@ def complete_goplan_ai_agent_prompt(prompt: str) -> DeepSeekResult:
             "message and drafts. Do not wrap the JSON in Markdown fences."
         ),
     )
+
+
+@dataclass(frozen=True)
+class ToolCallParsed:
+    id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass(frozen=True)
+class DeepSeekToolResult:
+    text: str | None
+    tool_calls: list[ToolCallParsed]
+    usage: DeepSeekUsage
+    finish_reason: str | None
+
+
+def complete_with_tools(*, messages: list[dict], tools: list[dict]) -> DeepSeekToolResult:
+    if not settings.DEEPSEEK_API_KEY:
+        raise DeepSeekProviderError(AIInteractionErrorCode.CONFIG_MISSING)
+    client = OpenAI(
+        api_key=settings.DEEPSEEK_API_KEY,
+        base_url=settings.DEEPSEEK_BASE_URL,
+        timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
+    )
+    try:
+        response = client.chat.completions.create(
+            model=settings.DEEPSEEK_MODEL,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            stream=False,
+            max_tokens=settings.DEEPSEEK_MAX_OUTPUT_TOKENS,
+        )
+    except APITimeoutError as exc:
+        raise DeepSeekProviderError(AIInteractionErrorCode.TIMEOUT) from exc
+    except APIStatusError as exc:
+        raise DeepSeekProviderError(_map_status_error(exc)) from exc
+    except APIConnectionError as exc:
+        raise DeepSeekProviderError(AIInteractionErrorCode.PROVIDER_UNAVAILABLE) from exc
+
+    choice = response.choices[0] if response.choices else None
+    if choice is None:
+        raise DeepSeekProviderError(AIInteractionErrorCode.PROVIDER_BAD_RESPONSE)
+    msg = choice.message
+    tool_calls = [
+        ToolCallParsed(id=tc.id, name=tc.function.name, arguments_json=tc.function.arguments)
+        for tc in (msg.tool_calls or [])
+    ]
+    usage = getattr(response, "usage", None)
+    return DeepSeekToolResult(
+        text=(msg.content or None),
+        tool_calls=tool_calls,
+        usage=DeepSeekUsage(
+            input_tokens=getattr(usage, "prompt_tokens", None),
+            output_tokens=getattr(usage, "completion_tokens", None),
+            total_tokens=getattr(usage, "total_tokens", None),
+        ),
+        finish_reason=choice.finish_reason,
+    )
