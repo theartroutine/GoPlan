@@ -15,6 +15,7 @@ export type AccountErrorCode =
   | "AVATAR_TOO_LARGE"
   | "AVATAR_INVALID_FORMAT"
   | "AVATAR_DIMENSIONS_TOO_LARGE"
+  | "AVATAR_STORAGE_DELETE_FAILED"
   | "THROTTLED";
 
 export type AccountErrorBody = {

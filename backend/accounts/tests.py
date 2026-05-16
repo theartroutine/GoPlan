@@ -956,6 +956,7 @@ from django.test import TestCase
 from PIL import Image as PILImage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from accounts.services import (
+    AvatarStorageError,
     AvatarValidationError,
     update_avatar,
     delete_avatar,
@@ -1060,6 +1061,23 @@ class AvatarServiceTests(TestCase):
         self.assertFalse(os.path.exists(old_path), "Old avatar file should be deleted from storage")
         self.assertTrue(os.path.exists(new_path))
 
+    def test_update_avatar_storage_delete_failure_keeps_old_avatar(self):
+        update_avatar(self.user, _make_image_upload(format="JPEG"))
+        old_name = self.user.avatar.name
+
+        with patch(
+            "accounts.services._delete_storage_file_strict",
+            side_effect=AvatarStorageError(
+                "AVATAR_STORAGE_DELETE_FAILED",
+                "Could not update avatar storage safely. Please try again.",
+            ),
+        ):
+            with self.assertRaises(AvatarStorageError):
+                update_avatar(self.user, _make_image_upload(format="WEBP"))
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, old_name)
+
     def test_delete_avatar_after_upload_clears_field_and_file(self):
         update_avatar(self.user, _make_image_upload())
         path = self.user.avatar.path
@@ -1067,6 +1085,23 @@ class AvatarServiceTests(TestCase):
         import os
         self.assertFalse(bool(self.user.avatar))
         self.assertFalse(os.path.exists(path))
+
+    def test_delete_avatar_storage_delete_failure_keeps_avatar(self):
+        update_avatar(self.user, _make_image_upload())
+        old_name = self.user.avatar.name
+
+        with patch(
+            "accounts.services._delete_storage_file_strict",
+            side_effect=AvatarStorageError(
+                "AVATAR_STORAGE_DELETE_FAILED",
+                "Could not update avatar storage safely. Please try again.",
+            ),
+        ):
+            with self.assertRaises(AvatarStorageError):
+                delete_avatar(self.user)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, old_name)
 
     def test_delete_avatar_idempotent_on_user_without_avatar(self):
         # Should not raise even if avatar field is empty.
@@ -1186,6 +1221,48 @@ class AvatarAPITests(APITestCase):
         response = self.client.delete(self.URL)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["user"]["avatar_url"])
+
+    def test_patch_storage_delete_failure_returns_error_and_keeps_old_avatar(self):
+        self.client.patch(self.URL, {"avatar": self._upload_image()}, format="multipart")
+        self.user.refresh_from_db()
+        old_name = self.user.avatar.name
+
+        with patch(
+            "accounts.services._delete_storage_file_strict",
+            side_effect=AvatarStorageError(
+                "AVATAR_STORAGE_DELETE_FAILED",
+                "Could not update avatar storage safely. Please try again.",
+            ),
+        ):
+            response = self.client.patch(
+                self.URL,
+                {"avatar": self._upload_image(format="WEBP")},
+                format="multipart",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data["error_code"], "AVATAR_STORAGE_DELETE_FAILED")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, old_name)
+
+    def test_delete_storage_delete_failure_returns_error_and_keeps_avatar(self):
+        self.client.patch(self.URL, {"avatar": self._upload_image()}, format="multipart")
+        self.user.refresh_from_db()
+        old_name = self.user.avatar.name
+
+        with patch(
+            "accounts.services._delete_storage_file_strict",
+            side_effect=AvatarStorageError(
+                "AVATAR_STORAGE_DELETE_FAILED",
+                "Could not update avatar storage safely. Please try again.",
+            ),
+        ):
+            response = self.client.delete(self.URL)
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data["error_code"], "AVATAR_STORAGE_DELETE_FAILED")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, old_name)
 
     def test_patch_and_delete_require_authentication(self):
         self.client.force_authenticate(user=None)

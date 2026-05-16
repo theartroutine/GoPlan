@@ -83,6 +83,15 @@ class AvatarValidationError(Exception):
         self.detail = detail
 
 
+class AvatarStorageError(Exception):
+    """Raised when avatar storage cleanup fails and the DB update must not commit."""
+
+    def __init__(self, error_code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.error_code = error_code
+        self.detail = detail
+
+
 class PasswordChangeError(Exception):
     """Raised by change_password_with_current when validation fails."""
 
@@ -92,13 +101,22 @@ class PasswordChangeError(Exception):
         self.detail = detail
 
 
-def _delete_storage_file(storage, name: str) -> None:
+def _delete_storage_file_strict(storage, name: str) -> None:
+    try:
+        storage.delete(name)
+    except Exception as exc:
+        logger.warning("Failed to delete avatar storage file %s", name, exc_info=True)
+        raise AvatarStorageError(
+            "AVATAR_STORAGE_DELETE_FAILED",
+            "Could not update avatar storage safely. Please try again.",
+        ) from exc
+
+
+def _delete_storage_file_best_effort(storage, name: str) -> None:
     try:
         storage.delete(name)
     except Exception:
-        # Best-effort cleanup; the new avatar is already saved, so an orphan
-        # file is a leak, not a correctness issue. Log so it stays diagnosable.
-        logger.warning("Failed to delete avatar storage file %s", name, exc_info=True)
+        logger.warning("Failed to clean up avatar storage file %s", name, exc_info=True)
 
 
 def resolve_avatar_url(user) -> str | None:
@@ -426,23 +444,33 @@ def update_avatar(user, image_file):
 
     old_name = None
     old_storage = None
+    new_name_in_storage = None
+    new_storage = None
     with transaction.atomic():
         locked_user = User.objects.select_for_update().get(pk=user.pk)
 
-        # FieldFile.save() mutates the same FieldFile instance (rebinds .name to
-        # the new path). Capture the previous name and storage BEFORE saving so
-        # we can delete the old file without touching the newly-written one.
+        # FieldFile.save() mutates the same FieldFile instance. Capture the old
+        # file before saving, then delete it inside the transaction. If storage
+        # deletion fails, the DB update rolls back and the old public file
+        # remains referenced instead of becoming an orphan.
         if locked_user.avatar:
             old_name = locked_user.avatar.name
             old_storage = locked_user.avatar.storage
 
         locked_user.avatar.save(new_name, clean_avatar, save=False)
+        new_name_in_storage = locked_user.avatar.name
+        new_storage = locked_user.avatar.storage
         locked_user.save(update_fields=["avatar", "updated_at"])
+        if old_name and old_storage is not None:
+            try:
+                _delete_storage_file_strict(old_storage, old_name)
+            except AvatarStorageError:
+                if new_name_in_storage and new_storage is not None:
+                    _delete_storage_file_best_effort(new_storage, new_name_in_storage)
+                raise
 
     user.avatar = locked_user.avatar.name
     user.updated_at = locked_user.updated_at
-    if old_name and old_storage is not None:
-        _delete_storage_file(old_storage, old_name)
 
     return user
 
@@ -465,11 +493,10 @@ def delete_avatar(user):
         old_storage = locked_user.avatar.storage
         locked_user.avatar = None
         locked_user.save(update_fields=["avatar", "updated_at"])
+        _delete_storage_file_strict(old_storage, old_name)
 
     user.avatar = None
     user.updated_at = locked_user.updated_at
-    if old_name and old_storage is not None:
-        _delete_storage_file(old_storage, old_name)
     return user
 
 

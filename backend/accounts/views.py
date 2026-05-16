@@ -23,6 +23,7 @@ from accounts.serializers import (
     ResendVerificationSerializer,
 )
 from accounts.services import (
+    AvatarStorageError,
     AvatarValidationError,
     EmailVerificationError,
     IdentifyCodeGenerationError,
@@ -353,10 +354,21 @@ class AvatarAPIView(APIView):
                 {"detail": exc.detail, "error_code": exc.error_code},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except AvatarStorageError as exc:
+            return Response(
+                {"detail": exc.detail, "error_code": exc.error_code},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response({"user": build_user_payload(user)}, status=status.HTTP_200_OK)
 
     def delete(self, request, *args, **kwargs):
-        user = delete_avatar(request.user)
+        try:
+            user = delete_avatar(request.user)
+        except AvatarStorageError as exc:
+            return Response(
+                {"detail": exc.detail, "error_code": exc.error_code},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response({"user": build_user_payload(user)}, status=status.HTTP_200_OK)
 
 
