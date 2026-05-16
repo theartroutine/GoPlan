@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
@@ -10,6 +13,7 @@ from ai.action_types import (
     AI_CONFIRMATION_TRANSFER_PAYER,
     AI_CONFIRMATION_TRANSFER_RECIPIENT,
 )
+from ai.agent.display import build_display
 from ai.agent.draft_fields import normalize_missing_fields
 from ai.models import AIActionDraft, AIActionDraftStatus
 from expenses.models import SettlementStatus, SettlementTransfer
@@ -35,6 +39,55 @@ FINAL_DRAFT_STATUSES = {
     AIActionDraftStatus.EXPIRED,
     AIActionDraftStatus.FAILED,
 }
+
+
+def create_action_draft(
+    *,
+    trip,
+    interaction,
+    response_message=None,
+    action_type: str,
+    payload: dict,
+    missing_fields: list | None = None,
+    preconditions: dict | None = None,
+    required_confirmation: str | None = None,
+    status: str | None = None,
+) -> AIActionDraft:
+    """Persist a single AIActionDraft row.
+
+    Used by tool handlers when running the v2 (tool-calling) runner.
+    Mirrors the persistence shape that finish_interaction_success uses
+    when bulk-creating drafts from the v1 runner.
+    """
+    from ai.lifecycle import summarize_draft  # avoid circular import at module level
+
+    missing = missing_fields or []
+    effective_status = status or (
+        AIActionDraftStatus.NEEDS_INFO if missing else AIActionDraftStatus.READY
+    )
+    expires_at = timezone.now() + timedelta(
+        seconds=settings.GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS
+    )
+    trip_context = {
+        "timezone": trip.timezone,
+        "currency_code": trip.currency_code,
+    }
+    return AIActionDraft.objects.create(
+        trip=trip,
+        interaction=interaction,
+        response_message=response_message,
+        requested_by=interaction.requested_by,
+        action_type=action_type,
+        status=effective_status,
+        payload=payload,
+        preview=payload,
+        display=build_display(action_type=action_type, payload=payload, trip_context=trip_context),
+        summary=summarize_draft(action_type=action_type, payload=payload, status=effective_status),
+        missing_fields=missing,
+        preconditions=preconditions or {},
+        required_confirmation=required_confirmation or "",
+        expires_at=expires_at,
+    )
 
 
 def _effective_draft_status(draft: AIActionDraft) -> str:

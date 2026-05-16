@@ -112,6 +112,8 @@ class AIActionDraft(models.Model):
     )
     response_message = models.ForeignKey(
         "chat.ChatMessage",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="ai_action_drafts",
     )

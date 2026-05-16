@@ -829,3 +829,61 @@ class AIActionDraftDisplayAndSummaryTests(AIActionDraftModelTests):
         # summary must contain the draft title and status
         self.assertIn("Dinner", draft.summary)
         self.assertIn(AIActionDraftStatus.READY, draft.summary)
+
+
+class AIActionDraftNullResponseMessageTests(APITestCase, AIActionDraftModelTests):
+    """Verify that v2 drafts with response_message=None don't crash."""
+
+    def _cancel_url(self, draft_id):
+        return f"/api/trips/{self.trip.id}/ai/action-drafts/{draft_id}/cancel"
+
+    def _make_v2_draft(self, **kwargs):
+        defaults = dict(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=None,
+            requested_by=self.user,
+            action_type="expense.create",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={"title": "Lunch"},
+            preview={"title": "Lunch"},
+            missing_fields=[{"name": "total_amount", "label": "Amount"}],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        defaults.update(kwargs)
+        return AIActionDraft.objects.create(**defaults)
+
+    @patch("ai.views.push_chat_message")
+    def test_patch_draft_without_response_message_does_not_crash(self, push_chat_message):
+        self.client.force_authenticate(self.user)
+        draft = self._make_v2_draft()
+
+        response = self.client.patch(
+            f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
+            {"payload": {"total_amount": "500000"}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        draft.refresh_from_db()
+        self.assertEqual(draft.payload["total_amount"], "500000")
+        push_chat_message.assert_not_called()
+
+    @patch("ai.views.push_chat_message")
+    def test_confirm_or_cancel_paths_skip_response_message_when_null(self, push_chat_message):
+        self.client.force_authenticate(self.user)
+        draft = self._make_v2_draft(
+            status=AIActionDraftStatus.READY,
+            missing_fields=[],
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        response = self.client.post(self._cancel_url(draft.id))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["error_code"], "AI_DRAFT_EXPIRED")
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.EXPIRED)
+        push_chat_message.assert_not_called()

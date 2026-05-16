@@ -100,6 +100,8 @@ def _refresh_missing_fields(draft: AIActionDraft, payload: dict) -> list[dict]:
 
 
 def _touch_response_message(draft: AIActionDraft) -> None:
+    if draft.response_message_id is None:
+        return
     draft.response_message.updated_at = timezone.now()
     draft.response_message.save(update_fields=["updated_at"])
 
@@ -121,7 +123,7 @@ def patch_action_draft(
     with transaction.atomic():
         draft = (
             AIActionDraft.objects
-            .select_for_update()
+            .select_for_update(of=("self",))
             .select_related("response_message")
             .get(pk=draft_id, trip_id=trip_id)
         )

@@ -1,25 +1,94 @@
-"""Tool handlers — wired in Task 11. This stub keeps the registry importable."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Optional
 
-def _todo(name: str):
-    def _stub(**kwargs):
-        raise NotImplementedError(f"handler {name} not implemented")
-    _stub.__name__ = name
-    return _stub
+from ai.agent import schemas
+from ai.agent.drafts import create_action_draft
+from ai.agent.draft_mutations import patch_action_draft
+from ai.models import AIActionDraft
 
 
-create_timeline_activity = _todo("create_timeline_activity")
-update_timeline_activity = _todo("update_timeline_activity")
-delete_timeline_activity = _todo("delete_timeline_activity")
-update_timeline_activity_status = _todo("update_timeline_activity_status")
-create_expense = _todo("create_expense")
-update_expense = _todo("update_expense")
-delete_expense = _todo("delete_expense")
-set_expense_contribution = _todo("set_expense_contribution")
-finalize_settlement = _todo("finalize_settlement")
-reopen_settlement = _todo("reopen_settlement")
-mark_transfer_sent = _todo("mark_transfer_sent")
-confirm_transfer_received = _todo("confirm_transfer_received")
-update_action_draft = _todo("update_action_draft")
-respond_to_user = _todo("respond_to_user")
+@dataclass
+class HandlerResult:
+    draft: Optional[AIActionDraft] = None
+    message: Optional[str] = None
+
+
+def _to_payload(args, extra: dict | None = None) -> dict:
+    payload = args.model_dump(mode="json", exclude_none=True)
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _create(*, trip, interaction, action_type: str, args) -> HandlerResult:
+    draft = create_action_draft(
+        trip=trip,
+        interaction=interaction,
+        action_type=action_type,
+        payload=_to_payload(args),
+    )
+    return HandlerResult(draft=draft)
+
+
+def create_timeline_activity(*, trip, interaction, actor, args: schemas.CreateTimelineActivityArgs):
+    return _create(trip=trip, interaction=interaction, action_type="timeline.activity.create", args=args)
+
+
+def update_timeline_activity(*, trip, interaction, actor, args: schemas.UpdateTimelineActivityArgs):
+    return _create(trip=trip, interaction=interaction, action_type="timeline.activity.update", args=args)
+
+
+def delete_timeline_activity(*, trip, interaction, actor, args: schemas.DeleteTimelineActivityArgs):
+    return _create(trip=trip, interaction=interaction, action_type="timeline.activity.delete", args=args)
+
+
+def update_timeline_activity_status(*, trip, interaction, actor, args: schemas.UpdateTimelineActivityStatusArgs):
+    return _create(trip=trip, interaction=interaction, action_type="timeline.activity.status.update", args=args)
+
+
+def create_expense(*, trip, interaction, actor, args: schemas.CreateExpenseArgs):
+    return _create(trip=trip, interaction=interaction, action_type="expense.create", args=args)
+
+
+def update_expense(*, trip, interaction, actor, args: schemas.UpdateExpenseArgs):
+    return _create(trip=trip, interaction=interaction, action_type="expense.update", args=args)
+
+
+def delete_expense(*, trip, interaction, actor, args: schemas.DeleteExpenseArgs):
+    return _create(trip=trip, interaction=interaction, action_type="expense.delete", args=args)
+
+
+def set_expense_contribution(*, trip, interaction, actor, args: schemas.SetExpenseContributionArgs):
+    return _create(trip=trip, interaction=interaction, action_type="expense.contribution.set", args=args)
+
+
+def finalize_settlement(*, trip, interaction, actor, args: schemas.FinalizeSettlementArgs):
+    return _create(trip=trip, interaction=interaction, action_type="settlement.finalize", args=args)
+
+
+def reopen_settlement(*, trip, interaction, actor, args: schemas.ReopenSettlementArgs):
+    return _create(trip=trip, interaction=interaction, action_type="settlement.reopen", args=args)
+
+
+def mark_transfer_sent(*, trip, interaction, actor, args: schemas.MarkTransferSentArgs):
+    return _create(trip=trip, interaction=interaction, action_type="settlement.transfer.mark_sent", args=args)
+
+
+def confirm_transfer_received(*, trip, interaction, actor, args: schemas.ConfirmTransferReceivedArgs):
+    return _create(trip=trip, interaction=interaction, action_type="settlement.transfer.confirm_received", args=args)
+
+
+def update_action_draft(*, trip, interaction, actor, args: schemas.UpdateActionDraftArgs):
+    updated = patch_action_draft(
+        draft_id=args.draft_id,
+        trip_id=trip.id,
+        actor=actor,
+        patch_payload=dict(args.fields),
+    )
+    return HandlerResult(draft=updated)
+
+
+def respond_to_user(*, trip, interaction, actor, args: schemas.RespondToUserArgs):
+    return HandlerResult(message=args.message)

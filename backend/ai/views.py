@@ -125,7 +125,8 @@ class AIActionDraftDetailAPIView(APIView):
             )
         except AIActionDraftExpiredError as exc:
             expired_draft = _get_draft_or_404(trip_id=trip_id, draft_id=draft_id)
-            push_chat_message(expired_draft.response_message)
+            if expired_draft.response_message_id is not None:
+                push_chat_message(expired_draft.response_message)
             return _error(
                 str(exc),
                 exc.error_code,
@@ -142,7 +143,8 @@ class AIActionDraftDetailAPIView(APIView):
         except AIActionDraftTargetNotFoundError as exc:
             return _error(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
 
-        push_chat_message(draft.response_message)
+        if draft.response_message_id is not None:
+            push_chat_message(draft.response_message)
         return Response({"draft": build_action_draft_payload(draft, viewer=request.user)})
 
 
@@ -165,7 +167,7 @@ class AIActionDraftCancelAPIView(APIView):
             try:
                 draft = (
                     AIActionDraft.objects
-                    .select_for_update()
+                    .select_for_update(of=("self",))
                     .select_related("response_message")
                     .get(pk=draft_id, trip_id=trip_id)
                 )
@@ -182,8 +184,9 @@ class AIActionDraftCancelAPIView(APIView):
             ):
                 draft.status = AIActionDraftStatus.EXPIRED
                 draft.save(update_fields=["status", "updated_at"])
-                draft.response_message.updated_at = timezone.now()
-                draft.response_message.save(update_fields=["updated_at"])
+                if draft.response_message_id is not None:
+                    draft.response_message.updated_at = timezone.now()
+                    draft.response_message.save(update_fields=["updated_at"])
                 expired_draft = draft
             elif draft.status in {
                 AIActionDraftStatus.CONFIRMED,
@@ -212,12 +215,14 @@ class AIActionDraftCancelAPIView(APIView):
                         "updated_at",
                     ]
                 )
-                draft.response_message.updated_at = timezone.now()
-                draft.response_message.save(update_fields=["updated_at"])
-                transaction.on_commit(lambda: push_chat_message(draft.response_message))
+                if draft.response_message_id is not None:
+                    draft.response_message.updated_at = timezone.now()
+                    draft.response_message.save(update_fields=["updated_at"])
+                    transaction.on_commit(lambda: push_chat_message(draft.response_message))
 
         if expired_draft is not None:
-            push_chat_message(expired_draft.response_message)
+            if expired_draft.response_message_id is not None:
+                push_chat_message(expired_draft.response_message)
             return _error(
                 "Draft expired.",
                 "AI_DRAFT_EXPIRED",
@@ -406,7 +411,8 @@ class AIActionDraftConfirmAPIView(APIView):
                         "AI_DRAFT_NOT_FOUND",
                         status.HTTP_404_NOT_FOUND,
                     )
-                push_chat_message(expired_draft.response_message)
+                if expired_draft.response_message_id is not None:
+                    push_chat_message(expired_draft.response_message)
                 return _error(
                     str(exc),
                     exc.error_code,
@@ -422,6 +428,7 @@ class AIActionDraftConfirmAPIView(APIView):
             if (
                 failed_draft is not None
                 and failed_draft.status == AIActionDraftStatus.FAILED
+                and failed_draft.response_message_id is not None
             ):
                 push_chat_message(failed_draft.response_message)
             error_draft = (
@@ -445,5 +452,6 @@ class AIActionDraftConfirmAPIView(APIView):
                 viewer=request.user,
             )
 
-        push_chat_message(draft.response_message)
+        if draft.response_message_id is not None:
+            push_chat_message(draft.response_message)
         return Response({"draft": build_action_draft_payload(draft, viewer=request.user)})

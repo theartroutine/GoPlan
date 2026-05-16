@@ -452,7 +452,7 @@ def mark_action_draft_failed(
         try:
             draft = (
                 AIActionDraft.objects
-                .select_for_update()
+                .select_for_update(of=("self",))
                 .select_related("response_message")
                 .get(pk=draft_id, trip_id=trip_id)
             )
@@ -471,8 +471,9 @@ def mark_action_draft_failed(
                 "updated_at",
             ]
         )
-        draft.response_message.updated_at = timezone.now()
-        draft.response_message.save(update_fields=["updated_at"])
+        if draft.response_message_id is not None:
+            draft.response_message.updated_at = timezone.now()
+            draft.response_message.save(update_fields=["updated_at"])
         return draft
 
 
@@ -481,7 +482,7 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
     with transaction.atomic():
         draft = (
             AIActionDraft.objects
-            .select_for_update()
+            .select_for_update(of=("self",))
             .select_related("response_message")
             .get(pk=draft_id, trip_id=trip_id)
         )
@@ -493,8 +494,9 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
             expired = True
             draft.status = AIActionDraftStatus.EXPIRED
             draft.save(update_fields=["status", "updated_at"])
-            draft.response_message.updated_at = timezone.now()
-            draft.response_message.save(update_fields=["updated_at"])
+            if draft.response_message_id is not None:
+                draft.response_message.updated_at = timezone.now()
+                draft.response_message.save(update_fields=["updated_at"])
         else:
             _validate_action_payload_ready(draft)
             if not can_confirm_action_draft(draft, viewer=actor):
@@ -516,8 +518,9 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
                     "updated_at",
                 ]
             )
-            draft.response_message.updated_at = timezone.now()
-            draft.response_message.save(update_fields=["updated_at"])
+            if draft.response_message_id is not None:
+                draft.response_message.updated_at = timezone.now()
+                draft.response_message.save(update_fields=["updated_at"])
     if expired:
         raise AIActionDraftExpiredError("Draft expired.")
     return draft
