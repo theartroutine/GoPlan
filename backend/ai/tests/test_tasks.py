@@ -23,6 +23,7 @@ from ai.models import (
 from ai.services import (
     GENERIC_AI_ERROR_MESSAGE,
     enqueue_ai_interaction,
+    message_for_error_code,
     recover_stale_ai_interactions,
 )
 from ai.tasks import run_goplan_ai_interaction
@@ -300,7 +301,10 @@ class GoPlanAITaskTests(TestCase):
         self.assertEqual(result["failed"], 1)
         self.assertEqual(interaction.status, AIInteractionStatus.FAILED)
         self.assertEqual(interaction.error_code, AIInteractionErrorCode.TASK_ERROR)
-        self.assertEqual(interaction.response_message.content, GENERIC_AI_ERROR_MESSAGE)
+        self.assertEqual(
+            interaction.response_message.content,
+            message_for_error_code(AIInteractionErrorCode.TASK_ERROR),
+        )
         mock_delay.assert_not_called()
 
 

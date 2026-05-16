@@ -6,8 +6,13 @@ from uuid import uuid4
 from django.test import TestCase
 from django.utils import timezone
 
-from ai.models import AIInteraction, AIInteractionStatus
-from ai.services import AIBusyError, ensure_ai_prompt_available
+from ai.models import AIInteraction, AIInteractionErrorCode, AIInteractionStatus
+from ai.services import (
+    AIBusyError,
+    GENERIC_AI_ERROR_MESSAGE,
+    ensure_ai_prompt_available,
+    message_for_error_code,
+)
 from chat.models import ChatMessage
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole
@@ -70,3 +75,16 @@ class AIReservationServiceTests(TestCase):
         )
 
         ensure_ai_prompt_available(trip)
+
+
+class MessageForErrorCodeTests(TestCase):
+    def test_message_for_error_code_returns_specific_strings(self):
+        self.assertIn("gián đoạn", message_for_error_code(AIInteractionErrorCode.PROVIDER_UNAVAILABLE))
+        self.assertIn("30 giây", message_for_error_code(AIInteractionErrorCode.RATE_LIMIT))
+        self.assertIn("định dạng", message_for_error_code(AIInteractionErrorCode.TOOL_VALIDATION_FAILED))
+        self.assertIn("hỗ trợ thao tác", message_for_error_code(AIInteractionErrorCode.TOOL_UNKNOWN))
+        self.assertIn("chưa khả dụng", message_for_error_code(AIInteractionErrorCode.INSUFFICIENT_BALANCE))
+
+    def test_message_for_error_code_unknown_falls_back_to_generic(self):
+        self.assertEqual(message_for_error_code("not_a_real_code"), GENERIC_AI_ERROR_MESSAGE)
+        self.assertEqual(message_for_error_code(None), GENERIC_AI_ERROR_MESSAGE)

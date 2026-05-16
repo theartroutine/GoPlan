@@ -16,6 +16,25 @@ AI_LOCK_TTL = timedelta(seconds=settings.GOPLAN_AI_LOCK_TTL_SECONDS)
 GENERIC_AI_ERROR_MESSAGE = "GoPlanAI hiện chưa trả lời được. Thử lại sau."
 ACTIVE_AI_STATUSES = (AIInteractionStatus.PENDING, AIInteractionStatus.RUNNING)
 
+_ERROR_MESSAGES = {
+    "PROVIDER_UNAVAILABLE": "Dịch vụ AI tạm thời gián đoạn. Bạn thử lại sau ít phút giúp mình nhé.",
+    "RATE_LIMIT": "Mình đang xử lý quá nhiều yêu cầu. Bạn thử lại sau 30 giây nhé.",
+    "TIMEOUT": "Mình mất quá nhiều thời gian trả lời. Bạn nhắc lại giúp mình nhé.",
+    "PROVIDER_BAD_RESPONSE": "Mình chưa đưa ra được câu trả lời phù hợp. Bạn diễn đạt lại giúp mình nhé.",
+    "INSUFFICIENT_BALANCE": "Dịch vụ AI tạm thời chưa khả dụng. Đội ngũ đã được thông báo.",
+    "TOOL_VALIDATION_FAILED": "Mình hiểu sai định dạng yêu cầu của bạn. Bạn nói cụ thể hơn được không?",
+    "TOOL_UNKNOWN": "Mình chưa hỗ trợ thao tác đó. Bạn thử cách khác giúp mình nhé.",
+    "CONFIG_MISSING": "Tính năng AI chưa được cấu hình. Báo admin giúp mình nhé.",
+    "INTERNAL_ERROR": "Có lỗi không mong muốn. Đội ngũ đã được thông báo.",
+    "TASK_ERROR": "Có lỗi không mong muốn. Đội ngũ đã được thông báo.",
+}
+
+
+def message_for_error_code(error_code: str | None) -> str:
+    if not error_code:
+        return GENERIC_AI_ERROR_MESSAGE
+    return _ERROR_MESSAGES.get(error_code, GENERIC_AI_ERROR_MESSAGE)
+
 
 class AIServiceError(Exception):
     error_code = "AI_ERROR"

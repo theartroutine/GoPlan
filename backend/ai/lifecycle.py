@@ -12,6 +12,7 @@ from ai.services import (
     AI_LOCK_TTL,
     GENERIC_AI_ERROR_MESSAGE,
     has_active_ai_interaction,
+    message_for_error_code,
 )
 from chat.models import ChatMessage, ChatMessageAIStatus, ChatMessageSenderKind
 from chat.services import push_chat_message
@@ -216,7 +217,7 @@ def finish_interaction_failure(*, interaction, error_code: str) -> ChatMessage:
             sender_kind=ChatMessageSenderKind.AI,
             sender_display_name_snapshot="GoPlanAI",
             sender_identify_tag_snapshot=None,
-            content=GENERIC_AI_ERROR_MESSAGE,
+            content=message_for_error_code(error_code),
             ai_status=ChatMessageAIStatus.ERROR,
         )
         interaction.response_message = message
