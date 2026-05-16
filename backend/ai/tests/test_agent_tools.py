@@ -78,7 +78,7 @@ class ToolHandlerTests(TestCase):
                 section_id=section_id,
                 title="X",
                 system_type="SIGHTSEEING",
-                time_mode="ANCHOR",
+                time_mode="FLEXIBLE",
             ),
         )
         self.assertIsInstance(result.draft, AIActionDraft)
@@ -90,8 +90,8 @@ class ToolHandlerTests(TestCase):
                 "data": {
                     "title": "X",
                     "system_type": "SIGHTSEEING",
-                    "time_mode": "ANCHOR",
-                    "assignee_scope": "GROUP",
+                    "time_mode": "FLEXIBLE",
+                    "assignee_scope": "EVERYONE",
                 },
             },
         )

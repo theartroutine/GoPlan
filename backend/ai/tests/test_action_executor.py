@@ -664,8 +664,11 @@ class ActionExecutorTests(TestCase):
             payload={
                 "section_id": str(section.id),
                 "title": "Legacy museum",
-                "time_mode": TimelineActivityTimeMode.FLEXIBLE,
-                "system_type": TimelineSystemType.SIGHTSEEING,
+                "time_mode": TimelineActivityTimeMode.TIME_RANGE,
+                "start_time": "2026-04-20T15:45:00+07:00",
+                "end_time": "2026-04-20T17:30:00+07:00",
+                "system_type": "DINING",
+                "assignee_scope": "GROUP",
                 "reminder_offsets_minutes": [],
             },
             preview={"title": "Legacy museum"},
@@ -687,6 +690,10 @@ class ActionExecutorTests(TestCase):
         )
         self.assertNotIn("title", confirmed.payload)
         self.assertEqual(confirmed.payload["data"]["title"], "Legacy museum")
+        self.assertEqual(confirmed.payload["data"]["start_time"], "15:45:00")
+        self.assertEqual(confirmed.payload["data"]["end_time"], "17:30:00")
+        self.assertEqual(confirmed.payload["data"]["system_type"], TimelineSystemType.FOOD)
+        self.assertEqual(confirmed.payload["data"]["assignee_scope"], "EVERYONE")
 
     def test_confirm_timeline_activity_create_accepts_structured_location_data(self):
         section = self.trip.timeline_sections.order_by("section_date").first()

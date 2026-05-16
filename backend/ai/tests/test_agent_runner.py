@@ -61,7 +61,7 @@ class RunnerTests(TestCase):
                     name="create_timeline_activity",
                     arguments_json=(
                         '{"section_id":"%s","title":"X",'
-                        '"system_type":"SIGHTSEEING","time_mode":"ANCHOR"}'
+                        '"system_type":"SIGHTSEEING","time_mode":"FLEXIBLE"}'
                     )
                     % self.section.id,
                 ),

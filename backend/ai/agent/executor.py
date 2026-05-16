@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, time
 from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_datetime, parse_time
 
 from ai.action_types import (
     AI_ACTION_EXPENSE_CONTRIBUTION_SET,
@@ -175,6 +176,63 @@ def _validate_action_payload_ready(draft: AIActionDraft) -> None:
         )
 
 
+LEGACY_TIMELINE_SYSTEM_TYPES = {
+    "DINING": "FOOD",
+    "TRANSPORT": "TRANSPORTATION",
+    "NIGHTLIFE": "OTHER",
+}
+
+LEGACY_TIMELINE_TIME_MODES = {
+    "ANCHOR": "AT_TIME",
+}
+
+LEGACY_TIMELINE_ASSIGNEE_SCOPES = {
+    "GROUP": "EVERYONE",
+}
+
+
+def _normalize_clock_time(value):
+    if value is None:
+        return value
+    if isinstance(value, datetime):
+        return value.time().replace(tzinfo=None, microsecond=0).isoformat()
+    if isinstance(value, time):
+        return value.replace(tzinfo=None, microsecond=0).isoformat()
+    if not isinstance(value, str):
+        return value
+
+    parsed_datetime = parse_datetime(value)
+    if parsed_datetime is not None:
+        return parsed_datetime.time().replace(tzinfo=None, microsecond=0).isoformat()
+
+    parsed_time = parse_time(value)
+    if parsed_time is not None:
+        return parsed_time.replace(tzinfo=None, microsecond=0).isoformat()
+
+    return value
+
+
+def _normalize_timeline_activity_data(data: dict) -> dict:
+    normalized = dict(data)
+    system_type = normalized.get("system_type")
+    if system_type in LEGACY_TIMELINE_SYSTEM_TYPES:
+        normalized["system_type"] = LEGACY_TIMELINE_SYSTEM_TYPES[system_type]
+
+    time_mode = normalized.get("time_mode")
+    if time_mode in LEGACY_TIMELINE_TIME_MODES:
+        normalized["time_mode"] = LEGACY_TIMELINE_TIME_MODES[time_mode]
+
+    assignee_scope = normalized.get("assignee_scope")
+    if assignee_scope in LEGACY_TIMELINE_ASSIGNEE_SCOPES:
+        normalized["assignee_scope"] = LEGACY_TIMELINE_ASSIGNEE_SCOPES[assignee_scope]
+
+    for field in ("start_time", "end_time"):
+        if field in normalized:
+            normalized[field] = _normalize_clock_time(normalized[field])
+
+    return normalized
+
+
 def _normalized_timeline_activity_payload(*, action_type: str, payload: dict) -> dict:
     if action_type not in {
         AI_ACTION_TIMELINE_ACTIVITY_CREATE,
@@ -182,7 +240,10 @@ def _normalized_timeline_activity_payload(*, action_type: str, payload: dict) ->
     }:
         return payload
     if isinstance(payload.get("data"), dict):
-        return payload
+        normalized_data = _normalize_timeline_activity_data(payload["data"])
+        if normalized_data == payload["data"]:
+            return payload
+        return {**payload, "data": normalized_data}
 
     data = {
         field: payload[field]
@@ -191,6 +252,7 @@ def _normalized_timeline_activity_payload(*, action_type: str, payload: dict) ->
     }
     if not data:
         return payload
+    data = _normalize_timeline_activity_data(data)
 
     normalized = {
         key: value
