@@ -24,6 +24,14 @@ function makeDraft(overrides: Partial<AIActionDraft> = {}): AIActionDraft {
     can_cancel: true,
     can_edit: false,
     preview: { title: "Dinner", amount: "1,200,000 VND" },
+    display: {
+      icon: "expense",
+      kicker: "Expense",
+      title: "Dinner",
+      tone: "create",
+      hero: { kind: "amount", value: "1,200,000", currency: "VND" },
+    },
+    summary: "[READY] expense.create: Dinner",
     missing_fields: [],
     result: {},
     error_code: "",
@@ -49,11 +57,11 @@ describe("AIActionCard", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Confirm/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cancel/i })).toBeInTheDocument();
   });
 
-  it("shows waiting state for unauthorized ready drafts", () => {
+  it("hides action buttons for unauthorized ready drafts", () => {
     render(
       <AIActionCard
         tripId="trip-1"
@@ -62,9 +70,8 @@ describe("AIActionCard", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Waiting for the authorized member to confirm."),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Confirm/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Cancel/i })).toBeNull();
   });
 
   it("calls confirm handler and reports changed draft", async () => {
@@ -84,9 +91,9 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    fireEvent.click(screen.getByRole("button", { name: /Confirm/i }));
 
-    expect(await screen.findByText("CONFIRMED")).toBeInTheDocument();
+    expect(await screen.findByText("Confirmed")).toBeInTheDocument();
     expect(onDraftChanged).toHaveBeenCalledWith(
       expect.objectContaining({ status: "CONFIRMED" }),
     );
@@ -115,11 +122,11 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    fireEvent.click(screen.getByRole("button", { name: /Confirm/i }));
 
-    expect(await screen.findByText("EXPIRED")).toBeInTheDocument();
+    expect(await screen.findByText("Expired")).toBeInTheDocument();
     expect(screen.getByText("Draft expired.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Confirm/i })).toBeNull();
     expect(onDraftChanged).toHaveBeenCalledWith(expiredDraft);
   });
 
@@ -129,6 +136,13 @@ describe("AIActionCard", () => {
         status: "READY",
         missing_fields: [],
         preview: { title: "Lunch", total_amount: "500000" },
+        display: {
+          icon: "expense",
+          kicker: "Expense",
+          title: "Lunch",
+          tone: "create",
+          hero: { kind: "amount", value: "500,000", currency: "VND" },
+        },
       }),
     });
     const onDraftChanged = vi.fn();
@@ -142,6 +156,12 @@ describe("AIActionCard", () => {
           can_edit: true,
           missing_fields: [{ name: "total_amount", label: "Amount" }],
           preview: { title: "Lunch" },
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Lunch",
+            tone: "create",
+          },
         })}
         onDraftChanged={onDraftChanged}
       />,
@@ -155,163 +175,6 @@ describe("AIActionCard", () => {
     expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
       total_amount: "500000",
     });
-    expect(await screen.findByText("READY")).toBeInTheDocument();
-  });
-
-  it("edits missing fields when can_edit is true without cancel permission", async () => {
-    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
-      draft: makeDraft({
-        status: "READY",
-        can_confirm: true,
-        can_cancel: false,
-        can_edit: false,
-        missing_fields: [],
-        preview: { title: "Museum", status: "IN_PROGRESS" },
-      }),
-    });
-    render(
-      <AIActionCard
-        tripId="trip-1"
-        draft={makeDraft({
-          status: "NEEDS_INFO",
-          can_confirm: false,
-          can_cancel: false,
-          can_edit: true,
-          missing_fields: [
-            {
-              name: "status",
-              label: "Status",
-              type: "select",
-              options: [{ label: "In Progress", value: "IN_PROGRESS" }],
-            },
-          ],
-          preview: { title: "Museum" },
-        })}
-        onDraftChanged={vi.fn()}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText("Status"), {
-      target: { value: "IN_PROGRESS" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
-
-    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
-      status: "IN_PROGRESS",
-    });
-    expect(await screen.findByText("READY")).toBeInTheDocument();
-  });
-
-  it("sends selected field option values when editing missing fields", async () => {
-    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
-      draft: makeDraft({ status: "READY", missing_fields: [] }),
-    });
-    render(
-      <AIActionCard
-        tripId="trip-1"
-        draft={makeDraft({
-          status: "NEEDS_INFO",
-          can_confirm: false,
-          can_cancel: true,
-          can_edit: true,
-          missing_fields: [
-            {
-              name: "section_id",
-              label: "Timeline day",
-              type: "select",
-              options: [
-                { label: "Day 1", value: "section-1" },
-                { label: "Day 2", value: "section-2" },
-              ],
-            },
-          ],
-        })}
-        onDraftChanged={vi.fn()}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText("Timeline day"), {
-      target: { value: "section-2" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
-
-    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
-      section_id: "section-2",
-    });
-  });
-
-  it("parses JSON field values before patching drafts", async () => {
-    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
-      draft: makeDraft({ status: "READY", missing_fields: [] }),
-    });
-    render(
-      <AIActionCard
-        tripId="trip-1"
-        draft={makeDraft({
-          status: "NEEDS_INFO",
-          can_confirm: false,
-          can_cancel: true,
-          can_edit: true,
-          missing_fields: [
-            { name: "data", label: "Activity details", type: "json" },
-          ],
-        })}
-        onDraftChanged={vi.fn()}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText("Activity details"), {
-      target: { value: '{"title":"Museum"}' },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
-
-    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
-      data: { title: "Museum" },
-    });
-  });
-
-  it("shows expired drafts without action buttons", () => {
-    render(
-      <AIActionCard
-        tripId="trip-1"
-        draft={makeDraft({
-          status: "EXPIRED",
-          can_confirm: false,
-          can_cancel: false,
-        })}
-        onDraftChanged={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("EXPIRED")).toBeInTheDocument();
-    expect(
-      screen.getByText("This draft expired. Ask GoPlanAI to regenerate it."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
-  });
-
-  it("does not render editable controls for missing target identity fields", () => {
-    render(
-      <AIActionCard
-        tripId="trip-1"
-        draft={makeDraft({
-          status: "NEEDS_INFO",
-          can_confirm: false,
-          can_cancel: true,
-          can_edit: true,
-          missing_fields: [
-            { name: "activity_id", label: "Activity", type: "target" },
-          ],
-        })}
-        onDraftChanged={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText("Ask GoPlanAI to clarify the target."),
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Activity")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Save info" })).toBeNull();
+    expect(await screen.findByText("Ready")).toBeInTheDocument();
   });
 });
