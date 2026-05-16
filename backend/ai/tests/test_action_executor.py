@@ -651,6 +651,43 @@ class ActionExecutorTests(TestCase):
         self.assertEqual(TimelineActivity.objects.count(), 1)
         self.assertEqual(confirmed.result["object_type"], "timeline_activity")
 
+    def test_confirm_timeline_activity_create_accepts_legacy_top_level_payload(self):
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "section_id": str(section.id),
+                "title": "Legacy museum",
+                "time_mode": TimelineActivityTimeMode.FLEXIBLE,
+                "system_type": TimelineSystemType.SIGHTSEEING,
+                "reminder_offsets_minutes": [],
+            },
+            preview={"title": "Legacy museum"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        confirmed = confirm_action_draft(
+            draft_id=draft.id,
+            trip_id=self.trip.id,
+            actor=self.captain,
+        )
+
+        self.assertEqual(confirmed.status, AIActionDraftStatus.CONFIRMED)
+        self.assertEqual(
+            TimelineActivity.objects.get().title,
+            "Legacy museum",
+        )
+        self.assertNotIn("title", confirmed.payload)
+        self.assertEqual(confirmed.payload["data"]["title"], "Legacy museum")
+
     def test_confirm_timeline_activity_create_accepts_structured_location_data(self):
         section = self.trip.timeline_sections.order_by("section_date").first()
         draft = AIActionDraft.objects.create(

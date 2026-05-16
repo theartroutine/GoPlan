@@ -21,7 +21,10 @@ from ai.action_types import (
     AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
 )
 from ai.agent.drafts import can_confirm_action_draft
-from ai.agent.payload_validation import missing_payload_field_names
+from ai.agent.payload_validation import (
+    TIMELINE_ACTIVITY_DATA_FIELDS,
+    missing_payload_field_names,
+)
 from ai.agent.preconditions import expected_precondition_target
 from ai.models import AIActionDraft, AIActionDraftStatus
 from expenses.models import Expense
@@ -170,6 +173,32 @@ def _validate_action_payload_ready(draft: AIActionDraft) -> None:
         raise AIActionDraftNotReadyError(
             f"Draft is missing required field: {missing_names[0]}."
         )
+
+
+def _normalized_timeline_activity_payload(*, action_type: str, payload: dict) -> dict:
+    if action_type not in {
+        AI_ACTION_TIMELINE_ACTIVITY_CREATE,
+        AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
+    }:
+        return payload
+    if isinstance(payload.get("data"), dict):
+        return payload
+
+    data = {
+        field: payload[field]
+        for field in TIMELINE_ACTIVITY_DATA_FIELDS
+        if field in payload
+    }
+    if not data:
+        return payload
+
+    normalized = {
+        key: value
+        for key, value in payload.items()
+        if key not in TIMELINE_ACTIVITY_DATA_FIELDS
+    }
+    normalized["data"] = data
+    return normalized
 
 
 def _resolve_contribution_user_id(*, trip_id, payload: dict):
@@ -498,6 +527,13 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
                 draft.response_message.updated_at = timezone.now()
                 draft.response_message.save(update_fields=["updated_at"])
         else:
+            normalized_payload = _normalized_timeline_activity_payload(
+                action_type=draft.action_type,
+                payload=draft.payload,
+            )
+            payload_normalized = normalized_payload != draft.payload
+            if payload_normalized:
+                draft.payload = normalized_payload
             _validate_action_payload_ready(draft)
             if not can_confirm_action_draft(draft, viewer=actor):
                 raise AIActionDraftForbiddenError("You cannot confirm this draft.")
@@ -509,15 +545,16 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
             draft.confirmed_by = actor
             draft.confirmed_at = timezone.now()
             draft.result = result
-            draft.save(
-                update_fields=[
-                    "status",
-                    "confirmed_by",
-                    "confirmed_at",
-                    "result",
-                    "updated_at",
-                ]
-            )
+            update_fields = [
+                "status",
+                "confirmed_by",
+                "confirmed_at",
+                "result",
+                "updated_at",
+            ]
+            if payload_normalized:
+                update_fields.append("payload")
+            draft.save(update_fields=update_fields)
             if draft.response_message_id is not None:
                 draft.response_message.updated_at = timezone.now()
                 draft.response_message.save(update_fields=["updated_at"])
