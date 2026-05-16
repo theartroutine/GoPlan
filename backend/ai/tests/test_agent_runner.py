@@ -10,7 +10,13 @@ from django.test import TestCase
 from django.utils import timezone
 
 from ai.agent.runner import parse_agent_response, run_goplan_ai_agent, run_goplan_ai_agent_v2
-from ai.deepseek import DeepSeekResult, DeepSeekToolResult, DeepSeekUsage, ToolCallParsed
+from ai.deepseek import (
+    DeepSeekProviderError,
+    DeepSeekResult,
+    DeepSeekToolResult,
+    DeepSeekUsage,
+    ToolCallParsed,
+)
 from ai.models import AIInteraction, AIInteractionErrorCode, AIInteractionStatus
 from chat.models import ChatMessage
 from expenses.models import Expense
@@ -123,6 +129,19 @@ class AgentDraftValidationTests(TestCase):
 
         draft = parsed.drafts[0]
         self.assertEqual(draft.preview["collector_id"], "collector-1")
+
+    def test_provider_preconditions_are_ignored_when_malformed(self):
+        parsed = parse_agent_response(
+            '{"message":"Draft","drafts":[{"action_type":"expense.create",'
+            '"required_confirmation":"CAPTAIN","status":"READY",'
+            '"payload":{"title":"Lunch","total_amount":"2000000"},'
+            '"preview":{"title":"Lunch"},"missing_fields":[],'
+            '"preconditions":[]}]}'
+        )
+
+        draft = parsed.drafts[0]
+        self.assertEqual(draft.action_type, "expense.create")
+        self.assertEqual(draft.preconditions, {})
 
     def test_missing_fields_are_frontend_field_objects(self):
         parsed = parse_agent_response(
@@ -420,6 +439,51 @@ class AgentDraftValidationTests(TestCase):
 
 
 class AgentRunPreconditionTests(TestCase):
+    def test_runner_maps_parse_errors_to_provider_bad_response(self):
+        captain = create_completed_user(
+            "runner-parse-error@example.com",
+            "runnerparse",
+            "RUN004",
+        )
+        trip = create_trip(
+            captain=captain,
+            name="Runner Parse Trip",
+            destination="Da Nang",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 2),
+        )
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=captain,
+            sender_display_name_snapshot=captain.display_name,
+            sender_identify_tag_snapshot=captain.identify_tag,
+            content="@GoPlanAI make bad draft",
+            client_message_id=uuid4(),
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=captain,
+            prompt_message=prompt,
+            prompt="make bad draft",
+            status=AIInteractionStatus.RUNNING,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+
+        with patch(
+            "ai.agent.runner.complete_goplan_ai_agent_prompt",
+            return_value=DeepSeekResult(
+                content='{"message":"Draft","drafts":{}}',
+                usage=DeepSeekUsage(input_tokens=1, output_tokens=2, total_tokens=3),
+            ),
+        ):
+            with self.assertRaises(DeepSeekProviderError) as ctx:
+                run_goplan_ai_agent(interaction)
+
+        self.assertEqual(
+            ctx.exception.error_code,
+            AIInteractionErrorCode.PROVIDER_BAD_RESPONSE,
+        )
+
     def test_runner_replaces_provider_preconditions_with_backend_target_version(self):
         captain = create_completed_user("runner-cap@example.com", "runnercap", "RUN001")
         trip = create_trip(

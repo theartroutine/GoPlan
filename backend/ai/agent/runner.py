@@ -27,8 +27,13 @@ from ai.agent.preconditions import (
     build_backend_preconditions,
 )
 from ai.agent.preview import build_action_preview
-from ai.deepseek import complete_goplan_ai_agent_prompt
-from ai.models import AIActionDraftStatus
+from ai.deepseek import (
+    DeepSeekProviderError,
+    DeepSeekToolResult,
+    complete_goplan_ai_agent_prompt,
+    complete_with_tools,
+)
+from ai.models import AIActionDraftStatus, AIInteractionErrorCode
 from trips.models import TimelineLocationMode
 
 ACTION_TYPE_ALIASES = {
@@ -208,6 +213,15 @@ def _coerce_dict(value, *, field_name: str, default: dict | None = None) -> dict
     return value
 
 
+def _coerce_preconditions(value) -> dict:
+    # Preconditions are backend-owned. Provider output here is untrusted and is
+    # replaced or cleared before storage, so malformed values should not fail
+    # an otherwise valid draft.
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
 def _coerce_preview(value, *, action_type: str, payload: dict) -> dict:
     if value is not None and not isinstance(value, (str, dict)):
         raise ValueError("Agent draft preview must be an object.")
@@ -305,11 +319,7 @@ def parse_agent_response(content: str) -> AgentRunResult:
             action_type=action_type,
             payload=payload,
         )
-        preconditions = _coerce_dict(
-            draft.get("preconditions"),
-            field_name="preconditions",
-            default={},
-        )
+        preconditions = _coerce_preconditions(draft.get("preconditions"))
 
         drafts.append(
             AgentDraftSpec(
@@ -416,7 +426,10 @@ def build_agent_prompt(*, interaction) -> str:
 def run_goplan_ai_agent(interaction) -> AgentRunResult:
     prompt_bundle = build_agent_prompt_bundle(interaction=interaction)
     provider_result = complete_goplan_ai_agent_prompt(prompt_bundle.prompt)
-    parsed = parse_agent_response(provider_result.content)
+    try:
+        parsed = parse_agent_response(provider_result.content)
+    except ValueError as exc:
+        raise DeepSeekProviderError(AIInteractionErrorCode.PROVIDER_BAD_RESPONSE) from exc
     drafts = _attach_backend_preconditions(
         interaction=interaction,
         drafts=parsed.drafts,
@@ -439,10 +452,6 @@ import time
 from pydantic import ValidationError as PydanticValidationError
 
 from ai.agent.tools import openai_tool_params, resolve_tool
-from ai.deepseek import DeepSeekProviderError, DeepSeekToolResult, complete_with_tools
-from ai.models import AIInteractionErrorCode
-
-
 @dataclass
 class AgentRunResultV2:
     drafts_created: int = 0
