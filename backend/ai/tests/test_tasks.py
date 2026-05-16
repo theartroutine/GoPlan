@@ -6,9 +6,10 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from django.test import TestCase
+from django.test.utils import override_settings
 from django.utils import timezone
 
-from ai.agent.runner import AgentDraftSpec, AgentRunResult
+from ai.agent.runner import AgentDraftSpec, AgentRunResult, AgentRunResultV2
 from ai.deepseek import DeepSeekProviderError, DeepSeekUsage
 from ai.lifecycle import InteractionAlreadyRunningError, claim_interaction_for_run
 from ai.models import (
@@ -303,3 +304,38 @@ class GoPlanAITaskTests(TestCase):
         self.assertEqual(interaction.error_code, AIInteractionErrorCode.TASK_ERROR)
         self.assertEqual(interaction.response_message.content, GENERIC_AI_ERROR_MESSAGE)
         mock_delay.assert_not_called()
+
+
+class TaskDispatchFlagTests(TestCase):
+    def setUp(self):
+        self.interaction = _make_interaction()
+
+    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
+    @patch("ai.tasks.push_ai_typing_stopped")
+    @patch("ai.tasks.push_ai_typing_started")
+    @patch("ai.tasks.run_goplan_ai_agent_v2")
+    def test_task_dispatches_to_runner_v2_when_flag_enabled(
+        self, mock_v2, _typing_started, _typing_stopped
+    ):
+        mock_v2.return_value = AgentRunResultV2(drafts_created=0, message_text="hi")
+
+        run_goplan_ai_interaction(str(self.interaction.id))
+
+        mock_v2.assert_called_once()
+
+    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=False)
+    @patch("ai.tasks.push_ai_typing_stopped")
+    @patch("ai.tasks.push_ai_typing_started")
+    @patch("ai.tasks.run_goplan_ai_agent")
+    def test_task_dispatches_to_runner_v1_when_flag_disabled(
+        self, mock_v1, _typing_started, _typing_stopped
+    ):
+        mock_v1.return_value = AgentRunResult(
+            message="hi",
+            usage=DeepSeekUsage(0, 0, 0),
+            drafts=[],
+        )
+
+        run_goplan_ai_interaction(str(self.interaction.id))
+
+        mock_v1.assert_called_once()

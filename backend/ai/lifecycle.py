@@ -162,6 +162,48 @@ def finish_interaction_success(
     return message
 
 
+def finish_interaction_success_v2(*, interaction, message_text: str) -> ChatMessage:
+    """v2 finish: creates the AI ChatMessage and attaches any already-persisted
+    NEEDS_INFO/READY drafts (response_message_id IS NULL) to it.
+    """
+    now = timezone.now()
+    with transaction.atomic():
+        interaction = AIInteraction.objects.select_for_update().get(pk=interaction.pk)
+        if interaction.response_message_id is not None:
+            return interaction.response_message
+
+        content = (message_text or "").strip() or "GoPlanAI"
+        message = ChatMessage.objects.create(
+            trip=interaction.trip,
+            sender=None,
+            sender_kind=ChatMessageSenderKind.AI,
+            sender_display_name_snapshot="GoPlanAI",
+            sender_identify_tag_snapshot=None,
+            content=content,
+            ai_status=ChatMessageAIStatus.SUCCESS,
+        )
+        AIActionDraft.objects.filter(
+            interaction=interaction, response_message__isnull=True
+        ).update(response_message=message)
+
+        interaction.response_message = message
+        interaction.status = AIInteractionStatus.SUCCEEDED
+        interaction.error_code = None
+        interaction.completed_at = now
+        interaction.lock_expires_at = now
+        interaction.save(
+            update_fields=[
+                "response_message",
+                "status",
+                "error_code",
+                "completed_at",
+                "lock_expires_at",
+            ]
+        )
+        transaction.on_commit(lambda: push_chat_message(message))
+    return message
+
+
 def finish_interaction_failure(*, interaction, error_code: str) -> ChatMessage:
     now = timezone.now()
     with transaction.atomic():

@@ -4,14 +4,16 @@ import logging
 
 from billiard.exceptions import SoftTimeLimitExceeded
 from celery import shared_task
+from django.conf import settings
 
-from ai.agent.runner import run_goplan_ai_agent
+from ai.agent.runner import run_goplan_ai_agent, run_goplan_ai_agent_v2
 from ai.deepseek import DeepSeekProviderError
 from ai.lifecycle import (
     InteractionAlreadyRunningError,
     claim_interaction_for_run,
     finish_interaction_failure,
     finish_interaction_success,
+    finish_interaction_success_v2,
 )
 from ai.models import AIInteractionErrorCode
 from ai.realtime import push_ai_typing_started, push_ai_typing_stopped
@@ -33,13 +35,26 @@ def run_goplan_ai_interaction(self, interaction_id: str) -> None:
     try:
         push_ai_typing_started(interaction)
         typing_started = True
-        result = run_goplan_ai_agent(interaction)
-        finish_interaction_success(
-            interaction=interaction,
-            content=result.message,
-            usage=result.usage,
-            drafts=result.drafts,
-        )
+
+        if settings.GOPLAN_AI_TOOL_CALLING_ENABLED:
+            v2_result = run_goplan_ai_agent_v2(interaction=interaction)
+            if v2_result.error_code:
+                finish_interaction_failure(
+                    interaction=interaction, error_code=v2_result.error_code
+                )
+            else:
+                finish_interaction_success_v2(
+                    interaction=interaction,
+                    message_text=v2_result.message_text or "",
+                )
+        else:
+            result = run_goplan_ai_agent(interaction)
+            finish_interaction_success(
+                interaction=interaction,
+                content=result.message,
+                usage=result.usage,
+                drafts=result.drafts,
+            )
     except DeepSeekProviderError as exc:
         finish_interaction_failure(interaction=interaction, error_code=exc.error_code)
     except SoftTimeLimitExceeded:
