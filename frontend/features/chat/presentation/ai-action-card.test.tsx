@@ -195,4 +195,67 @@ describe("AIActionCard", () => {
     });
     expect(await screen.findByText("Ready")).toBeInTheDocument();
   });
+
+  it("renders timeline activity details from preview when display is sparse", () => {
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          action_type: "timeline.activity.create",
+          can_confirm: false,
+          can_cancel: false,
+          preview: {
+            title: "Dinh I",
+            system_type: "SIGHTSEEING",
+            time_mode: "TIME_RANGE",
+            start_time: "08:30:00",
+            end_time: "10:00:00",
+            location_label: "Dinh I Palace",
+            location_note: "Enter through the main gate",
+            assignee_scope: "EVERYONE",
+            note: "Keep the visit relaxed.",
+            meeting_point: "Hotel lobby",
+          },
+          display: {
+            icon: "activity",
+            kicker: "Activity · Activity",
+            title: "",
+            tone: "create",
+            chips: [{ icon: "users", label: "Whole group" }],
+          },
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Dinh I")).toBeInTheDocument();
+    expect(screen.getByText("Activity · Sightseeing")).toBeInTheDocument();
+    expect(screen.getByText("08:30 – 10:00")).toBeInTheDocument();
+    expect(screen.getByText("Dinh I Palace")).toBeInTheDocument();
+    expect(screen.getByText("Hotel lobby")).toBeInTheDocument();
+    expect(screen.getByText("Keep the visit relaxed.")).toBeInTheDocument();
+    expect(screen.getByText("Enter through the main gate")).toBeInTheDocument();
+  });
+
+  it("renders timeline activity from preview when display text fields are missing", () => {
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          action_type: "timeline.activity.create",
+          can_confirm: false,
+          can_cancel: false,
+          preview: {
+            title: "Dinh I",
+            system_type: "SIGHTSEEING",
+          },
+          display: {} as AIActionDraft["display"],
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Dinh I")).toBeInTheDocument();
+    expect(screen.getByText("Activity · Sightseeing")).toBeInTheDocument();
+  });
 });

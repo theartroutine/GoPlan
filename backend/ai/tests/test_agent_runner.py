@@ -9,7 +9,12 @@ from django.utils import timezone
 
 from ai.agent.runner import AgentRunResult, run_goplan_ai_agent
 from ai.deepseek import DeepSeekToolResult, DeepSeekUsage, ToolCallParsed
-from ai.models import AIInteraction, AIInteractionErrorCode, AIInteractionStatus
+from ai.models import (
+    AIActionDraft,
+    AIInteraction,
+    AIInteractionErrorCode,
+    AIInteractionStatus,
+)
 from chat.models import ChatMessage
 from test_helpers import create_completed_user
 from trips.models import TimelineSection
@@ -78,6 +83,8 @@ class RunnerTests(TestCase):
         self.interaction.refresh_from_db()
         self.assertEqual(self.interaction.input_tokens, 10)
         self.assertEqual(self.interaction.tool_calls_count, 2)
+        draft = AIActionDraft.objects.get(interaction=self.interaction)
+        self.assertEqual(draft.required_confirmation, "CAPTAIN")
 
     @patch("ai.agent.runner.complete_with_tools")
     def test_unknown_tool_returns_tool_unknown_error(self, mock_complete):

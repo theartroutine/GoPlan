@@ -12,6 +12,10 @@ from ai.action_types import (
     AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS,
     AI_CONFIRMATION_TRANSFER_PAYER,
     AI_CONFIRMATION_TRANSFER_RECIPIENT,
+    CAPTAIN_MANAGED_ACTIONS,
+    TIMELINE_ACTIVITY_STATUS_ACTIONS,
+    TRANSFER_PAYER_ACTIONS,
+    TRANSFER_RECIPIENT_ACTIONS,
 )
 from ai.agent.display import build_display
 from ai.agent.draft_fields import normalize_missing_fields
@@ -39,6 +43,24 @@ FINAL_DRAFT_STATUSES = {
     AIActionDraftStatus.EXPIRED,
     AIActionDraftStatus.FAILED,
 }
+
+
+def required_confirmation_for_action_type(action_type: str) -> str:
+    if action_type in CAPTAIN_MANAGED_ACTIONS:
+        return AI_CONFIRMATION_CAPTAIN
+    if action_type in TIMELINE_ACTIVITY_STATUS_ACTIONS:
+        return AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS
+    if action_type in TRANSFER_PAYER_ACTIONS:
+        return AI_CONFIRMATION_TRANSFER_PAYER
+    if action_type in TRANSFER_RECIPIENT_ACTIONS:
+        return AI_CONFIRMATION_TRANSFER_RECIPIENT
+    return ""
+
+
+def _effective_required_confirmation(draft: AIActionDraft) -> str:
+    return draft.required_confirmation or required_confirmation_for_action_type(
+        draft.action_type,
+    )
 
 
 def create_action_draft(
@@ -88,7 +110,10 @@ def create_action_draft(
         ),
         missing_fields=missing,
         preconditions=preconditions or {},
-        required_confirmation=required_confirmation or "",
+        required_confirmation=(
+            required_confirmation
+            or required_confirmation_for_action_type(action_type)
+        ),
         expires_at=expires_at,
     )
 
@@ -141,9 +166,10 @@ def _can_confirm_transfer(draft: AIActionDraft, viewer) -> bool:
             "payer_id": str(transfer_obj.payer_id),
             "recipient_id": str(transfer_obj.recipient_id),
         }
-    if draft.required_confirmation == AI_CONFIRMATION_TRANSFER_PAYER:
+    required_confirmation = _effective_required_confirmation(draft)
+    if required_confirmation == AI_CONFIRMATION_TRANSFER_PAYER:
         return str(transfer.get("payer_id")) == str(viewer.id)
-    if draft.required_confirmation == AI_CONFIRMATION_TRANSFER_RECIPIENT:
+    if required_confirmation == AI_CONFIRMATION_TRANSFER_RECIPIENT:
         if (
             draft.action_type == AI_ACTION_SETTLEMENT_TRANSFER_CONFIRM_RECEIVED
             and transfer_obj is not None
@@ -157,9 +183,10 @@ def _can_confirm_transfer(draft: AIActionDraft, viewer) -> bool:
 def can_confirm_action_draft(draft: AIActionDraft, *, viewer) -> bool:
     if _effective_draft_status(draft) != AIActionDraftStatus.READY:
         return False
-    if draft.required_confirmation == AI_CONFIRMATION_CAPTAIN:
+    required_confirmation = _effective_required_confirmation(draft)
+    if required_confirmation == AI_CONFIRMATION_CAPTAIN:
         return _is_active_captain(trip_id=draft.trip_id, user=viewer)
-    if draft.required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
+    if required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
         return can_update_timeline_activity_status(
             trip_id=draft.trip_id,
             activity_id=draft.payload.get("activity_id"),
@@ -284,7 +311,8 @@ def can_cancel_action_draft(draft: AIActionDraft, *, viewer) -> bool:
         return False
     if str(draft.requested_by_id) == str(viewer.id):
         return True
-    if draft.required_confirmation == AI_CONFIRMATION_CAPTAIN:
+    required_confirmation = _effective_required_confirmation(draft)
+    if required_confirmation == AI_CONFIRMATION_CAPTAIN:
         return _is_active_captain(trip_id=draft.trip_id, user=viewer)
     return can_confirm_action_draft(draft, viewer=viewer)
 
@@ -331,9 +359,10 @@ def can_edit_action_draft(draft: AIActionDraft, *, viewer) -> bool:
         return False
     if str(draft.requested_by_id) == str(viewer.id):
         return True
-    if draft.required_confirmation == AI_CONFIRMATION_CAPTAIN:
+    required_confirmation = _effective_required_confirmation(draft)
+    if required_confirmation == AI_CONFIRMATION_CAPTAIN:
         return _is_active_captain(trip_id=draft.trip_id, user=viewer)
-    if draft.required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
+    if required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
         return _can_edit_timeline_status_draft(draft, viewer)
     return _can_confirm_transfer(draft, viewer)
 
@@ -348,7 +377,7 @@ def build_action_draft_payload(draft: AIActionDraft, *, viewer) -> dict:
         "id": str(draft.id),
         "action_type": draft.action_type,
         "status": status,
-        "required_confirmation": draft.required_confirmation,
+        "required_confirmation": _effective_required_confirmation(draft),
         "can_confirm": can_confirm_action_draft(draft, viewer=viewer),
         "can_cancel": can_cancel_action_draft(draft, viewer=viewer),
         "can_edit": can_edit_action_draft(draft, viewer=viewer),

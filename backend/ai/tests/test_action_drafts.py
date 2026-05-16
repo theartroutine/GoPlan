@@ -126,6 +126,34 @@ class AIActionDraftPayloadTests(AIActionDraftModelTests):
         self.assertTrue(payload["can_confirm"])
         self.assertTrue(payload["can_cancel"])
 
+    def test_captain_can_confirm_draft_with_inferred_confirmation(self):
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.READY,
+            payload={
+                "section_id": str(
+                    self.trip.timeline_sections.order_by("section_date")
+                    .first()
+                    .id
+                ),
+                "data": {"title": "Museum", "time_mode": "FLEXIBLE"},
+            },
+            preview={"title": "Museum"},
+            missing_fields=[],
+            preconditions={},
+            required_confirmation="",
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        payload = build_action_draft_payload(draft, viewer=self.user)
+
+        self.assertEqual(payload["required_confirmation"], AI_CONFIRMATION_CAPTAIN)
+        self.assertTrue(payload["can_confirm"])
+
     def test_member_cannot_confirm_captain_managed_draft(self):
         member = create_completed_user(
             "agent-member@example.com",
