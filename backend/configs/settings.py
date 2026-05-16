@@ -285,6 +285,7 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_TIMEOUT_SECONDS = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60"))
 DEEPSEEK_MAX_OUTPUT_TOKENS = int(os.environ.get("DEEPSEEK_MAX_OUTPUT_TOKENS", "4000"))
 GOPLAN_AI_THINKING_ENABLED = env_bool("GOPLAN_AI_THINKING_ENABLED", default=True)
+GOPLAN_AI_TOOL_CALLING_ENABLED = env_bool("GOPLAN_AI_TOOL_CALLING_ENABLED", default=False)
 GOPLAN_AI_REASONING_EFFORT = os.environ.get("GOPLAN_AI_REASONING_EFFORT", "high")
 GOPLAN_AI_LOCK_TTL_SECONDS = int(os.environ.get("GOPLAN_AI_LOCK_TTL_SECONDS", "120"))
 GOPLAN_AI_MAX_ATTEMPTS = int(os.environ.get("GOPLAN_AI_MAX_ATTEMPTS", "3"))
@@ -332,4 +333,30 @@ WS_CLOSE_CODES = {
     'AUTH_FAILED': 4001,      # Token invalid/revoked — client should not retry
     'TOKEN_EXPIRED': 4002,    # Token expired — client should refresh then retry
     'SERVER_ERROR': 4500,
+}
+
+# -------- Logging Configuration --------
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "fmt": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
+    },
+    "handlers": {
+        "ai_agent_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+            "level": "INFO",
+        },
+    },
+    "loggers": {
+        "ai.agent": {
+            "handlers": ["ai_agent_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
 }
