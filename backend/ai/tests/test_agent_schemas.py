@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from ai.agent.schemas import (
     CreateTimelineActivityArgs,
     CreateExpenseArgs,
+    SetExpenseContributionArgs,
     UpdateActionDraftArgs,
     RespondToUserArgs,
 )
@@ -62,6 +63,21 @@ class SchemaTests(SimpleTestCase):
                 total_amount="0",
                 currency_code="VND",
                 collector_id="00000000-0000-0000-0000-000000000001",
+            )
+
+    def test_set_contribution_accepts_all_paid_scope_without_manual_amounts(self):
+        args = SetExpenseContributionArgs(
+            expense_id="00000000-0000-0000-0000-000000000001",
+            scope="all_participants_paid",
+        )
+
+        self.assertEqual(args.scope, "all_participants_paid")
+        self.assertIsNone(args.contributions)
+
+    def test_set_contribution_requires_contributions_or_scope(self):
+        with self.assertRaises(ValidationError):
+            SetExpenseContributionArgs(
+                expense_id="00000000-0000-0000-0000-000000000001",
             )
 
     def test_respond_to_user_message_required(self):

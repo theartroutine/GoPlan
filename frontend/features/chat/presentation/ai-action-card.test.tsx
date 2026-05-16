@@ -17,7 +17,7 @@ vi.mock("@/features/chat/infrastructure/ai-action-drafts-api", () => ({
 vi.mock("@/features/trips/presentation/trip-context", () => ({
   useTripContext: () => ({
     tripId: "trip-1",
-    data: { timezone: "UTC", currency_code: "VND" },
+    data: { trip: { timezone: "UTC", currency_code: "VND" } },
     loading: false,
     error: null,
     notFound: false,
@@ -200,6 +200,80 @@ describe("AIActionCard", () => {
     expect(
       await screen.findByRole("img", { name: "Ready" }),
     ).toBeInTheDocument();
+  });
+
+  it("edits synthetic time range fields without losing entered values", async () => {
+    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({
+        action_type: "timeline.activity.create",
+        status: "READY",
+        can_confirm: true,
+        can_cancel: true,
+        can_edit: false,
+        missing_fields: [],
+        preview: {
+          title: "Dinh I",
+          start_time: "08:30",
+          end_time: "10:00",
+        },
+        display: {
+          icon: "activity",
+          kicker: "Activity · Sightseeing",
+          title: "Dinh I",
+          tone: "create",
+          chips: [{ icon: "clock", label: "08:30 – 10:00" }],
+        },
+      }),
+    });
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          action_type: "timeline.activity.create",
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          can_edit: true,
+          preview: { title: "Dinh I" },
+          display: {
+            icon: "activity",
+            kicker: "Activity · Sightseeing",
+            title: "Dinh I",
+            tone: "create",
+          },
+          missing_fields: [
+            {
+              name: "time_range",
+              label: "Time",
+              type: "time_range",
+              constraints: {
+                section_index: 1,
+                section_date: "2026-04-20",
+                pair: ["start_time", "end_time"],
+              },
+              presets: [
+                { label: "Morning", start: "08:30", end: "10:00" },
+              ],
+            },
+          ],
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Starts at"), {
+      target: { value: "08:30" },
+    });
+    fireEvent.change(screen.getByLabelText("Ends at"), {
+      target: { value: "10:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
+      start_time: "08:30",
+      end_time: "10:00",
+    });
+    expect(await screen.findByRole("img", { name: "Ready" })).toBeInTheDocument();
   });
 
   it("renders timeline activity details from preview when display is sparse", () => {

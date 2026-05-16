@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from django.test import TestCase
 
-from ai.agent.draft_fields import build_missing_fields_for_create_activity
+from ai.agent.draft_fields import (
+    build_missing_fields_for_create_activity,
+    normalize_missing_fields,
+)
 from test_helpers import create_completed_user
 from trips.models import TimelineSection
 from trips.services import create_trip
@@ -54,6 +57,30 @@ class BuildMissingFieldsForCreateActivityTests(TestCase):
         preset_labels = [p["label"] for p in field["presets"]]
         self.assertIn("Morning", preset_labels)
         self.assertIn("Afternoon", preset_labels)
+
+    def test_normalize_missing_fields_preserves_time_range_metadata(self):
+        fields = normalize_missing_fields([
+            {
+                "name": "time_range",
+                "label": "Time",
+                "type": "time_range",
+                "required": True,
+                "constraints": {
+                    "section_index": 2,
+                    "section_date": "2026-06-02",
+                    "pair": ["start_time", "end_time"],
+                },
+                "presets": [
+                    {"label": "Morning", "start": "08:30", "end": "10:00"},
+                ],
+            }
+        ])
+
+        self.assertEqual(fields[0]["name"], "time_range")
+        self.assertTrue(fields[0]["required"])
+        self.assertEqual(fields[0]["constraints"]["section_index"], 2)
+        self.assertEqual(fields[0]["constraints"]["pair"], ["start_time", "end_time"])
+        self.assertEqual(fields[0]["presets"][0]["label"], "Morning")
 
     def test_time_range_field_for_first_section_has_index_1(self):
         fields = build_missing_fields_for_create_activity(

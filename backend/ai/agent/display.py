@@ -212,6 +212,31 @@ def _build_expense_update(payload: dict, trip_context: dict) -> dict:
     return out
 
 
+def _build_expense_contribution(payload: dict, trip_context: dict) -> dict:
+    scope = str(payload.get("scope", "")).lower()
+    is_all_paid = scope in {
+        "all_participants_paid",
+        "all_participants",
+        "everyone_paid",
+    }
+    title = (
+        "Mark all participants paid"
+        if is_all_paid
+        else "Update expense contributions"
+    )
+    meta = []
+    contributions = payload.get("contributions")
+    if isinstance(contributions, list) and contributions:
+        meta.append({"label": "Contributions", "value": str(len(contributions))})
+    return {
+        "icon": "expense",
+        "tone": "update",
+        "kicker": "Expense contributions",
+        "title": payload.get("title") or title,
+        "meta": meta,
+    }
+
+
 def _build_expense_delete(payload: dict, trip_context: dict) -> dict:
     return {
         "icon": "expense",
@@ -262,7 +287,7 @@ DISPLAY_BUILDERS: dict[str, Callable[[dict, dict], dict]] = {
     "expense.create": _build_expense_create,
     "expense.update": _build_expense_update,
     "expense.delete": _build_expense_delete,
-    "expense.contribution.set": _build_expense_update,
+    "expense.contribution.set": _build_expense_contribution,
     "settlement.finalize": _build_settlement,
     "settlement.reopen": _build_settlement,
     "settlement.transfer.mark_sent": _build_transfer,

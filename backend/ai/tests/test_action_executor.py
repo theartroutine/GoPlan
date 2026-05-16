@@ -291,6 +291,59 @@ class ActionExecutorTests(TestCase):
         self.assertEqual(contributions[member.id], Decimal("600000"))
         self.assertEqual(confirmed.result["updated_count"], 2)
 
+    def test_mark_all_participants_paid_uses_exact_odd_shares(self):
+        member = create_completed_user(
+            "exec-share-odd-member@example.com",
+            "execshareodd",
+            "EXE006",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Odd Dinner",
+            total_amount=Decimal("100003"),
+            collector=self.captain,
+        )
+        shares = {
+            participant.user_id: participant.share_amount
+            for participant in expense.participants.all()
+        }
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="expense.contribution.set",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "expense_id": str(expense.id),
+                "scope": "all_participants_paid",
+            },
+            preview={"summary": "Everyone paid"},
+            missing_fields=[],
+            preconditions=self._expense_preconditions(expense),
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        confirm_action_draft(
+            draft_id=draft.id,
+            trip_id=self.trip.id,
+            actor=self.captain,
+        )
+
+        contributions = {
+            contribution.user_id: contribution.amount
+            for contribution in ExpenseContribution.objects.filter(expense=expense)
+        }
+        self.assertEqual(contributions, shares)
+
     def test_stale_expense_contribution_set_draft_is_rejected(self):
         expense = create_expense(
             trip_id=self.trip.id,

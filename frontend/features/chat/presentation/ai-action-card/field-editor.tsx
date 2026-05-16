@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -38,6 +38,7 @@ function fieldErrorsFromError(error: unknown): Record<string, string> | null {
 
 export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
   const [values, setValues] = useState<Record<string, unknown>>({});
+  const valuesRef = useRef<Record<string, unknown>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>(
     {},
   );
@@ -46,11 +47,15 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
   const editableFields = fields.filter((f) => f.type !== "target");
 
   function setField(name: string, value: unknown) {
-    setValues((prev) => ({ ...prev, [name]: value }));
+    valuesRef.current = { ...valuesRef.current, [name]: value };
+    setValues(valuesRef.current);
   }
 
   function setError(name: string, error: string | null) {
-    setFieldErrors((prev) => ({ ...prev, [name]: error }));
+    setFieldErrors((prev) => {
+      if (prev[name] === error) return prev;
+      return { ...prev, [name]: error };
+    });
   }
 
   async function handleSubmit() {
@@ -58,7 +63,7 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
 
     // Strip empty string values; they signal "not filled".
     const payload: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(values)) {
+    for (const [k, v] of Object.entries(valuesRef.current)) {
       if (typeof v === "string" && v.trim() === "") continue;
       if (v === null || v === undefined) continue;
       payload[k] = v;

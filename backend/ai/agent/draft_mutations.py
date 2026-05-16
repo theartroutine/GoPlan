@@ -10,6 +10,7 @@ from ai.action_types import (
 from ai.agent.display import build_display
 from ai.agent.draft_fields import (
     build_missing_fields,
+    normalize_missing_fields,
     normalize_missing_field_names,
 )
 from ai.agent.drafts import (
@@ -85,14 +86,28 @@ def _apply_draft_patch_payload(draft: AIActionDraft, patch_payload: dict) -> dic
     return {**next_payload, **patch_payload}
 
 
-def _disallowed_patch_fields(draft: AIActionDraft, patch_payload: dict) -> list[str]:
+def _allowed_patch_fields(draft: AIActionDraft) -> set[str]:
     allowed_fields = set(
         normalize_missing_field_names(
             draft.missing_fields,
             strict=False,
         )
     )
+    for field in normalize_missing_fields(draft.missing_fields, strict=False):
+        if field.get("name") != "time_range":
+            continue
+        constraints = field.get("constraints")
+        pair = constraints.get("pair") if isinstance(constraints, dict) else None
+        if isinstance(pair, list):
+            allowed_fields.update(str(name) for name in pair if name)
+        else:
+            allowed_fields.update({"start_time", "end_time"})
     allowed_fields.difference_update({"activity_id", "expense_id"})
+    return allowed_fields
+
+
+def _disallowed_patch_fields(draft: AIActionDraft, patch_payload: dict) -> list[str]:
+    allowed_fields = _allowed_patch_fields(draft)
     return sorted(
         field_name
         for field_name in patch_payload.keys()

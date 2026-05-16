@@ -54,7 +54,7 @@ TOOLS: list[ToolSpec] = [
              "Draft deletion of an existing expense.",
              schemas.DeleteExpenseArgs, _h("delete_expense")),
     ToolSpec("set_expense_contribution",
-             "Draft per-member contributions for an expense.",
+             "Draft expense contributions. When the user says everyone/all participants already paid enough, use scope='all_participants_paid' instead of manually splitting amounts.",
              schemas.SetExpenseContributionArgs, _h("set_expense_contribution")),
     ToolSpec("finalize_settlement",
              "Draft finalizing the trip's current settlement.",

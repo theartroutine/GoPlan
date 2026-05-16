@@ -34,7 +34,10 @@ def _v2_system_prompt() -> str:
         "shown in `active_drafts`, call `update_action_draft` with that "
         "`draft_id` instead of creating a new draft. Never invent IDs; use "
         "only IDs present in the provided context. Respond to the user in "
-        "Vietnamese unless the user clearly uses another language. Be "
+        "Vietnamese unless the user clearly uses another language. When the "
+        "user says every participant has paid enough for an expense, call "
+        "`set_expense_contribution` with `scope: \"all_participants_paid\"` "
+        "so the backend copies the exact current participant shares. Be "
         "concise; the chat shows action cards beside your text reply."
     )
 

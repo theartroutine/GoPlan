@@ -175,6 +175,32 @@ class ToolHandlerTests(TestCase):
             "expense",
         )
 
+    def test_set_expense_contribution_scope_persists_all_paid_payload(self):
+        from ai.agent import handlers, schemas
+        from expenses.services import create_expense
+
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.user,
+            title="Lunch",
+            description="",
+            total_amount=Decimal("100003"),
+            collector_id=self.user.id,
+        )
+
+        result = handlers.set_expense_contribution(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.SetExpenseContributionArgs(
+                expense_id=expense.id,
+                scope="all_participants_paid",
+            ),
+        )
+
+        self.assertEqual(result.draft.payload["scope"], "all_participants_paid")
+        self.assertNotIn("contributions", result.draft.payload)
+
     def test_respond_to_user_returns_message_without_draft(self):
         from ai.agent import handlers, schemas
 

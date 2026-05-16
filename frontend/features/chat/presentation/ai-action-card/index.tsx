@@ -60,7 +60,7 @@ function errorMessage(error: unknown, fallback: string): string {
 export function AIActionCard(props: CardProps) {
   const { tripId, draft, onDraftChanged } = props;
   const trip = useTripContext();
-  const tripTimezone = trip.data?.timezone;
+  const tripTimezone = trip.data?.trip.timezone;
   const [localDraft, setLocalDraft] = useState(draft);
   const [pending, setPending] = useState<"confirm" | "cancel" | "patch" | null>(
     null,

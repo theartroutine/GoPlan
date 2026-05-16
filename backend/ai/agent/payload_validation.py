@@ -412,6 +412,7 @@ def missing_payload_field_names(
                 "amount",
                 "contributions",
                 "member_contributions",
+                "scope",
             },
             payload=payload,
         )

@@ -17,4 +17,6 @@ export type CardProps = {
 
 export type CardRenderer = (props: CardProps) => ReactNode;
 
-export type ChipIcon = NonNullable<AIActionDisplay["chips"]>[number]["icon"];
+export type ChipIcon = NonNullable<
+  NonNullable<AIActionDisplay["chips"]>[number]["icon"]
+>;

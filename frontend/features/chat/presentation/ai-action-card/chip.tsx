@@ -21,16 +21,22 @@ const ICON_TONE: Record<ChipIcon, string> = {
 };
 
 export function Chip({ icon, label }: { icon?: ChipIcon; label: string }) {
-  const Icon = icon ? ICONS[icon] : null;
+  if (!icon) {
+    return (
+      <span className="inline-flex min-h-7 items-center gap-1.5 text-xs font-medium text-foreground">
+        {label}
+      </span>
+    );
+  }
+
+  const Icon = ICONS[icon];
   return (
     <span className="inline-flex min-h-7 items-center gap-1.5 text-xs font-medium text-foreground">
-      {Icon ? (
-        <span
-          className={`inline-flex size-5 items-center justify-center rounded-md ${ICON_TONE[icon]}`}
-        >
-          <Icon className="size-3" aria-hidden />
-        </span>
-      ) : null}
+      <span
+        className={`inline-flex size-5 items-center justify-center rounded-md ${ICON_TONE[icon]}`}
+      >
+        <Icon className="size-3" aria-hidden />
+      </span>
       {label}
     </span>
   );

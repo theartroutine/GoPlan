@@ -92,6 +92,20 @@ class DisplayBuilderTests(TestCase):
         self.assertIn("2,000,000", display["hero"]["value"])
         self.assertNotIn("fd46f358", repr(display))
 
+    def test_expense_contribution_all_paid_does_not_show_zero_amount(self):
+        display = build_display(
+            action_type="expense.contribution.set",
+            payload={
+                "expense_id": "00000000-0000-0000-0000-000000000001",
+                "scope": "all_participants_paid",
+            },
+            trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
+        )
+
+        self.assertEqual(display["icon"], "expense")
+        self.assertEqual(display["title"], "Mark all participants paid")
+        self.assertNotIn("hero", display)
+
     def test_unknown_action_type_returns_generic_display(self):
         display = build_display(
             action_type="unknown.action",

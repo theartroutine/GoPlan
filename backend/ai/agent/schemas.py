@@ -110,7 +110,18 @@ class _Contribution(BaseModel):
 
 class SetExpenseContributionArgs(BaseModel):
     expense_id: UUID
-    contributions: list[_Contribution] = Field(min_length=1)
+    contributions: list[_Contribution] | None = Field(default=None, min_length=1)
+    scope: Literal[
+        "all_participants_paid",
+        "all_participants",
+        "everyone_paid",
+    ] | None = None
+
+    @model_validator(mode="after")
+    def requires_contributions_or_scope(self):
+        if not self.contributions and self.scope is None:
+            raise ValueError("contributions or scope is required")
+        return self
 
 
 class FinalizeSettlementArgs(BaseModel):

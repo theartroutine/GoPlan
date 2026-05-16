@@ -915,6 +915,51 @@ class AIActionDraftPatchFieldValidationTests(APITestCase, AIActionDraftModelTest
 
         self.assertEqual(res.status_code, 200)
 
+    def test_patch_synthetic_time_range_updates_nested_payload(self):
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            required_confirmation="CAPTAIN",
+            payload={
+                "section_id": str(section.id),
+                "data": {
+                    "title": "Museum Visit",
+                    "system_type": "SIGHTSEEING",
+                    "time_mode": "TIME_RANGE",
+                },
+            },
+            preview={"title": "Museum Visit"},
+            missing_fields=[
+                {
+                    "name": "time_range",
+                    "label": "Time",
+                    "type": "time_range",
+                    "constraints": {"pair": ["start_time", "end_time"]},
+                },
+            ],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        self.client.force_authenticate(self.user)
+
+        res = self.client.patch(
+            f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
+            data={"payload": {"start_time": "08:30", "end_time": "10:00"}},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, AIActionDraftStatus.READY)
+        self.assertEqual(draft.payload["data"]["start_time"], "08:30")
+        self.assertEqual(draft.payload["data"]["end_time"], "10:00")
+        self.assertEqual(draft.missing_fields, [])
+
 
 class AIActionDraftNullResponseMessageTests(APITestCase, AIActionDraftModelTests):
     """Verify that v2 drafts with response_message=None don't crash."""

@@ -27,6 +27,8 @@ MISSING_FIELD_DEFINITIONS = {
     "user_id": {"label": "Member"},
 }
 
+PRESERVED_MISSING_FIELD_KEYS = ("required", "constraints", "options", "presets")
+
 
 def missing_field_name(field) -> str:
     if isinstance(field, dict):
@@ -70,6 +72,10 @@ def build_missing_field(name: str, *, source: dict | None = None) -> dict:
     field = {"name": name, "label": label}
     if field_type:
         field["type"] = field_type
+    if source:
+        for key in PRESERVED_MISSING_FIELD_KEYS:
+            if key in source:
+                field[key] = source[key]
     return field
 
 

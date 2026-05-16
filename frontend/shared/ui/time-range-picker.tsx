@@ -1,7 +1,7 @@
 "use client";
 
 import { Calendar } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "@/shared/ui/input";
 
@@ -46,6 +46,18 @@ export function TimeRangePicker({
 }: Props) {
   const [start, setStart] = useState(value.start ?? "");
   const [end, setEnd] = useState(value.end ?? "");
+  const startRef = useRef(start);
+  const endRef = useRef(end);
+  const onChangeRef = useRef(onChange);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   const dayLabel = useMemo(
     () => `Day ${sectionIndex} · ${formatDayLabel(sectionDate, tripTimezone)}`,
@@ -59,15 +71,25 @@ export function TimeRangePicker({
   }, [start, end]);
 
   useEffect(() => {
-    onError?.(error);
-  }, [error, onError]);
+    onErrorRef.current?.(error);
+  }, [error]);
 
   function commit(nextStart: string, nextEnd: string) {
+    startRef.current = nextStart;
+    endRef.current = nextEnd;
     setStart(nextStart);
     setEnd(nextEnd);
     if (nextStart && nextEnd && nextStart < nextEnd) {
-      onChange({ start: nextStart, end: nextEnd });
+      onChangeRef.current({ start: nextStart, end: nextEnd });
     }
+  }
+
+  function updateStart(nextStart: string) {
+    commit(nextStart, endRef.current);
+  }
+
+  function updateEnd(nextEnd: string) {
+    commit(startRef.current, nextEnd);
   }
 
   return (
@@ -83,7 +105,8 @@ export function TimeRangePicker({
             type="time"
             value={start}
             disabled={disabled}
-            onChange={(e) => commit(e.target.value, end)}
+            onInput={(e) => updateStart(e.currentTarget.value)}
+            onChange={(e) => updateStart(e.currentTarget.value)}
           />
         </label>
         <label className="block space-y-1 text-xs">
@@ -93,7 +116,8 @@ export function TimeRangePicker({
             value={end}
             disabled={disabled}
             className={error ? "border-destructive" : undefined}
-            onChange={(e) => commit(start, e.target.value)}
+            onInput={(e) => updateEnd(e.currentTarget.value)}
+            onChange={(e) => updateEnd(e.currentTarget.value)}
           />
         </label>
       </div>
