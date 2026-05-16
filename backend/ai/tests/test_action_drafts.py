@@ -14,8 +14,7 @@ from ai.action_types import (
     AI_CONFIRMATION_TRANSFER_PAYER,
     AI_CONFIRMATION_TRANSFER_RECIPIENT,
 )
-from ai.agent.drafts import build_action_draft_payload
-from ai.agent.runner import AgentDraftSpec, AgentRunResult
+from ai.agent.drafts import build_action_draft_payload, create_action_draft
 from ai.lifecycle import finish_interaction_success
 from ai.models import (
     AIActionDraft,
@@ -788,7 +787,7 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
 
 
 class AIActionDraftDisplayAndSummaryTests(AIActionDraftModelTests):
-    """Test that finish_interaction_success populates display and summary on persisted drafts."""
+    """Test that tool-created drafts keep display and summary after finishing."""
 
     @patch("ai.lifecycle.push_chat_message")
     def test_draft_persisted_with_display_and_summary(self, _push):
@@ -797,30 +796,26 @@ class AIActionDraftDisplayAndSummaryTests(AIActionDraftModelTests):
         self.interaction.response_message = None
         self.interaction.save()
 
-        draft_spec = AgentDraftSpec(
+        create_action_draft(
+            trip=self.trip,
+            interaction=self.interaction,
             action_type="expense.create",
             required_confirmation=AI_CONFIRMATION_CAPTAIN,
             status=AIActionDraftStatus.READY,
             payload={"title": "Dinner", "total_amount": "1200000"},
-            preview={"title": "Dinner"},
             missing_fields=[],
             preconditions={},
         )
 
-        class FakeUsage:
-            input_tokens = 10
-            output_tokens = 20
-            total_tokens = 30
-
         with self.captureOnCommitCallbacks(execute=False):
             finish_interaction_success(
                 interaction=self.interaction,
-                content="I prepared a draft.",
-                usage=FakeUsage(),
-                drafts=[draft_spec],
+                message_text="I prepared a draft.",
             )
 
+        self.interaction.refresh_from_db()
         draft = AIActionDraft.objects.get(interaction=self.interaction)
+        self.assertEqual(draft.response_message, self.interaction.response_message)
 
         # display must have icon matching the expense family and a non-empty kicker
         self.assertEqual(draft.display.get("icon"), "expense")

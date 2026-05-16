@@ -285,7 +285,6 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_TIMEOUT_SECONDS = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60"))
 DEEPSEEK_MAX_OUTPUT_TOKENS = int(os.environ.get("DEEPSEEK_MAX_OUTPUT_TOKENS", "4000"))
 GOPLAN_AI_THINKING_ENABLED = env_bool("GOPLAN_AI_THINKING_ENABLED", default=True)
-GOPLAN_AI_TOOL_CALLING_ENABLED = env_bool("GOPLAN_AI_TOOL_CALLING_ENABLED", default=False)
 GOPLAN_AI_REASONING_EFFORT = os.environ.get("GOPLAN_AI_REASONING_EFFORT", "high")
 GOPLAN_AI_LOCK_TTL_SECONDS = int(os.environ.get("GOPLAN_AI_LOCK_TTL_SECONDS", "120"))
 GOPLAN_AI_MAX_ATTEMPTS = int(os.environ.get("GOPLAN_AI_MAX_ATTEMPTS", "3"))
@@ -300,15 +299,6 @@ GOPLAN_AI_CONTEXT_TIMELINE_ACTIVITY_LIMIT = int(
 )
 GOPLAN_AI_CONTEXT_EXPENSE_LIMIT = int(
     os.environ.get("GOPLAN_AI_CONTEXT_EXPENSE_LIMIT", "80")
-)
-GOPLAN_AI_SYSTEM_PROMPT = (
-    "You are GoPlanAI, a concise assistant inside a group trip planning chat. "
-    "Answer the user's prompt helpfully. Do not claim access to trip data, "
-    "chat history, expenses, itinerary, or members unless they are provided "
-    "in the prompt. "
-    "Format using Markdown: use **bold** for emphasis and section titles "
-    "(never use # ## ### headings), use bullet lists where helpful, "
-    "and use fenced code blocks with language tags for any code snippets."
 )
 
 # -------- Channels Configuration --------

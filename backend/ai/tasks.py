@@ -5,16 +5,14 @@ import logging
 from billiard.exceptions import SoftTimeLimitExceeded
 from celery import shared_task
 from celery.exceptions import Retry
-from django.conf import settings
 
-from ai.agent.runner import run_goplan_ai_agent, run_goplan_ai_agent_v2
+from ai.agent.runner import run_goplan_ai_agent
 from ai.deepseek import DeepSeekProviderError
 from ai.lifecycle import (
     InteractionAlreadyRunningError,
     claim_interaction_for_run,
     finish_interaction_failure,
     finish_interaction_success,
-    finish_interaction_success_v2,
 )
 from ai.models import AIInteraction, AIInteractionErrorCode
 from ai.realtime import push_ai_typing_started, push_ai_typing_stopped
@@ -50,7 +48,7 @@ def _handle_failure(task, *, interaction: AIInteraction, error_code: str) -> Non
     if error_code in _RETRY_POLICY:
         max_retries, schedule = _RETRY_POLICY[error_code]
         countdown = _retry_countdown(schedule, task.request.retries)
-        # task.retry() always raises — it never returns.
+        # task.retry() always raises; it never returns.
         task.retry(
             exc=DeepSeekProviderError(error_code),
             countdown=countdown,
@@ -74,9 +72,8 @@ def run_goplan_ai_interaction(self, interaction_id: str) -> None:
     if interaction is None:
         return
 
-    # Resolve the error code outside of the try/except that catches
-    # DeepSeekProviderError so that _handle_failure → task.retry() cannot be
-    # re-caught by the v1 exception handler.
+    # Resolve the error code outside the broad exception handler so that
+    # _handle_failure -> task.retry() cannot be re-caught below.
     resolved_error_code: str | None = None
     typing_started = False
 
@@ -84,27 +81,14 @@ def run_goplan_ai_interaction(self, interaction_id: str) -> None:
         push_ai_typing_started(interaction)
         typing_started = True
 
-        if settings.GOPLAN_AI_TOOL_CALLING_ENABLED:
-            v2_result = run_goplan_ai_agent_v2(interaction=interaction)
-            if v2_result.error_code:
-                resolved_error_code = v2_result.error_code
-            else:
-                finish_interaction_success_v2(
-                    interaction=interaction,
-                    message_text=v2_result.message_text or "",
-                )
+        result = run_goplan_ai_agent(interaction=interaction)
+        if result.error_code:
+            resolved_error_code = result.error_code
         else:
-            try:
-                result = run_goplan_ai_agent(interaction)
-            except DeepSeekProviderError as exc:
-                resolved_error_code = exc.error_code
-            else:
-                finish_interaction_success(
-                    interaction=interaction,
-                    content=result.message,
-                    usage=result.usage,
-                    drafts=result.drafts,
-                )
+            finish_interaction_success(
+                interaction=interaction,
+                message_text=result.message_text or "",
+            )
 
     except SoftTimeLimitExceeded:
         resolved_error_code = AIInteractionErrorCode.TIMEOUT

@@ -7,6 +7,7 @@ from ai.action_types import (
     AI_ACTION_TIMELINE_ACTIVITY_CREATE,
     AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
 )
+from ai.agent.display import build_display
 from ai.agent.draft_fields import (
     build_missing_fields,
     normalize_missing_field_names,
@@ -27,7 +28,6 @@ from ai.agent.preconditions import (
     action_requires_stale_precondition,
     build_backend_preconditions,
 )
-from ai.agent.preview import build_action_preview
 from ai.models import AIActionDraft, AIActionDraftStatus
 
 
@@ -44,6 +44,20 @@ class AIActionDraftPatchFieldNotAllowedError(Exception):
 
 class AIActionDraftTargetNotFoundError(Exception):
     error_code = "AI_DRAFT_TARGET_NOT_FOUND"
+
+
+def _build_patch_preview(*, action_type: str, payload: dict) -> dict:
+    preview = {
+        key: value
+        for key, value in payload.items()
+        if key != "data"
+    }
+    data = payload.get("data")
+    if isinstance(data, dict):
+        preview.update(data)
+    if action_type:
+        preview["action_type"] = action_type
+    return preview
 
 
 def _apply_draft_patch_payload(draft: AIActionDraft, patch_payload: dict) -> dict:
@@ -122,9 +136,8 @@ def patch_action_draft(
     expired = False
     with transaction.atomic():
         draft = (
-            AIActionDraft.objects
-            .select_for_update(of=("self",))
-            .select_related("response_message")
+            AIActionDraft.objects.select_for_update(of=("self",))
+            .select_related("response_message", "trip")
             .get(pk=draft_id, trip_id=trip_id)
         )
 
@@ -167,10 +180,20 @@ def patch_action_draft(
                     "Draft target could not be resolved."
                 ) from exc
             draft.payload = next_payload
-            draft.preview = build_action_preview(
+            draft.preview = _build_patch_preview(
                 action_type=draft.action_type,
                 payload=next_payload,
             )
+            if not still_missing:
+                trip_context = {
+                    "timezone": draft.trip.timezone,
+                    "currency_code": draft.trip.currency_code,
+                }
+                draft.display = build_display(
+                    action_type=draft.action_type,
+                    payload=next_payload,
+                    trip_context=trip_context,
+                )
             draft.missing_fields = still_missing
             draft.preconditions = next_preconditions
             if not still_missing:
@@ -179,6 +202,7 @@ def patch_action_draft(
                 update_fields=[
                     "payload",
                     "preview",
+                    "display",
                     "missing_fields",
                     "preconditions",
                     "status",

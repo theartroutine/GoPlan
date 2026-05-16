@@ -53,12 +53,7 @@ def create_action_draft(
     required_confirmation: str | None = None,
     status: str | None = None,
 ) -> AIActionDraft:
-    """Persist a single AIActionDraft row.
-
-    Used by tool handlers when running the v2 (tool-calling) runner.
-    Mirrors the persistence shape that finish_interaction_success uses
-    when bulk-creating drafts from the v1 runner.
-    """
+    """Persist a single AIActionDraft row from a tool handler."""
     from ai.lifecycle import summarize_draft  # avoid circular import at module level
 
     missing = missing_fields or []
@@ -81,8 +76,16 @@ def create_action_draft(
         status=effective_status,
         payload=payload,
         preview=payload,
-        display=build_display(action_type=action_type, payload=payload, trip_context=trip_context),
-        summary=summarize_draft(action_type=action_type, payload=payload, status=effective_status),
+        display=build_display(
+            action_type=action_type,
+            payload=payload,
+            trip_context=trip_context,
+        ),
+        summary=summarize_draft(
+            action_type=action_type,
+            payload=payload,
+            status=effective_status,
+        ),
         missing_fields=missing,
         preconditions=preconditions or {},
         required_confirmation=required_confirmation or "",

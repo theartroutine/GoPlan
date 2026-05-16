@@ -2,16 +2,15 @@ from __future__ import annotations
 
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
-from celery.exceptions import Retry
 from django.test import TestCase
-from django.test.utils import override_settings
 from django.utils import timezone
 
-from ai.agent.runner import AgentDraftSpec, AgentRunResult, AgentRunResultV2
-from ai.deepseek import DeepSeekProviderError, DeepSeekUsage
+from ai.agent.drafts import create_action_draft
+from ai.agent.runner import AgentRunResult
+from ai.deepseek import DeepSeekProviderError
 from ai.lifecycle import InteractionAlreadyRunningError, claim_interaction_for_run
 from ai.models import (
     AIActionDraft,
@@ -21,7 +20,6 @@ from ai.models import (
     AIInteractionStatus,
 )
 from ai.services import (
-    GENERIC_AI_ERROR_MESSAGE,
     enqueue_ai_interaction,
     message_for_error_code,
     recover_stale_ai_interactions,
@@ -103,9 +101,8 @@ class GoPlanAITaskTests(TestCase):
     ):
         interaction = _make_interaction()
         mock_complete.return_value = AgentRunResult(
-            message="AI answer",
-            drafts=[],
-            usage=DeepSeekUsage(input_tokens=5, output_tokens=7, total_tokens=12),
+            drafts_created=0,
+            message_text="AI answer",
         )
 
         run_goplan_ai_interaction(str(interaction.id))
@@ -114,7 +111,6 @@ class GoPlanAITaskTests(TestCase):
         self.assertEqual(interaction.status, AIInteractionStatus.SUCCEEDED)
         self.assertEqual(interaction.attempt_count, 1)
         self.assertIsNotNone(interaction.last_attempted_at)
-        self.assertEqual(interaction.total_tokens, 12)
         self.assertIsNotNone(interaction.response_message_id)
         self.assertEqual(interaction.response_message.content, "AI answer")
         self.assertEqual(interaction.response_message.sender_kind, "AI")
@@ -135,8 +131,8 @@ class GoPlanAITaskTests(TestCase):
         The final failure message is only written once all retries are exhausted
         by the Celery worker."""
         interaction = _make_interaction()
-        mock_complete.side_effect = DeepSeekProviderError(
-            AIInteractionErrorCode.PROVIDER_BAD_RESPONSE
+        mock_complete.return_value = AgentRunResult(
+            error_code=AIInteractionErrorCode.PROVIDER_BAD_RESPONSE
         )
 
         with self.assertRaises(DeepSeekProviderError):
@@ -156,9 +152,8 @@ class GoPlanAITaskTests(TestCase):
     ):
         interaction = _make_interaction()
         mock_complete.return_value = AgentRunResult(
-            message="AI answer",
-            drafts=[],
-            usage=DeepSeekUsage(input_tokens=5, output_tokens=7, total_tokens=12),
+            drafts_created=0,
+            message_text="AI answer",
         )
 
         run_goplan_ai_interaction(str(interaction.id))
@@ -182,21 +177,22 @@ class GoPlanAITaskTests(TestCase):
         _typing_stopped,
     ):
         interaction = _make_interaction()
-        mock_agent.return_value = AgentRunResult(
-            message="I prepared an expense draft.",
-            usage=DeepSeekUsage(input_tokens=1, output_tokens=2, total_tokens=3),
-            drafts=[
-                AgentDraftSpec(
-                    action_type="expense.create",
-                    required_confirmation="CAPTAIN",
-                    status="READY",
-                    payload={"title": "Dinner", "total_amount": "1200000"},
-                    preview={"title": "Dinner"},
-                    missing_fields=[],
-                    preconditions={},
-                )
-            ],
-        )
+
+        def run_agent(*, interaction):
+            create_action_draft(
+                trip=interaction.trip,
+                interaction=interaction,
+                action_type="expense.create",
+                required_confirmation="CAPTAIN",
+                status=AIActionDraftStatus.READY,
+                payload={"title": "Dinner", "total_amount": "1200000"},
+            )
+            return AgentRunResult(
+                drafts_created=1,
+                message_text="I prepared an expense draft.",
+            )
+
+        mock_agent.side_effect = run_agent
 
         run_goplan_ai_interaction(str(interaction.id))
 
@@ -308,132 +304,106 @@ class GoPlanAITaskTests(TestCase):
         mock_delay.assert_not_called()
 
 
-class TaskDispatchFlagTests(TestCase):
+class TaskDispatchTests(TestCase):
     def setUp(self):
         self.interaction = _make_interaction()
 
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
-    @patch("ai.tasks.push_ai_typing_stopped")
-    @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.run_goplan_ai_agent_v2")
-    def test_task_dispatches_to_runner_v2_when_flag_enabled(
-        self, mock_v2, _typing_started, _typing_stopped
-    ):
-        mock_v2.return_value = AgentRunResultV2(drafts_created=0, message_text="hi")
-
-        run_goplan_ai_interaction(str(self.interaction.id))
-
-        mock_v2.assert_called_once()
-
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=False)
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
     @patch("ai.tasks.run_goplan_ai_agent")
-    def test_task_dispatches_to_runner_v1_when_flag_disabled(
-        self, mock_v1, _typing_started, _typing_stopped
+    def test_task_dispatches_to_runner(
+        self,
+        mock_agent,
+        _typing_started,
+        _typing_stopped,
     ):
-        mock_v1.return_value = AgentRunResult(
-            message="hi",
-            usage=DeepSeekUsage(0, 0, 0),
-            drafts=[],
-        )
+        mock_agent.return_value = AgentRunResult(drafts_created=0, message_text="hi")
 
         run_goplan_ai_interaction(str(self.interaction.id))
 
-        mock_v1.assert_called_once()
+        mock_agent.assert_called_once()
 
 
 class RetryPolicyTests(TestCase):
     """Tests for the differentiated retry policy per error_code.
 
     When calling the Celery task directly (not via .apply()), task.retry()
-    raises the underlying exc (DeepSeekProviderError) rather than Retry,
-    because request.called_directly is True. So "retry" tests assert on
-    DeepSeekProviderError being raised and finish_interaction_failure NOT
-    being called. "No retry" tests assert the interaction ends up FAILED.
+    raises the underlying exc (DeepSeekProviderError) rather than Retry.
+    Retry tests assert on DeepSeekProviderError being raised and
+    finish_interaction_failure NOT being called. No-retry tests assert the
+    interaction ends up FAILED.
     """
 
     def setUp(self):
         self.interaction = _make_interaction()
 
-    # -------- v2 path: retryable error codes --------
+    # -------- Retryable error codes --------
 
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
     @patch("ai.tasks.finish_interaction_failure")
-    @patch("ai.tasks.run_goplan_ai_agent_v2")
+    @patch("ai.tasks.run_goplan_ai_agent")
     def test_rate_limit_triggers_retry_not_finish(
-        self, mock_v2, mock_finish, _ts, _tp
+        self, mock_agent, mock_finish, _ts, _tp
     ):
-        """RATE_LIMIT has retry policy → raises (retry) and does NOT call finish_interaction_failure."""
-        mock_v2.return_value = AgentRunResultV2(
+        mock_agent.return_value = AgentRunResult(
             error_code=AIInteractionErrorCode.RATE_LIMIT
         )
         with self.assertRaises(DeepSeekProviderError):
             run_goplan_ai_interaction(str(self.interaction.id))
         mock_finish.assert_not_called()
 
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
     @patch("ai.tasks.finish_interaction_failure")
-    @patch("ai.tasks.run_goplan_ai_agent_v2")
+    @patch("ai.tasks.run_goplan_ai_agent")
     def test_provider_unavailable_triggers_retry_not_finish(
-        self, mock_v2, mock_finish, _ts, _tp
+        self, mock_agent, mock_finish, _ts, _tp
     ):
-        """PROVIDER_UNAVAILABLE has retry policy → raises (retry) and does NOT call finish_interaction_failure."""
-        mock_v2.return_value = AgentRunResultV2(
+        mock_agent.return_value = AgentRunResult(
             error_code=AIInteractionErrorCode.PROVIDER_UNAVAILABLE
         )
         with self.assertRaises(DeepSeekProviderError):
             run_goplan_ai_interaction(str(self.interaction.id))
         mock_finish.assert_not_called()
 
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
     @patch("ai.tasks.finish_interaction_failure")
-    @patch("ai.tasks.run_goplan_ai_agent_v2")
+    @patch("ai.tasks.run_goplan_ai_agent")
     def test_timeout_triggers_retry_not_finish(
-        self, mock_v2, mock_finish, _ts, _tp
+        self, mock_agent, mock_finish, _ts, _tp
     ):
-        """TIMEOUT has retry policy → raises (retry) and does NOT call finish_interaction_failure."""
-        mock_v2.return_value = AgentRunResultV2(
+        mock_agent.return_value = AgentRunResult(
             error_code=AIInteractionErrorCode.TIMEOUT
         )
         with self.assertRaises(DeepSeekProviderError):
             run_goplan_ai_interaction(str(self.interaction.id))
         mock_finish.assert_not_called()
 
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
     @patch("ai.tasks.finish_interaction_failure")
-    @patch("ai.tasks.run_goplan_ai_agent_v2")
+    @patch("ai.tasks.run_goplan_ai_agent")
     def test_provider_bad_response_triggers_retry_not_finish(
-        self, mock_v2, mock_finish, _ts, _tp
+        self, mock_agent, mock_finish, _ts, _tp
     ):
-        """PROVIDER_BAD_RESPONSE has retry policy → raises (retry) and does NOT call finish_interaction_failure."""
-        mock_v2.return_value = AgentRunResultV2(
+        mock_agent.return_value = AgentRunResult(
             error_code=AIInteractionErrorCode.PROVIDER_BAD_RESPONSE
         )
         with self.assertRaises(DeepSeekProviderError):
             run_goplan_ai_interaction(str(self.interaction.id))
         mock_finish.assert_not_called()
 
-    # -------- v2 path: non-retryable error codes --------
+    # -------- Non-retryable error codes --------
 
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.run_goplan_ai_agent_v2")
-    def test_insufficient_balance_does_not_retry(self, mock_v2, _ts, _tp):
-        """INSUFFICIENT_BALANCE has no retry policy → goes straight to finish_interaction_failure."""
-        mock_v2.return_value = AgentRunResultV2(
+    @patch("ai.tasks.run_goplan_ai_agent")
+    def test_insufficient_balance_does_not_retry(self, mock_agent, _ts, _tp):
+        mock_agent.return_value = AgentRunResult(
             error_code=AIInteractionErrorCode.INSUFFICIENT_BALANCE
         )
-        # Must not raise
         run_goplan_ai_interaction(str(self.interaction.id))
         self.interaction.refresh_from_db()
         self.assertEqual(
@@ -441,13 +411,11 @@ class RetryPolicyTests(TestCase):
         )
         self.assertEqual(self.interaction.status, AIInteractionStatus.FAILED)
 
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.run_goplan_ai_agent_v2")
-    def test_config_missing_does_not_retry(self, mock_v2, _ts, _tp):
-        """CONFIG_MISSING has no retry policy → goes straight to finish_interaction_failure."""
-        mock_v2.return_value = AgentRunResultV2(
+    @patch("ai.tasks.run_goplan_ai_agent")
+    def test_config_missing_does_not_retry(self, mock_agent, _ts, _tp):
+        mock_agent.return_value = AgentRunResult(
             error_code=AIInteractionErrorCode.CONFIG_MISSING
         )
         run_goplan_ai_interaction(str(self.interaction.id))
@@ -457,48 +425,16 @@ class RetryPolicyTests(TestCase):
         )
         self.assertEqual(self.interaction.status, AIInteractionStatus.FAILED)
 
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=True)
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.run_goplan_ai_agent_v2")
-    def test_tool_unknown_does_not_retry(self, mock_v2, _ts, _tp):
-        """TOOL_UNKNOWN has no retry policy → goes straight to finish_interaction_failure."""
-        mock_v2.return_value = AgentRunResultV2(
+    @patch("ai.tasks.run_goplan_ai_agent")
+    def test_tool_unknown_does_not_retry(self, mock_agent, _ts, _tp):
+        mock_agent.return_value = AgentRunResult(
             error_code=AIInteractionErrorCode.TOOL_UNKNOWN
         )
         run_goplan_ai_interaction(str(self.interaction.id))
         self.interaction.refresh_from_db()
         self.assertEqual(
             self.interaction.error_code, AIInteractionErrorCode.TOOL_UNKNOWN
-        )
-        self.assertEqual(self.interaction.status, AIInteractionStatus.FAILED)
-
-    # -------- v1 path: DeepSeekProviderError retryable codes --------
-
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=False)
-    @patch("ai.tasks.push_ai_typing_stopped")
-    @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.finish_interaction_failure")
-    @patch("ai.tasks.run_goplan_ai_agent")
-    def test_v1_rate_limit_triggers_retry(self, mock_v1, mock_finish, _ts, _tp):
-        """v1 path: RATE_LIMIT via DeepSeekProviderError triggers retry."""
-        mock_v1.side_effect = DeepSeekProviderError(AIInteractionErrorCode.RATE_LIMIT)
-        with self.assertRaises(DeepSeekProviderError):
-            run_goplan_ai_interaction(str(self.interaction.id))
-        mock_finish.assert_not_called()
-
-    @override_settings(GOPLAN_AI_TOOL_CALLING_ENABLED=False)
-    @patch("ai.tasks.push_ai_typing_stopped")
-    @patch("ai.tasks.push_ai_typing_started")
-    @patch("ai.tasks.run_goplan_ai_agent")
-    def test_v1_config_missing_does_not_retry(self, mock_v1, _ts, _tp):
-        """v1 path: CONFIG_MISSING via DeepSeekProviderError goes straight to failure."""
-        mock_v1.side_effect = DeepSeekProviderError(
-            AIInteractionErrorCode.CONFIG_MISSING
-        )
-        run_goplan_ai_interaction(str(self.interaction.id))
-        self.interaction.refresh_from_db()
-        self.assertEqual(
-            self.interaction.error_code, AIInteractionErrorCode.CONFIG_MISSING
         )
         self.assertEqual(self.interaction.status, AIInteractionStatus.FAILED)

@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from datetime import timedelta
-
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from ai.agent.display import build_display
-from ai.models import AIActionDraft, AIActionDraftStatus, AIInteraction, AIInteractionStatus
+from ai.models import AIActionDraft, AIInteraction, AIInteractionStatus
 from ai.services import (
     AI_LOCK_TTL,
-    GENERIC_AI_ERROR_MESSAGE,
     has_active_ai_interaction,
     message_for_error_code,
 )
@@ -88,85 +83,8 @@ def claim_interaction_for_run(interaction_id):
     return interaction
 
 
-def finish_interaction_success(
-    *,
-    interaction,
-    content: str,
-    usage,
-    drafts=None,
-) -> ChatMessage:
-    now = timezone.now()
-    with transaction.atomic():
-        interaction = AIInteraction.objects.select_for_update().get(pk=interaction.pk)
-        if interaction.response_message_id is not None:
-            return interaction.response_message
-        message = ChatMessage.objects.create(
-            trip=interaction.trip,
-            sender=None,
-            sender_kind=ChatMessageSenderKind.AI,
-            sender_display_name_snapshot="GoPlanAI",
-            sender_identify_tag_snapshot=None,
-            content=content,
-            ai_status=ChatMessageAIStatus.SUCCESS,
-        )
-        draft_specs = drafts or []
-        expires_at = now + timedelta(
-            seconds=settings.GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS
-        )
-        trip_context = {
-            "timezone": interaction.trip.timezone,
-            "currency_code": interaction.trip.currency_code,
-        }
-        AIActionDraft.objects.bulk_create(
-            [
-                AIActionDraft(
-                    trip=interaction.trip,
-                    interaction=interaction,
-                    response_message=message,
-                    requested_by=interaction.requested_by,
-                    action_type=draft.action_type,
-                    status=(
-                        draft.status
-                        if draft.status
-                        else AIActionDraftStatus.NEEDS_INFO
-                    ),
-                    payload=draft.payload,
-                    preview=draft.preview,
-                    display=build_display(
-                        action_type=draft.action_type,
-                        payload=draft.payload,
-                        trip_context=trip_context,
-                    ),
-                    summary=summarize_draft(
-                        action_type=draft.action_type,
-                        payload=draft.payload,
-                        status=draft.status or AIActionDraftStatus.NEEDS_INFO,
-                    ),
-                    missing_fields=draft.missing_fields,
-                    preconditions=draft.preconditions,
-                    required_confirmation=draft.required_confirmation,
-                    expires_at=expires_at,
-                )
-                for draft in draft_specs
-            ]
-        )
-        interaction.response_message = message
-        interaction.status = AIInteractionStatus.SUCCEEDED
-        interaction.error_code = None
-        interaction.input_tokens = getattr(usage, "input_tokens", None)
-        interaction.output_tokens = getattr(usage, "output_tokens", None)
-        interaction.total_tokens = getattr(usage, "total_tokens", None)
-        interaction.completed_at = now
-        interaction.lock_expires_at = now
-        interaction.save()
-        transaction.on_commit(lambda: push_chat_message(message))
-    return message
-
-
-def finish_interaction_success_v2(*, interaction, message_text: str) -> ChatMessage:
-    """v2 finish: creates the AI ChatMessage and attaches any already-persisted
-    NEEDS_INFO/READY drafts (response_message_id IS NULL) to it.
-    """
+def finish_interaction_success(*, interaction, message_text: str) -> ChatMessage:
+    """Create the AI ChatMessage and attach drafts already persisted by tools."""
     now = timezone.now()
     with transaction.atomic():
         interaction = AIInteraction.objects.select_for_update().get(pk=interaction.pk)
