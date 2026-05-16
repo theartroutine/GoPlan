@@ -44,7 +44,7 @@ export async function bffProfileSetup(
 ): Promise<ProfileResponse> {
   const accessToken = tokenManager.get();
   const res = await bff.post<ProfileResponse>("/api/auth/profile/setup", data, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
   });
   return res.data;
 }
@@ -72,7 +72,7 @@ export async function bffProfileNameUpdate(
 ): Promise<ProfileResponse> {
   const accessToken = tokenManager.get();
   const res = await bff.patch<ProfileResponse>("/api/auth/profile/name", data, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
   });
   return res.data;
 }

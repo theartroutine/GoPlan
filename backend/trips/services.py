@@ -86,6 +86,10 @@ class InvitationError(TripServiceError):
     error_code = "INVITATION_ERROR"
 
 
+class AlreadyActiveTripMemberError(InvitationError):
+    error_code = "ALREADY_MEMBER"
+
+
 class StatusTransitionError(TripServiceError):
     error_code = "INVALID_STATUS_TRANSITION"
 
@@ -497,16 +501,24 @@ def accept_invitation(invitation_id, actor) -> TripMember:
         if trip.status in (TripStatus.COMPLETED, TripStatus.CANCELLED):
             raise InvitationError("This trip is no longer open to new members.")
 
+        if TripMember.objects.filter(trip=trip, user=actor, status=MemberStatus.ACTIVE).exists():
+            raise AlreadyActiveTripMemberError("You are already an active member of this trip.")
+
         invitation.status = InvitationStatus.ACCEPTED
         invitation.responded_at = timezone.now()
         invitation.save(update_fields=["status", "responded_at"])
 
-        membership = TripMember.objects.create(
-            trip=trip,
-            user=actor,
-            role=TripRole.MEMBER,
-            status=MemberStatus.ACTIVE,
-        )
+        try:
+            membership = TripMember.objects.create(
+                trip=trip,
+                user=actor,
+                role=TripRole.MEMBER,
+                status=MemberStatus.ACTIVE,
+            )
+        except IntegrityError as exc:
+            raise AlreadyActiveTripMemberError(
+                "You are already an active member of this trip."
+            ) from exc
 
         create_notification(
             recipient=invitation.inviter,

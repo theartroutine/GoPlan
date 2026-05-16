@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -21,6 +22,14 @@ from trips.models import (
     Trip,
     TripInvitation,
     TripMember,
+)
+
+SUPPORTED_TRIP_CURRENCY_CODES = frozenset(
+    {"VND", "USD", "EUR", "JPY", "KRW", "SGD", "THB", "AUD", "GBP", "CAD"}
+)
+TRIP_COVER_IMAGE_URL_PATTERN = re.compile(
+    r"^/media/trip-covers/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpg|jpeg|png|webp)$",
+    re.IGNORECASE,
 )
 
 
@@ -93,6 +102,25 @@ def _validate_non_negative_budget_estimate(value):
     return value
 
 
+def _validate_trip_currency_code(value: str) -> str:
+    normalized = value.strip().upper()
+    if normalized not in SUPPORTED_TRIP_CURRENCY_CODES:
+        raise serializers.ValidationError("Unsupported trip currency code.", code="unsupported_currency")
+    return normalized
+
+
+def _validate_trip_cover_image_url(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        return ""
+    if not TRIP_COVER_IMAGE_URL_PATTERN.fullmatch(normalized):
+        raise serializers.ValidationError(
+            "cover_image_url must reference an uploaded trip cover.",
+            code="invalid_cover_image_url",
+        )
+    return normalized
+
+
 class CreateTripSerializer(serializers.Serializer):
     name            = serializers.CharField(max_length=120)
     destination     = serializers.CharField(max_length=200)
@@ -114,6 +142,12 @@ class CreateTripSerializer(serializers.Serializer):
 
     def validate_budget_estimate(self, value):
         return _validate_non_negative_budget_estimate(value)
+
+    def validate_currency_code(self, value):
+        return _validate_trip_currency_code(value)
+
+    def validate_cover_image_url(self, value):
+        return _validate_trip_cover_image_url(value)
 
     def validate(self, data):
         if data["end_date"] < data["start_date"]:
@@ -216,6 +250,12 @@ class UpdateTripSerializer(serializers.Serializer):
 
     def validate_budget_estimate(self, value):
         return _validate_non_negative_budget_estimate(value)
+
+    def validate_currency_code(self, value):
+        return _validate_trip_currency_code(value)
+
+    def validate_cover_image_url(self, value):
+        return _validate_trip_cover_image_url(value)
 
     def validate(self, data):
         trip = self.context.get("trip")

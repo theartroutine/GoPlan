@@ -5,6 +5,7 @@ import uuid
 
 from django.conf import settings
 from django.http import FileResponse, Http404
+from PIL import Image, UnidentifiedImageError
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -21,6 +22,17 @@ EXTENSION_MAP = {
     "image/png":  ".png",
     "image/webp": ".webp",
 }
+PIL_FORMAT_MIME_TYPES = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+    "WEBP": "image/webp",
+}
+IMAGE_PARSE_ERRORS = (
+    UnidentifiedImageError,
+    OSError,
+    ValueError,
+    Image.DecompressionBombError,
+)
 
 
 # -------- Magic Byte Detection --------
@@ -34,6 +46,26 @@ def _detect_content_type(file_bytes: bytes) -> str | None:
     if len(file_bytes) >= 12 and file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP":
         return "image/webp"
     return None
+
+
+def _validate_image_payload(image_file, expected_content_type: str) -> bool:
+    """Parse and verify the uploaded image before storing it as public media."""
+    image_file.seek(0)
+    try:
+        with Image.open(image_file) as image:
+            actual_content_type = PIL_FORMAT_MIME_TYPES.get(image.format or "")
+            if actual_content_type != expected_content_type:
+                return False
+            max_pixels = Image.MAX_IMAGE_PIXELS
+            if max_pixels is not None and image.width * image.height > max_pixels:
+                return False
+            image.verify()
+    except IMAGE_PARSE_ERRORS:
+        return False
+    finally:
+        image_file.seek(0)
+
+    return True
 
 
 # -------- Views --------
@@ -64,6 +96,12 @@ class TripCoverUploadAPIView(APIView):
         if file.size > MAX_SIZE_BYTES:
             return Response(
                 {"detail": "File too large. Maximum size is 5 MB.", "error_code": "FILE_TOO_LARGE"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not _validate_image_payload(file, detected_type):
+            return Response(
+                {"detail": "Unsupported or invalid image file.", "error_code": "INVALID_TYPE"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

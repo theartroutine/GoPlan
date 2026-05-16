@@ -4,6 +4,7 @@ import io
 
 from django.test import override_settings
 from rest_framework.test import APITestCase
+from PIL import Image
 
 from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
@@ -15,9 +16,14 @@ def _auth(user):
     return {"HTTP_AUTHORIZATION": f"Bearer {AccessToken.for_user(user)}"}
 
 
-def _fake_image(content_type: str = "image/jpeg", size_bytes: int = 1024) -> io.BytesIO:
-    """Return a tiny valid JPEG-like buffer (not a real image, just enough bytes)."""
-    buf = io.BytesIO(b"\xff\xd8\xff" + b"\x00" * (size_bytes - 3))
+def _fake_image(content_type: str = "image/jpeg", size_bytes: int | None = None) -> io.BytesIO:
+    """Return a tiny valid JPEG buffer."""
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), color="navy").save(buf, format="JPEG")
+    if size_bytes is not None:
+        content = buf.getvalue()
+        buf = io.BytesIO(content + (b"\x00" * max(size_bytes - len(content), 0)))
+    buf.seek(0)
     buf.name = "cover.jpg"
     buf.content_type = content_type
     return buf
@@ -64,6 +70,27 @@ class TripCoverUploadTests(APITestCase):
             field_name="file",
             name="evil.jpg",
             content_type="image/jpeg",    # lies — claims to be JPEG
+            size=len(fake_content),
+            charset=None,
+        )
+        res = self.client.post(
+            UPLOAD_URL,
+            {"file": fake_file},
+            format="multipart",
+            **_auth(self.user),
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error_code"], "INVALID_TYPE")
+
+    def test_upload_rejects_malformed_image_with_valid_magic_bytes(self):
+        from django.core.files.uploadedfile import InMemoryUploadedFile
+
+        fake_content = b"\xff\xd8\xff" + b"not a real jpeg"
+        fake_file = InMemoryUploadedFile(
+            file=io.BytesIO(fake_content),
+            field_name="file",
+            name="broken.jpg",
+            content_type="image/jpeg",
             size=len(fake_content),
             charset=None,
         )
