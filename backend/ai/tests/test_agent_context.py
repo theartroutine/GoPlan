@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from ai.agent.context import build_agent_context
-from chat.models import ChatMessage, ChatMessageHiddenForUser
+from ai.models import AIActionDraft, AIActionDraftStatus, AIInteraction, AIInteractionStatus
+from chat.models import ChatMessage, ChatMessageHiddenForUser, ChatMessageSenderKind
 from expenses.services import create_expense
 from test_helpers import create_completed_user
 from trips.models import (
@@ -169,3 +172,121 @@ class AgentContextTests(TestCase):
         recent_ids = {message["id"] for message in context["recent_chat"]}
         self.assertIn(str(visible.id), recent_ids)
         self.assertNotIn(str(hidden.id), recent_ids)
+
+    def test_context_includes_sections_with_index(self):
+        captain = create_completed_user(
+            "ctx-sec@example.com",
+            "ctxsec",
+            "CTX006",
+        )
+        trip = create_trip(
+            captain=captain,
+            name="Context Sections Trip",
+            destination="Hoi An",
+            start_date="2026-07-01",
+            end_date="2026-07-02",
+        )
+        trip.refresh_from_db()
+
+        context = build_agent_context(trip=trip, actor=captain)
+
+        sections = context["sections"]
+        self.assertIsInstance(sections, list)
+        # Trip with 2 days has 2 sections
+        self.assertEqual(len(sections), 2)
+        self.assertEqual(sections[0]["section_index"], 1)
+        self.assertEqual(sections[1]["section_index"], 2)
+        # section_date is ISO formatted string
+        first = sections[0]
+        self.assertIn("section_id", first)
+        self.assertIn("section_date", first)
+        self.assertIn("label", first)
+        # section_id is a string (UUID representation)
+        self.assertIsInstance(first["section_id"], str)
+        self.assertRegex(first["section_date"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_context_includes_active_drafts_with_summary(self):
+        captain = create_completed_user(
+            "ctx-draft@example.com",
+            "ctxdraft",
+            "CTX007",
+        )
+        trip = create_trip(
+            captain=captain,
+            name="Context Drafts Trip",
+            destination="Nha Trang",
+            start_date="2026-08-01",
+            end_date="2026-08-02",
+        )
+        trip.refresh_from_db()
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=captain,
+            sender_display_name_snapshot=captain.display_name,
+            sender_identify_tag_snapshot=captain.identify_tag,
+            content="@GoPlanAI create activity",
+            client_message_id=uuid4(),
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=captain,
+            prompt_message=prompt,
+            prompt="create activity",
+            status=AIInteractionStatus.SUCCEEDED,
+            lock_expires_at=timezone.now() + timedelta(minutes=5),
+        )
+        AIActionDraft.objects.create(
+            trip=trip,
+            interaction=interaction,
+            requested_by=captain,
+            action_type="timeline.create_activity",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            summary="Activity X awaiting time",
+            missing_fields=[{"name": "start_time"}, {"name": "end_time"}],
+            required_confirmation="CAPTAIN",
+            payload={},
+            preview={},
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+
+        context = build_agent_context(trip=trip, actor=captain)
+
+        drafts = context["active_drafts"]
+        self.assertIsInstance(drafts, list)
+        self.assertEqual(len(drafts), 1)
+        draft = drafts[0]
+        self.assertEqual(draft["summary"], "Activity X awaiting time")
+        self.assertIn("action_type", draft)
+        self.assertIn("status", draft)
+        self.assertIn("missing_field_names", draft)
+        self.assertEqual(draft["missing_field_names"], ["start_time", "end_time"])
+        self.assertEqual(draft["action_type"], "timeline.create_activity")
+        self.assertEqual(draft["status"], AIActionDraftStatus.NEEDS_INFO)
+
+    def test_context_includes_now_in_trip_timezone(self):
+        captain = create_completed_user(
+            "ctx-now@example.com",
+            "ctxnow",
+            "CTX008",
+        )
+        trip = create_trip(
+            captain=captain,
+            name="Context Now Trip",
+            destination="Hanoi",
+            start_date="2026-09-01",
+            end_date="2026-09-02",
+        )
+        trip.refresh_from_db()
+        # Default timezone for trips is "Asia/Ho_Chi_Minh"
+        self.assertEqual(trip.timezone, "Asia/Ho_Chi_Minh")
+
+        context = build_agent_context(trip=trip, actor=captain)
+
+        self.assertIn("now", context)
+        now_str = context["now"]
+        self.assertIsInstance(now_str, str)
+        # Must be ISO-8601 format containing 'T'
+        self.assertIn("T", now_str)
+        # Asia/Ho_Chi_Minh is UTC+7, so offset should be +07:00
+        self.assertIn("+07:00", now_str)

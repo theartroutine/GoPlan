@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 
+from ai.models import AIActionDraft, AIActionDraftStatus
 from chat.models import ChatMessage
 from expenses.serializers import serialize_dashboard_response
 from expenses.services import build_expense_dashboard
@@ -80,6 +83,53 @@ def _expense_target_versions(*, expense_rows: list[dict]) -> dict:
     return versions
 
 
+def _sections_payload(*, trip_sections) -> list[dict]:
+    ordered = sorted(
+        trip_sections,
+        key=lambda s: (s.section_date, s.position, s.created_at),
+    )
+    return [
+        {
+            "section_id": str(section.id),
+            "section_index": idx + 1,           # 1-based
+            "section_date": section.section_date.isoformat(),
+            "label": section.label,
+        }
+        for idx, section in enumerate(ordered)
+    ]
+
+
+def _active_drafts_payload(*, trip) -> list[dict]:
+    drafts = (
+        AIActionDraft.objects
+        .filter(
+            trip=trip,
+            status__in=[AIActionDraftStatus.NEEDS_INFO, AIActionDraftStatus.READY],
+        )
+        .order_by("-created_at")[:20]
+    )
+    return [
+        {
+            "draft_id": str(d.id),
+            "action_type": d.action_type,
+            "status": d.status,
+            "summary": d.summary,
+            "missing_field_names": [f.get("name") for f in (d.missing_fields or []) if isinstance(f, dict)],
+            "created_at": d.created_at.isoformat(),
+        }
+        for d in drafts
+    ]
+
+
+def _now_in_trip_tz(trip) -> str:
+    tz_name = trip.timezone or "UTC"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    return datetime.now(tz=tz).isoformat()
+
+
 def _recent_chat_payload(*, trip, actor, limit: int) -> list[dict]:
     messages = (
         ChatMessage.objects
@@ -150,6 +200,9 @@ def build_agent_context_bundle(*, trip, actor) -> AgentContextBundle:
         "members": [_member_payload(membership) for membership in memberships],
         "timeline": timeline,
         "expenses": expenses,
+        "sections": _sections_payload(trip_sections=sections),
+        "active_drafts": _active_drafts_payload(trip=trip),
+        "now": _now_in_trip_tz(trip),
         "recent_chat": _recent_chat_payload(
             trip=trip,
             actor=actor,
