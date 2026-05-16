@@ -10,7 +10,7 @@ import type {
 import { AIMentionToken } from "@/features/chat/presentation/ai-mention-token";
 import { AIActionCard } from "@/features/chat/presentation/ai-action-card";
 import { AiMessageContent } from "@/features/chat/presentation/ai-message-content";
-import { ChatAvatar } from "@/features/chat/presentation/chat-avatar";
+import { UserAvatar } from "@/shared/ui/user-avatar";
 import { EmojiPicker } from "@/features/chat/presentation/emoji-picker-popover";
 import { ReactionBar } from "@/features/chat/presentation/reaction-bar";
 import { Button } from "@/shared/ui/button";
@@ -489,9 +489,14 @@ export function MessageBubble({
           <div className="flex w-full items-end gap-2">
             <div className="w-8 shrink-0">
               {showAvatar && (
-                <ChatAvatar
-                  name={senderLabel(message)}
-                  seed={message.sender.id ?? message.sender.display_name}
+                <UserAvatar
+                  user={{
+                    avatar_url:
+                      message.sender_kind === "AI" ? null : message.sender.avatar_url,
+                    display_name: senderLabel(message),
+                    identify_tag:
+                      message.sender.identify_tag ?? message.sender.id ?? null,
+                  }}
                   size="default"
                 />
               )}

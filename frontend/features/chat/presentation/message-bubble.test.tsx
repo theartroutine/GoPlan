@@ -14,7 +14,7 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: "m-1",
     trip_id: "trip-1",
-    sender: { id: "user-1", display_name: "Alice", identify_tag: null },
+    sender: { id: "user-1", display_name: "Alice", identify_tag: null, avatar_url: null },
     sender_kind: "USER",
     ai_status: null,
     content: "hello",

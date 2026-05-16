@@ -53,6 +53,42 @@ class CreateTripTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["trip"]["currency_code"], "USD")
 
+    def test_create_trip_normalizes_currency_code(self):
+        payload = {
+            "name": "Beach Trip",
+            "destination": "Nha Trang",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-03",
+            "currency_code": "usd",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["trip"]["currency_code"], "USD")
+
+    def test_create_trip_rejects_unsupported_currency_code(self):
+        payload = {
+            "name": "Bad Currency",
+            "destination": "Nha Trang",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-03",
+            "currency_code": "ZZZ",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("currency_code", response.data)
+
+    def test_create_trip_rejects_external_cover_image_url(self):
+        payload = {
+            "name": "Bad Cover",
+            "destination": "Nha Trang",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-03",
+            "cover_image_url": "https://example.com/cover.jpg",
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cover_image_url", response.data)
+
     def test_create_trip_rejects_negative_budget(self):
         payload = {
             "name": "Bad Budget",

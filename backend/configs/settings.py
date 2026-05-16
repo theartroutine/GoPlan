@@ -3,6 +3,10 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from PIL import Image as _PILImage
+
+_PILImage.MAX_IMAGE_PIXELS = 4_000_000  # 4MP — decompression-bomb guard for avatar uploads
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -118,6 +122,15 @@ STATIC_URL = 'static/'
 # -------- Media Files --------
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media_files'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
 FILE_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
@@ -167,6 +180,8 @@ REST_FRAMEWORK = {
         'auth_resend_verification': '5/hour',
         'auth_password_reset_request': '5/hour',
         'auth_password_reset_confirm': '10/hour',
+        'auth_avatar': '10/hour',
+        'auth_password_change': '5/hour',
         'realtime_ws_ticket': '120/hour',
         'notifications_list': '120/hour',
         'notifications_unread_count': '300/hour',
@@ -179,6 +194,7 @@ REST_FRAMEWORK = {
         'friends_remove': '30/hour',
         'friends_search': '60/hour',
         'media_upload': '30/hour',
+        'public_media': '600/hour',
         'trips_list_create': '60/hour',
         'trips_detail_update': '120/hour',
         'trips_send_invitations': '10/hour',

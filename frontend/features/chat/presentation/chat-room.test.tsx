@@ -8,7 +8,7 @@ const chatMock = vi.hoisted(() => ({
   state: {
     status: "ready" as const,
     errorCode: null as string | null,
-    messages: [],
+    messages: [] as ChatMessage[],
     pendingClientIds: new Set<string>(),
     failedClientIds: new Set<string>(),
     sendLockReason: null as "terminal" | null,
@@ -45,13 +45,14 @@ const CURRENT_USER = {
   id: "user-self",
   display_name: "Me",
   identify_tag: null,
+  avatar_url: null,
 };
 
 function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: "m-1",
     trip_id: "trip-1",
-    sender: { id: CURRENT_USER.id, display_name: "Me", identify_tag: null },
+    sender: { ...CURRENT_USER },
     sender_kind: "USER",
     ai_status: null,
     content: "hello",

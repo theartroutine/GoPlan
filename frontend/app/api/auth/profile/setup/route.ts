@@ -1,21 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
+  buildProtectedResponse,
+  protectedUpstreamCall,
+} from "@/app/api/_lib/protected-upstream";
+import {
   asObject,
-  callAuthUpstream,
   extractUserPayload,
-  normalizeErrorPayload,
 } from "@/app/api/auth/_lib/upstream";
 
 export async function POST(request: NextRequest) {
-  const authorization = request.headers.get("Authorization");
-  if (!authorization) {
-    return NextResponse.json(
-      { detail: "Authorization header is required." },
-      { status: 401 },
-    );
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -26,27 +20,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const upstream = await callAuthUpstream("/api/auth/profile/setup", {
+  const upstream = await protectedUpstreamCall({
+    path: "/api/auth/profile/setup",
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: authorization,
-    },
     body: JSON.stringify(body),
+    authorization: request.headers.get("Authorization"),
   });
 
-  if (upstream.kind === "network_error") {
-    return NextResponse.json({ detail: upstream.detail }, { status: 503 });
-  }
-
   if (!upstream.ok) {
-    return NextResponse.json(
-      normalizeErrorPayload(
-        upstream.data,
-        "Profile setup failed. Please try again.",
-      ),
-      { status: upstream.status },
-    );
+    return upstream.response;
   }
 
   const payload = asObject(upstream.data);
@@ -60,5 +42,5 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ user: userPayload });
+  return buildProtectedResponse({ user: userPayload }, upstream.refreshedAccessToken);
 }

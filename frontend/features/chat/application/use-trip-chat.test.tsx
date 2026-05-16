@@ -55,13 +55,19 @@ const ME = {
   id: "user-self",
   display_name: "Me",
   identify_tag: null,
+  avatar_url: null,
 };
 
 function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
   return {
     id: "m-1",
     trip_id: TRIP_ID,
-    sender: { id: "user-other", display_name: "Other", identify_tag: null },
+    sender: {
+      id: "user-other",
+      display_name: "Other",
+      identify_tag: null,
+      avatar_url: null,
+    },
     sender_kind: "USER",
     ai_status: null,
     content: "hello",
@@ -1173,7 +1179,12 @@ describe("useTripChat", () => {
           trip_id: TRIP_ID,
           message: makeMessage({
             id: `ai-${aiStatus.toLowerCase()}`,
-            sender: { id: null, display_name: "GoPlanAI", identify_tag: null },
+            sender: {
+              id: null,
+              display_name: "GoPlanAI",
+              identify_tag: null,
+              avatar_url: null,
+            },
             sender_kind: "AI",
             ai_status: aiStatus,
             content: aiStatus === "SUCCESS" ? "AI answer" : "GoPlanAI hiện chưa trả lời được.",

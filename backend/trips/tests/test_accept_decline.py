@@ -13,6 +13,7 @@ from trips.models import (
     TripRole,
     TripStatus,
 )
+from trips.services import InvitationError, accept_invitation
 
 
 def _auth(user):
@@ -101,6 +102,20 @@ class AcceptInvitationTests(APITestCase):
         list_res = self.client.get("/api/trips/", **_auth(self.invitee))
         ids = [t["id"] for t in list_res.data["results"]]
         self.assertIn(str(self.trip.id), ids)
+
+    def test_accept_pending_invitation_for_existing_active_member_raises_business_error(self):
+        TripMember.objects.create(
+            trip=self.trip,
+            user=self.invitee,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+
+        with self.assertRaises(InvitationError):
+            accept_invitation(invitation_id=self.invitation.id, actor=self.invitee)
+
+        self.invitation.refresh_from_db()
+        self.assertEqual(self.invitation.status, InvitationStatus.PENDING)
 
 
 class DeclineInvitationTests(APITestCase):

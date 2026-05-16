@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from django.utils.encoding import force_str
-from rest_framework import serializers
+from rest_framework import parsers, serializers
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.serializers import (
+    AvatarUploadSerializer,
+    ChangePasswordSerializer,
     INVALID_FIRST_NAME_CODE,
     INVALID_IDENTIFY_NAME_CODE,
     INVALID_LAST_NAME_CODE,
@@ -21,15 +23,21 @@ from accounts.serializers import (
     ResendVerificationSerializer,
 )
 from accounts.services import (
+    AvatarStorageError,
+    AvatarValidationError,
     EmailVerificationError,
     IdentifyCodeGenerationError,
     IdentityProfileConflictError,
+    PasswordChangeError,
     ProfileAlreadyCompletedError,
     ProfileNotCompletedError,
     ProfileSetupNotRequiredError,
     build_auth_response,
     build_user_payload,
+    change_password_with_current,
     confirm_email,
+    delete_avatar,
+    update_avatar,
     verify_email_token,
 )
 
@@ -327,5 +335,65 @@ class PasswordResetConfirmAPIView(APIView):
         serializer.save()
         return Response(
             {"detail": "Password has been reset successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class AvatarAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "auth_avatar"
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def patch(self, request, *args, **kwargs):
+        serializer = AvatarUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            user = update_avatar(request.user, serializer.validated_data["avatar"])
+        except AvatarValidationError as exc:
+            return Response(
+                {"detail": exc.detail, "error_code": exc.error_code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except AvatarStorageError as exc:
+            return Response(
+                {"detail": exc.detail, "error_code": exc.error_code},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response({"user": build_user_payload(user)}, status=status.HTTP_200_OK)
+
+    def delete(self, request, *args, **kwargs):
+        try:
+            user = delete_avatar(request.user)
+        except AvatarStorageError as exc:
+            return Response(
+                {"detail": exc.detail, "error_code": exc.error_code},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response({"user": build_user_payload(user)}, status=status.HTTP_200_OK)
+
+
+class ChangePasswordAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "auth_password_change"
+
+    def post(self, request, *args, **kwargs):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            user, access, refresh = change_password_with_current(
+                request.user,
+                serializer.validated_data["current_password"],
+                serializer.validated_data["new_password"],
+            )
+        except PasswordChangeError as exc:
+            return Response(
+                {"detail": exc.detail, "error_code": exc.error_code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {
+                "user": build_user_payload(user),
+                "tokens": {"access": access, "refresh": refresh, "token_type": "Bearer"},
+            },
             status=status.HTTP_200_OK,
         )

@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               `script-src ${scriptSrc}`,
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https:",
+              "img-src 'self' data: blob: https:",
               "connect-src 'self' ws: wss:",
               "font-src 'self'",
               "frame-ancestors 'none'",
@@ -41,7 +41,7 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
-    // Proxy Django-served media files so the browser can load them from port 3000.
+    // Proxy public media through the backend API so avatars/covers work with DEBUG=False.
     // Note: next.config.ts runs at build time and cannot import from shared/http/config.ts
     // (which throws at module load if the env var is absent). The "http://localhost:8000"
     // fallback is intentional for local dev only — production must set NEXT_PUBLIC_API_BASE_URL.
@@ -52,7 +52,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/media/:path*",
-        destination: `${djangoBase}/media/:path*`,
+        destination: `${djangoBase}/api/media/files/:path*`,
       },
     ];
   },

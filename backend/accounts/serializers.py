@@ -38,6 +38,11 @@ DISALLOWED_UNICODE_CATEGORIES = {"Cc", "Cf", "Cs", "Co", "Cn"}
 INVALID_FIRST_NAME_CODE = "INVALID_FIRST_NAME"
 INVALID_LAST_NAME_CODE = "INVALID_LAST_NAME"
 INVALID_IDENTIFY_NAME_CODE = "INVALID_IDENTIFY_NAME"
+IDENTITY_FIELD_LABELS = {
+    "first_name": "First name",
+    "last_name": "Last name",
+    "identify_name": "Identify name",
+}
 
 
 def normalize_whitespace(value: str) -> str:
@@ -46,23 +51,24 @@ def normalize_whitespace(value: str) -> str:
 
 
 def validate_human_name(value: str, field_name: str, error_code: str) -> str:
+    field_label = IDENTITY_FIELD_LABELS[field_name]
     normalized = normalize_whitespace(value)
     if not normalized:
-        raise serializers.ValidationError(f"{field_name} cannot be empty.", code=error_code)
+        raise serializers.ValidationError(f"{field_label} cannot be empty.", code=error_code)
     if len(normalized) > NAME_MAX_LENGTH:
         raise serializers.ValidationError(
-            f"{field_name} must be at most {NAME_MAX_LENGTH} characters.",
+            f"{field_label} must be at most {NAME_MAX_LENGTH} characters.",
             code=error_code,
         )
     if " " in normalized:
         raise serializers.ValidationError(
-            f"{field_name} must be a single word (no spaces).",
+            f"{field_label} must be a single word (no spaces).",
             code=error_code,
         )
 
     if normalized[0] in NAME_SEPARATORS or normalized[-1] in NAME_SEPARATORS:
         raise serializers.ValidationError(
-            f"{field_name} cannot start or end with a separator.",
+            f"{field_label} cannot start or end with a separator.",
             code=error_code,
         )
 
@@ -70,14 +76,14 @@ def validate_human_name(value: str, field_name: str, error_code: str) -> str:
     for character in normalized:
         if unicodedata.category(character) in DISALLOWED_UNICODE_CATEGORIES:
             raise serializers.ValidationError(
-                f"{field_name} contains invalid characters.",
+                f"{field_label} contains invalid characters.",
                 code=error_code,
             )
 
         if character in NAME_SEPARATORS:
             if previous_was_separator:
                 raise serializers.ValidationError(
-                    f"{field_name} cannot contain adjacent separators.",
+                    f"{field_label} cannot contain adjacent separators.",
                     code=error_code,
                 )
             previous_was_separator = True
@@ -89,7 +95,7 @@ def validate_human_name(value: str, field_name: str, error_code: str) -> str:
             continue
 
         raise serializers.ValidationError(
-            f"{field_name} contains invalid characters.",
+            f"{field_label} contains invalid characters.",
             code=error_code,
         )
 
@@ -163,7 +169,7 @@ class ProfileSetupSerializer(HumanNameValidationMixin, serializers.Serializer):
         normalized = normalize_whitespace(value).lower()
         if not IDENTIFY_NAME_PATTERN.fullmatch(normalized):
             raise serializers.ValidationError(
-                "identify_name must contain only lowercase letters and be between 3 and 24 characters.",
+                "Identify name must contain only lowercase letters and be between 3 and 24 characters.",
                 code=INVALID_IDENTIFY_NAME_CODE,
             )
         return normalized
@@ -342,3 +348,24 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             user=self.validated_data["user"],
             new_password=self.validated_data["password"],
         )
+
+
+# -------- Account Management Serializers --------
+
+
+class AvatarUploadSerializer(serializers.Serializer):
+    """
+    Uses FileField (not ImageField) so all validation — magic bytes, Pillow verify,
+    size, dimensions — happens inside update_avatar() where the error_code contract
+    can emit AVATAR_INVALID_FORMAT / AVATAR_TOO_LARGE / AVATAR_DIMENSIONS_TOO_LARGE
+    correctly. DRF's ImageField would shortcut with its own generic error message.
+    """
+
+    avatar = serializers.FileField(required=True)
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True, trim_whitespace=False)
+    new_password = serializers.CharField(
+        write_only=True, min_length=8, trim_whitespace=False
+    )

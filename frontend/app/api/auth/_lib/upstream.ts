@@ -117,6 +117,7 @@ export function extractUserPayload(
     identify_name: getString(user, "identify_name"),
     identify_code: getString(user, "identify_code"),
     identify_tag: getString(user, "identify_tag"),
+    avatar_url: getString(user, "avatar_url"),
     email_verified: getBoolean(user, "email_verified") ?? false,
     is_profile_completed: isProfileCompleted,
     requires_profile_setup: requiresProfileSetup,

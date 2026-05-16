@@ -77,6 +77,26 @@ class UpdateTripTests(APITestCase):
         self.trip.refresh_from_db()
         self.assertEqual(self.trip.timezone, "Asia/Tokyo")
 
+    def test_captain_update_normalizes_currency_code(self):
+        res = self.client.patch(self._url(), {"currency_code": "usd"}, format="json", **_auth(self.captain))
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["trip"]["currency_code"], "USD")
+
+    def test_captain_update_rejects_unsupported_currency_code(self):
+        res = self.client.patch(self._url(), {"currency_code": "ZZZ"}, format="json", **_auth(self.captain))
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("currency_code", res.data)
+
+    def test_captain_update_rejects_external_cover_image_url(self):
+        res = self.client.patch(
+            self._url(),
+            {"cover_image_url": "https://example.com/tokyo.jpg"},
+            format="json",
+            **_auth(self.captain),
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("cover_image_url", res.data)
+
     def test_captain_update_invalid_timezone_400(self):
         res = self.client.patch(self._url(), {"timezone": "Not/A_Zone"}, format="json", **_auth(self.captain))
         self.assertEqual(res.status_code, 400)

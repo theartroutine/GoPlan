@@ -1,6 +1,8 @@
 from django.urls import path
 
 from accounts.views import (
+    AvatarAPIView,
+    ChangePasswordAPIView,
     LoginAPIView,
     LogoutAPIView,
     MeAPIView,
@@ -28,4 +30,6 @@ urlpatterns = [
     path("password-reset/confirm", PasswordResetConfirmAPIView.as_view(), name="password-reset-confirm"),
     path("refresh", RefreshAPIView.as_view(), name="refresh"),
     path("logout", LogoutAPIView.as_view(), name="logout"),
+    path("avatar", AvatarAPIView.as_view(), name="avatar"),
+    path("password/change", ChangePasswordAPIView.as_view(), name="password-change"),
 ]

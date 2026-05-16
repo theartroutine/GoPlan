@@ -10,7 +10,12 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: "m-1",
     trip_id: "trip-1",
-    sender: { id: CURRENT_USER_ID, display_name: "Me", identify_tag: null },
+    sender: {
+      id: CURRENT_USER_ID,
+      display_name: "Me",
+      identify_tag: null,
+      avatar_url: null,
+    },
     sender_kind: "USER",
     ai_status: null,
     content: "hello",
@@ -160,7 +165,12 @@ describe("MessageList", () => {
         messages={[
           makeMessage({
             content: "",
-            sender: { id: "user-other", display_name: "Other", identify_tag: null },
+            sender: {
+              id: "user-other",
+              display_name: "Other",
+              identify_tag: null,
+              avatar_url: null,
+            },
             is_deleted_for_everyone: true,
             deleted_for_everyone_at: "2026-05-08T10:01:00Z",
             deleted_for_everyone_by_id: "user-other",
@@ -191,6 +201,7 @@ describe("MessageList", () => {
               id: "user-captain",
               display_name: "Captain",
               identify_tag: null,
+              avatar_url: null,
             },
           }),
         ]}
@@ -457,7 +468,12 @@ describe("MessageList", () => {
             id: "ai-1",
             sender_kind: "AI",
             ai_status: "SUCCESS",
-            sender: { id: null, display_name: "GoPlanAI", identify_tag: null },
+            sender: {
+              id: null,
+              display_name: "GoPlanAI",
+              identify_tag: null,
+              avatar_url: null,
+            },
             content: "AI reply",
             can_delete_for_everyone: false,
           }),
@@ -507,7 +523,12 @@ describe("MessageList", () => {
           makeMessage({ id: "m-1", content: ownContent }),
           makeMessage({
             id: "m-2",
-            sender: { id: "user-other", display_name: "Other", identify_tag: null },
+            sender: {
+              id: "user-other",
+              display_name: "Other",
+              identify_tag: null,
+              avatar_url: null,
+            },
             content: otherContent,
           }),
         ]}

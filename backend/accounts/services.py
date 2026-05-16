@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import logging
 import secrets
 import string
+import uuid
 
+from PIL import Image, ImageOps, UnidentifiedImageError
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core import signing
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.template.loader import render_to_string
@@ -20,6 +27,7 @@ from accounts.models import EmailVerificationToken
 from accounts.tokens import RefreshToken
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 IDENTIFY_CODE_ALPHABET = string.ascii_uppercase + string.digits
 IDENTIFY_CODE_LENGTH = 6
 MAX_IDENTIFY_CODE_GENERATION_ATTEMPTS = 20
@@ -48,6 +56,71 @@ class ProfileNotCompletedError(IdentityProfileConflictError):
 
 class IdentifyCodeGenerationError(Exception):
     pass
+
+
+# -------- Avatar Validation Constants --------
+
+ALLOWED_AVATAR_FORMATS = {"JPEG", "PNG", "WEBP"}
+MAX_AVATAR_BYTES = 500 * 1024
+MAX_AVATAR_DIMENSION = 1024
+AVATAR_OUTPUT_SIZE = 512
+AVATAR_OUTPUT_QUALITIES = (85, 75, 65)
+AVATAR_IMAGE_PARSE_ERRORS = (
+    UnidentifiedImageError,
+    OSError,
+    ValueError,
+    SyntaxError,
+    Image.DecompressionBombError,
+)
+
+
+class AvatarValidationError(Exception):
+    """Raised by update_avatar when an uploaded file fails validation. Carries an error_code."""
+
+    def __init__(self, error_code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.error_code = error_code
+        self.detail = detail
+
+
+class AvatarStorageError(Exception):
+    """Raised when avatar storage cleanup fails and the DB update must not commit."""
+
+    def __init__(self, error_code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.error_code = error_code
+        self.detail = detail
+
+
+class PasswordChangeError(Exception):
+    """Raised by change_password_with_current when validation fails."""
+
+    def __init__(self, error_code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.error_code = error_code
+        self.detail = detail
+
+
+def _delete_storage_file_strict(storage, name: str) -> None:
+    try:
+        storage.delete(name)
+    except Exception as exc:
+        logger.warning("Failed to delete avatar storage file %s", name, exc_info=True)
+        raise AvatarStorageError(
+            "AVATAR_STORAGE_DELETE_FAILED",
+            "Could not update avatar storage safely. Please try again.",
+        ) from exc
+
+
+def _delete_storage_file_best_effort(storage, name: str) -> None:
+    try:
+        storage.delete(name)
+    except Exception:
+        logger.warning("Failed to clean up avatar storage file %s", name, exc_info=True)
+
+
+def resolve_avatar_url(user) -> str | None:
+    return user.avatar.url if user.avatar else None
 
 
 def generate_identify_code() -> str:
@@ -127,6 +200,7 @@ def build_user_payload(user: User) -> dict:
         "identify_name": user.identify_name,
         "identify_code": user.identify_code,
         "identify_tag": user.identify_tag,
+        "avatar_url": resolve_avatar_url(user),
         "email_verified": user.email_verified,
         "is_profile_completed": user.is_profile_completed,
         "requires_profile_setup": user.requires_profile_setup,
@@ -236,3 +310,239 @@ def reset_user_password(user: User, new_password: str) -> User:
         locked_user.save(update_fields=["password", "auth_version", "updated_at"])
         blacklist_all_user_refresh_tokens(locked_user)
     return locked_user
+
+
+# -------- Avatar Services --------
+
+
+def _check_avatar_magic_bytes(image_file) -> bool:
+    image_file.seek(0)
+    header = image_file.read(12)
+    image_file.seek(0)
+    if header.startswith(b"\xff\xd8\xff"):
+        return True
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return True
+    return False
+
+
+def _image_has_alpha(image: Image.Image) -> bool:
+    return "A" in image.getbands() or "transparency" in image.info
+
+
+def _render_clean_avatar_webp(image_file) -> ContentFile:
+    """
+    Re-encode every accepted avatar server-side.
+
+    This strips EXIF/GPS metadata, normalizes orientation, center-crops to a
+    stable square, and avoids trusting client-side crop/encode behavior.
+    """
+    image_file.seek(0)
+    try:
+        with Image.open(image_file) as source:
+            if getattr(source, "is_animated", False):
+                raise AvatarValidationError(
+                    "AVATAR_INVALID_FORMAT",
+                    "Animated avatar images are not supported.",
+                )
+
+            normalized = ImageOps.exif_transpose(source)
+            target_mode = "RGBA" if _image_has_alpha(normalized) else "RGB"
+            if normalized.mode != target_mode:
+                normalized = normalized.convert(target_mode)
+
+            clean = ImageOps.fit(
+                normalized,
+                (AVATAR_OUTPUT_SIZE, AVATAR_OUTPUT_SIZE),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5),
+            )
+            for quality in AVATAR_OUTPUT_QUALITIES:
+                output = io.BytesIO()
+                clean.save(output, format="WEBP", quality=quality, method=6)
+                content = output.getvalue()
+                if len(content) <= MAX_AVATAR_BYTES:
+                    return ContentFile(content)
+    except AvatarValidationError:
+        raise
+    except AVATAR_IMAGE_PARSE_ERRORS as exc:
+        raise AvatarValidationError(
+            "AVATAR_INVALID_FORMAT",
+            "Image could not be parsed safely.",
+        ) from exc
+    finally:
+        image_file.seek(0)
+
+    raise AvatarValidationError(
+        "AVATAR_TOO_LARGE",
+        f"Avatar file exceeds {MAX_AVATAR_BYTES // 1024}KB limit after processing.",
+    )
+
+
+def update_avatar(user, image_file):
+    """
+    Validates an uploaded image and stores it as the user's avatar.
+
+    Validation order (cheapest first, fail fast):
+      1. size <= MAX_AVATAR_BYTES
+      2. magic-byte sniffing for JPEG / PNG / WebP
+      3. Pillow Image.verify() — refuses malformed/decompression-bomb files
+      4. format in ALLOWED_AVATAR_FORMATS and dimensions <= MAX_AVATAR_DIMENSION
+
+    Replacement strategy: write new file first, save user pointing at it,
+    then delete the old file. If old-file deletion fails we log and move on —
+    an orphan file is a leak, not a correctness issue.
+    """
+    if image_file.size > MAX_AVATAR_BYTES:
+        raise AvatarValidationError(
+            "AVATAR_TOO_LARGE",
+            f"Avatar file exceeds {MAX_AVATAR_BYTES // 1024}KB limit.",
+        )
+
+    if not _check_avatar_magic_bytes(image_file):
+        raise AvatarValidationError(
+            "AVATAR_INVALID_FORMAT",
+            "Unsupported image format. Use JPEG, PNG, or WebP.",
+        )
+
+    image_file.seek(0)
+    try:
+        with Image.open(image_file) as probe:
+            probe.verify()
+    except AVATAR_IMAGE_PARSE_ERRORS as exc:
+        raise AvatarValidationError(
+            "AVATAR_INVALID_FORMAT",
+            "Image could not be parsed safely.",
+        ) from exc
+
+    image_file.seek(0)
+    try:
+        with Image.open(image_file) as probed:
+            if probed.format not in ALLOWED_AVATAR_FORMATS:
+                raise AvatarValidationError(
+                    "AVATAR_INVALID_FORMAT",
+                    f"Unsupported image format: {probed.format}.",
+                )
+            if probed.width > MAX_AVATAR_DIMENSION or probed.height > MAX_AVATAR_DIMENSION:
+                raise AvatarValidationError(
+                    "AVATAR_DIMENSIONS_TOO_LARGE",
+                    f"Image dimensions exceed {MAX_AVATAR_DIMENSION}x{MAX_AVATAR_DIMENSION}.",
+                )
+            probed.load()
+    except AvatarValidationError:
+        raise
+    except AVATAR_IMAGE_PARSE_ERRORS as exc:
+        raise AvatarValidationError(
+            "AVATAR_INVALID_FORMAT",
+            "Image could not be parsed safely.",
+        ) from exc
+
+    clean_avatar = _render_clean_avatar_webp(image_file)
+    new_name = f"{uuid.uuid4().hex}.webp"
+
+    old_name = None
+    old_storage = None
+    new_name_in_storage = None
+    new_storage = None
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
+
+        # FieldFile.save() mutates the same FieldFile instance. Capture the old
+        # file before saving, then delete it inside the transaction. If storage
+        # deletion fails, the DB update rolls back and the old public file
+        # remains referenced instead of becoming an orphan.
+        if locked_user.avatar:
+            old_name = locked_user.avatar.name
+            old_storage = locked_user.avatar.storage
+
+        locked_user.avatar.save(new_name, clean_avatar, save=False)
+        new_name_in_storage = locked_user.avatar.name
+        new_storage = locked_user.avatar.storage
+        locked_user.save(update_fields=["avatar", "updated_at"])
+        if old_name and old_storage is not None:
+            try:
+                _delete_storage_file_strict(old_storage, old_name)
+            except AvatarStorageError:
+                if new_name_in_storage and new_storage is not None:
+                    _delete_storage_file_best_effort(new_storage, new_name_in_storage)
+                raise
+
+    user.avatar = locked_user.avatar.name
+    user.updated_at = locked_user.updated_at
+
+    return user
+
+
+def delete_avatar(user):
+    """
+    Idempotent. Removes the avatar file from storage and clears the field.
+    No-op (returns user untouched) if user has no avatar.
+    """
+    old_name = None
+    old_storage = None
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
+        if not locked_user.avatar:
+            user.avatar = None
+            user.updated_at = locked_user.updated_at
+            return user
+
+        old_name = locked_user.avatar.name
+        old_storage = locked_user.avatar.storage
+        locked_user.avatar = None
+        locked_user.save(update_fields=["avatar", "updated_at"])
+        _delete_storage_file_strict(old_storage, old_name)
+
+    user.avatar = None
+    user.updated_at = locked_user.updated_at
+    return user
+
+
+# -------- Password Change Service --------
+
+
+def change_password_with_current(user, current_password: str, new_password: str):
+    """
+    Atomically: verify current password, validate new, set_password, bump auth_version,
+    issue a fresh access+refresh pair using the same path login uses.
+
+    Returns (user, access_token_str, refresh_token_str).
+
+    Tokens are minted *after* auth_version is incremented so they encode the new
+    version and remain valid; every previously issued token for this user (other
+    devices, other tabs) now fails the auth_version check in authentication.py.
+    Outstanding refresh tokens are also blacklisted explicitly to keep
+    `token_blacklist` rows in sync with the version bump (mirrors reset path).
+    """
+    with transaction.atomic():
+        locked = User.objects.select_for_update().get(pk=user.pk)
+
+        if not locked.check_password(current_password):
+            raise PasswordChangeError(
+                "INVALID_CURRENT_PASSWORD",
+                "Current password is incorrect.",
+            )
+
+        if current_password == new_password:
+            raise PasswordChangeError(
+                "SAME_PASSWORD",
+                "New password must differ from current password.",
+            )
+
+        try:
+            validate_password(new_password, user=locked)
+        except DjangoValidationError as exc:
+            raise PasswordChangeError(
+                "WEAK_PASSWORD",
+                "; ".join(exc.messages),
+            ) from exc
+
+        locked.set_password(new_password)
+        locked.auth_version = (locked.auth_version or 0) + 1
+        locked.save(update_fields=["password", "auth_version", "updated_at"])
+        blacklist_all_user_refresh_tokens(locked)
+
+        refresh = RefreshToken.for_user(locked)
+        return locked, str(refresh.access_token), str(refresh)

@@ -382,6 +382,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "First name contains invalid characters.",
+        )
         self.assertIn("detail", response.data)
 
     def test_profile_setup_rejects_first_name_with_spaces(self):
@@ -397,6 +401,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "First name must be a single word (no spaces).",
+        )
 
     def test_profile_setup_rejects_last_name_with_spaces(self):
         user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
@@ -411,6 +419,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_LAST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "Last name must be a single word (no spaces).",
+        )
 
     def test_profile_setup_accepts_hyphenated_name(self):
         user = self.create_verified_user(email="owner@example.com", password="StrongPass#2026")
@@ -581,6 +593,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_FIRST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "First name must be a single word (no spaces).",
+        )
 
     def test_profile_name_update_rejects_invalid_last_name_with_error_code(self):
         user = self.create_completed_user(email="owner@example.com", password="StrongPass#2026")
@@ -595,6 +611,10 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error_code"], "INVALID_LAST_NAME")
+        self.assertEqual(
+            response.data["detail"],
+            "Last name contains invalid characters.",
+        )
 
     # -------- Refresh --------
 
@@ -927,3 +947,449 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("password", response.data)
+
+
+# -------- Avatar Service Tests --------
+
+import io
+from django.test import TestCase
+from PIL import Image as PILImage
+from django.core.files.uploadedfile import SimpleUploadedFile
+from accounts.services import (
+    AvatarStorageError,
+    AvatarValidationError,
+    update_avatar,
+    delete_avatar,
+    MAX_AVATAR_BYTES,
+)
+
+
+def _make_image_upload(
+    *, format="JPEG", size=(256, 256), filename=None, content=None
+) -> SimpleUploadedFile:
+    if content is None:
+        buf = io.BytesIO()
+        PILImage.new("RGB", size, "blue").save(buf, format=format)
+        content = buf.getvalue()
+    return SimpleUploadedFile(
+        filename or f"avatar.{format.lower()}",
+        content,
+        content_type=f"image/{format.lower()}",
+    )
+
+
+class AvatarServiceTests(TestCase):
+    def setUp(self) -> None:
+        self.user = User.objects.create_user(email="avatar@example.com", password="ValidPw123!")
+
+    def test_update_avatar_success_persists_file_and_user(self):
+        upload = _make_image_upload(format="JPEG")
+        result = update_avatar(self.user, upload)
+        self.assertTrue(bool(result.avatar))
+        self.assertTrue(result.avatar.name.startswith("avatars/"))
+
+    def test_update_avatar_reencodes_to_clean_square_webp(self):
+        upload = _make_image_upload(format="PNG", size=(900, 600))
+        result = update_avatar(self.user, upload)
+
+        self.assertTrue(result.avatar.name.endswith(".webp"))
+        with PILImage.open(result.avatar.path) as saved:
+            self.assertEqual(saved.format, "WEBP")
+            self.assertEqual(saved.size, (512, 512))
+
+    def test_update_avatar_strips_exif_metadata(self):
+        exif = PILImage.Exif()
+        exif[0x010E] = "sensitive-description"
+        buf = io.BytesIO()
+        PILImage.new("RGB", (512, 512), "blue").save(buf, format="JPEG", exif=exif)
+        upload = _make_image_upload(
+            format="JPEG",
+            filename="avatar.jpg",
+            content=buf.getvalue(),
+        )
+
+        result = update_avatar(self.user, upload)
+
+        with PILImage.open(result.avatar.path) as saved:
+            self.assertEqual(dict(saved.getexif()), {})
+
+    def test_update_avatar_rejects_oversize_bytes(self):
+        big_content = b"\xff\xd8\xff" + b"A" * (MAX_AVATAR_BYTES + 1)
+        upload = SimpleUploadedFile("big.jpg", big_content, content_type="image/jpeg")
+        with self.assertRaises(AvatarValidationError) as ctx:
+            update_avatar(self.user, upload)
+        self.assertEqual(ctx.exception.error_code, "AVATAR_TOO_LARGE")
+
+    def test_update_avatar_rejects_invalid_format_by_magic_bytes(self):
+        upload = SimpleUploadedFile("evil.jpg", b"not-an-image-at-all", content_type="image/jpeg")
+        with self.assertRaises(AvatarValidationError) as ctx:
+            update_avatar(self.user, upload)
+        self.assertEqual(ctx.exception.error_code, "AVATAR_INVALID_FORMAT")
+
+    def test_update_avatar_rejects_corrupt_png_with_valid_magic_bytes(self):
+        corrupt_png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00 \x00\x00\x00 "
+            b"\x08\x02\x00\x00\x00\xfc\x18\xed\xa3\x00\x00\x00.IDATx\x9c"
+            b"\xed\xcd1\x01\x00\x00\x08\x03\xa0\x9b\xdc\xe8Q\xc4\x0b\xa1"
+            b"\tbl\xbag@\x92$IIIIIIIIII\x92\xa4\x0e\x01n8\x02\x01\xe6"
+            b"\x00}H\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        upload = SimpleUploadedFile("broken.png", corrupt_png, content_type="image/png")
+
+        with self.assertRaises(AvatarValidationError) as ctx:
+            update_avatar(self.user, upload)
+
+        self.assertEqual(ctx.exception.error_code, "AVATAR_INVALID_FORMAT")
+
+    def test_update_avatar_rejects_oversize_dimensions(self):
+        upload = _make_image_upload(format="PNG", size=(2000, 2000))
+        with self.assertRaises(AvatarValidationError) as ctx:
+            update_avatar(self.user, upload)
+        self.assertEqual(ctx.exception.error_code, "AVATAR_DIMENSIONS_TOO_LARGE")
+
+    def test_update_avatar_replaces_old_file(self):
+        first = _make_image_upload(format="JPEG")
+        update_avatar(self.user, first)
+        old_path = self.user.avatar.path
+
+        second = _make_image_upload(format="WEBP")
+        update_avatar(self.user, second)
+        new_path = self.user.avatar.path
+
+        self.assertNotEqual(old_path, new_path)
+        import os
+        self.assertFalse(os.path.exists(old_path), "Old avatar file should be deleted from storage")
+        self.assertTrue(os.path.exists(new_path))
+
+    def test_update_avatar_storage_delete_failure_keeps_old_avatar(self):
+        update_avatar(self.user, _make_image_upload(format="JPEG"))
+        old_name = self.user.avatar.name
+
+        with patch(
+            "accounts.services._delete_storage_file_strict",
+            side_effect=AvatarStorageError(
+                "AVATAR_STORAGE_DELETE_FAILED",
+                "Could not update avatar storage safely. Please try again.",
+            ),
+        ):
+            with self.assertRaises(AvatarStorageError):
+                update_avatar(self.user, _make_image_upload(format="WEBP"))
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, old_name)
+
+    def test_delete_avatar_after_upload_clears_field_and_file(self):
+        update_avatar(self.user, _make_image_upload())
+        path = self.user.avatar.path
+        delete_avatar(self.user)
+        import os
+        self.assertFalse(bool(self.user.avatar))
+        self.assertFalse(os.path.exists(path))
+
+    def test_delete_avatar_storage_delete_failure_keeps_avatar(self):
+        update_avatar(self.user, _make_image_upload())
+        old_name = self.user.avatar.name
+
+        with patch(
+            "accounts.services._delete_storage_file_strict",
+            side_effect=AvatarStorageError(
+                "AVATAR_STORAGE_DELETE_FAILED",
+                "Could not update avatar storage safely. Please try again.",
+            ),
+        ):
+            with self.assertRaises(AvatarStorageError):
+                delete_avatar(self.user)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, old_name)
+
+    def test_delete_avatar_idempotent_on_user_without_avatar(self):
+        # Should not raise even if avatar field is empty.
+        result = delete_avatar(self.user)
+        self.assertFalse(bool(result.avatar))
+
+
+# -------- Password Change Service Tests --------
+
+from accounts.services import (
+    change_password_with_current,
+    PasswordChangeError,
+)
+
+
+class ChangePasswordServiceTests(TestCase):
+    def setUp(self) -> None:
+        self.current_password = "OldValidPw123!"
+        self.user = User.objects.create_user(
+            email="pw@example.com", password=self.current_password
+        )
+
+    def test_change_password_success_increments_auth_version(self):
+        before_version = self.user.auth_version
+        user, access, refresh = change_password_with_current(
+            self.user, self.current_password, "BrandNewPw456!"
+        )
+        user.refresh_from_db()
+        self.assertEqual(user.auth_version, before_version + 1)
+        self.assertTrue(user.check_password("BrandNewPw456!"))
+        self.assertTrue(access and isinstance(access, str))
+        self.assertTrue(refresh and isinstance(refresh, str))
+
+    def test_change_password_rejects_wrong_current(self):
+        with self.assertRaises(PasswordChangeError) as ctx:
+            change_password_with_current(self.user, "WrongCurrent!", "BrandNewPw456!")
+        self.assertEqual(ctx.exception.error_code, "INVALID_CURRENT_PASSWORD")
+
+    def test_change_password_rejects_same_as_current(self):
+        with self.assertRaises(PasswordChangeError) as ctx:
+            change_password_with_current(
+                self.user, self.current_password, self.current_password
+            )
+        self.assertEqual(ctx.exception.error_code, "SAME_PASSWORD")
+
+    def test_change_password_rejects_weak(self):
+        with self.assertRaises(PasswordChangeError) as ctx:
+            change_password_with_current(self.user, self.current_password, "12345678")
+        self.assertEqual(ctx.exception.error_code, "WEAK_PASSWORD")
+
+    def test_change_password_issued_tokens_carry_new_auth_version(self):
+        _, access, _ = change_password_with_current(
+            self.user, self.current_password, "BrandNewPw456!"
+        )
+        from accounts.tokens import AccessToken
+        token = AccessToken(access)
+        self.user.refresh_from_db()
+        self.assertEqual(token.get("auth_version"), self.user.auth_version)
+
+
+# -------- build_user_payload avatar_url Tests --------
+
+from accounts.services import build_user_payload
+
+
+class BuildUserPayloadAvatarTests(TestCase):
+    def setUp(self) -> None:
+        self.user = User.objects.create_user(email="ap@example.com", password="ValidPw123!")
+
+    def test_payload_avatar_url_is_null_when_no_avatar(self):
+        payload = build_user_payload(self.user)
+        self.assertIn("avatar_url", payload)
+        self.assertIsNone(payload["avatar_url"])
+
+    def test_payload_avatar_url_is_storage_url_when_present(self):
+        update_avatar(self.user, _make_image_upload())
+        payload = build_user_payload(self.user)
+        self.assertTrue(payload["avatar_url"].startswith("/media/avatars/"))
+
+
+# -------- Avatar API Tests --------
+
+
+class AvatarAPITests(APITestCase):
+    URL = "/api/auth/avatar"
+
+    def setUp(self) -> None:
+        self.user = User.objects.create_user(email="api@example.com", password="ValidPw123!")
+        self.client.force_authenticate(user=self.user)
+
+    def _upload_image(self, format="JPEG"):
+        buf = io.BytesIO()
+        PILImage.new("RGB", (256, 256), "green").save(buf, format=format)
+        return SimpleUploadedFile(
+            f"a.{format.lower()}", buf.getvalue(), content_type=f"image/{format.lower()}"
+        )
+
+    def test_patch_uploads_avatar_returns_user_with_avatar_url(self):
+        response = self.client.patch(self.URL, {"avatar": self._upload_image()}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("user", response.data)
+        self.assertTrue(response.data["user"]["avatar_url"].startswith("/media/avatars/"))
+
+    def test_patch_rejects_invalid_file_with_AVATAR_INVALID_FORMAT(self):
+        bad = SimpleUploadedFile("bad.jpg", b"not-an-image", content_type="image/jpeg")
+        response = self.client.patch(self.URL, {"avatar": bad}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error_code"], "AVATAR_INVALID_FORMAT")
+
+    def test_delete_clears_avatar_returns_user_with_null_avatar_url(self):
+        self.client.patch(self.URL, {"avatar": self._upload_image()}, format="multipart")
+        response = self.client.delete(self.URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["user"]["avatar_url"])
+
+    def test_delete_when_no_avatar_returns_200_with_null(self):
+        response = self.client.delete(self.URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["user"]["avatar_url"])
+
+    def test_patch_storage_delete_failure_returns_error_and_keeps_old_avatar(self):
+        self.client.patch(self.URL, {"avatar": self._upload_image()}, format="multipart")
+        self.user.refresh_from_db()
+        old_name = self.user.avatar.name
+
+        with patch(
+            "accounts.services._delete_storage_file_strict",
+            side_effect=AvatarStorageError(
+                "AVATAR_STORAGE_DELETE_FAILED",
+                "Could not update avatar storage safely. Please try again.",
+            ),
+        ):
+            response = self.client.patch(
+                self.URL,
+                {"avatar": self._upload_image(format="WEBP")},
+                format="multipart",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data["error_code"], "AVATAR_STORAGE_DELETE_FAILED")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, old_name)
+
+    def test_delete_storage_delete_failure_returns_error_and_keeps_avatar(self):
+        self.client.patch(self.URL, {"avatar": self._upload_image()}, format="multipart")
+        self.user.refresh_from_db()
+        old_name = self.user.avatar.name
+
+        with patch(
+            "accounts.services._delete_storage_file_strict",
+            side_effect=AvatarStorageError(
+                "AVATAR_STORAGE_DELETE_FAILED",
+                "Could not update avatar storage safely. Please try again.",
+            ),
+        ):
+            response = self.client.delete(self.URL)
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data["error_code"], "AVATAR_STORAGE_DELETE_FAILED")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.avatar.name, old_name)
+
+    def test_patch_and_delete_require_authentication(self):
+        self.client.force_authenticate(user=None)
+        upload = self._upload_image()
+        self.assertEqual(
+            self.client.patch(self.URL, {"avatar": upload}, format="multipart").status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+        self.assertEqual(self.client.delete(self.URL).status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# -------- Change Password API Tests --------
+
+
+class ChangePasswordAPITests(APITestCase):
+    URL = "/api/auth/password/change"
+
+    def setUp(self) -> None:
+        self.current = "OldValidPw123!"
+        self.user = User.objects.create_user(email="cp@example.com", password=self.current)
+        self.client.force_authenticate(user=self.user)
+
+    def test_post_success_returns_user_and_fresh_tokens(self):
+        response = self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": "BrandNewPw456!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("user", response.data)
+        self.assertIn("tokens", response.data)
+        self.assertIn("access", response.data["tokens"])
+        self.assertIn("refresh", response.data["tokens"])
+
+    def test_post_wrong_current_returns_INVALID_CURRENT_PASSWORD(self):
+        response = self.client.post(
+            self.URL,
+            {"current_password": "Wrong!", "new_password": "BrandNewPw456!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error_code"], "INVALID_CURRENT_PASSWORD")
+
+    def test_post_same_password_returns_SAME_PASSWORD(self):
+        response = self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": self.current},
+            format="json",
+        )
+        self.assertEqual(response.data["error_code"], "SAME_PASSWORD")
+
+    def test_post_weak_password_returns_WEAK_PASSWORD(self):
+        response = self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": "12345678"},
+            format="json",
+        )
+        self.assertEqual(response.data["error_code"], "WEAK_PASSWORD")
+
+    def test_post_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": "BrandNewPw456!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_old_access_token_invalidated_after_change(self):
+        from accounts.tokens import RefreshToken as _Refresh
+        old_refresh = _Refresh.for_user(self.user)
+        old_access = str(old_refresh.access_token)
+
+        self.client.post(
+            self.URL,
+            {"current_password": self.current, "new_password": "BrandNewPw456!"},
+            format="json",
+        )
+
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {old_access}")
+        me = self.client.get("/api/auth/me")
+        self.assertEqual(me.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# -------- Throttle Smoke Tests --------
+
+from django.core.cache import cache as _throttle_cache
+from rest_framework.throttling import ScopedRateThrottle
+
+
+class AvatarThrottleTests(APITestCase):
+    URL = "/api/auth/avatar"
+
+    def setUp(self) -> None:
+        _throttle_cache.clear()
+
+    def test_throttle_avatar_after_limit_covers_patch_and_delete(self):
+        user = User.objects.create_user(email="t@example.com", password="ValidPw123!")
+        self.client.force_authenticate(user=user)
+        new_rates = {**ScopedRateThrottle.THROTTLE_RATES, "auth_avatar": "2/hour"}
+        with patch.object(ScopedRateThrottle, "THROTTLE_RATES", new_rates):
+            self.client.delete(self.URL)
+            self.client.delete(self.URL)
+            response = self.client.delete(self.URL)
+            self.assertEqual(response.status_code, 429)
+
+
+class PasswordChangeThrottleTests(APITestCase):
+    URL = "/api/auth/password/change"
+
+    def setUp(self) -> None:
+        _throttle_cache.clear()
+
+    def test_throttle_password_change_after_limit(self):
+        user = User.objects.create_user(email="tp@example.com", password="OldValidPw123!")
+        self.client.force_authenticate(user=user)
+        new_rates = {**ScopedRateThrottle.THROTTLE_RATES, "auth_password_change": "1/hour"}
+        with patch.object(ScopedRateThrottle, "THROTTLE_RATES", new_rates):
+            self.client.post(
+                self.URL,
+                {"current_password": "OldValidPw123!", "new_password": "NewValidPw456!"},
+                format="json",
+            )
+            response = self.client.post(
+                self.URL,
+                {"current_password": "x", "new_password": "y"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 429)

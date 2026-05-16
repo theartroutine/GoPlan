@@ -381,3 +381,52 @@ class ChatMessagePushTests(TransactionTestCase):
 
         self.assertFalse(created)
         mock_async_to_sync.assert_not_called()
+
+
+# -------- Sender avatar_url Tests --------
+
+import io
+from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image as PILImage
+from accounts.services import update_avatar
+from chat.services import build_chat_message_payload
+
+
+class ChatSenderAvatarUrlTests(APITestCase):
+    """Sender avatar resolves at read time (not snapshotted)."""
+
+    def setUp(self):
+        self.captain = create_completed_user("ch_cap@example.com", "chcap", "CHC001")
+        self.sender = create_completed_user("ch_snd@example.com", "chsnd", "CHS001")
+        self.trip = _make_trip(self.captain)
+        _add_member(self.trip, self.sender)
+        self.message = _make_message(
+            self.trip,
+            self.sender,
+            "hello",
+            timezone.now(),
+        )
+
+    def test_sender_payload_has_avatar_url_null_when_no_avatar(self):
+        message = ChatMessage.objects.select_related("sender").get(pk=self.message.pk)
+        payload = build_chat_message_payload(message)
+        self.assertIn("avatar_url", payload["sender"])
+        self.assertIsNone(payload["sender"]["avatar_url"])
+
+    def test_sender_payload_avatar_url_reflects_current_user_record(self):
+        buf = io.BytesIO()
+        PILImage.new("RGB", (256, 256), "purple").save(buf, format="JPEG")
+        update_avatar(
+            self.sender,
+            SimpleUploadedFile("a.jpg", buf.getvalue(), content_type="image/jpeg"),
+        )
+        message = ChatMessage.objects.select_related("sender").get(pk=self.message.pk)
+        payload = build_chat_message_payload(message)
+        self.assertTrue(payload["sender"]["avatar_url"].startswith("/media/avatars/"))
+
+    def test_sender_payload_avatar_url_is_null_when_sender_deleted(self):
+        self.sender.delete()
+        message = ChatMessage.objects.select_related("sender").get(pk=self.message.pk)
+        payload = build_chat_message_payload(message)
+        self.assertIsNone(payload["sender"]["avatar_url"])
+        self.assertTrue(payload["sender"]["display_name"])
