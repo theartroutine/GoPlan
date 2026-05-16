@@ -15,6 +15,8 @@ from ai.action_types import (
     AI_CONFIRMATION_TRANSFER_RECIPIENT,
 )
 from ai.agent.drafts import build_action_draft_payload
+from ai.agent.runner import AgentDraftSpec, AgentRunResult
+from ai.lifecycle import finish_interaction_success
 from ai.models import (
     AIActionDraft,
     AIActionDraftStatus,
@@ -751,3 +753,47 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
         self.assertEqual(draft.status, AIActionDraftStatus.READY)
         self.assertEqual(draft.payload["status"], TimelineActivityStatus.IN_PROGRESS)
         self.assertTrue(response.data["draft"]["can_confirm"])
+
+
+class AIActionDraftDisplayAndSummaryTests(AIActionDraftModelTests):
+    """Test that finish_interaction_success populates display and summary on persisted drafts."""
+
+    @patch("ai.lifecycle.push_chat_message")
+    def test_draft_persisted_with_display_and_summary(self, _push):
+        # Arrange: put the interaction back into PENDING so finish_interaction_success can run
+        self.interaction.status = AIInteractionStatus.PENDING
+        self.interaction.response_message = None
+        self.interaction.save()
+
+        draft_spec = AgentDraftSpec(
+            action_type="expense.create",
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            status=AIActionDraftStatus.READY,
+            payload={"title": "Dinner", "total_amount": "1200000"},
+            preview={"title": "Dinner"},
+            missing_fields=[],
+            preconditions={},
+        )
+
+        class FakeUsage:
+            input_tokens = 10
+            output_tokens = 20
+            total_tokens = 30
+
+        with self.captureOnCommitCallbacks(execute=False):
+            finish_interaction_success(
+                interaction=self.interaction,
+                content="I prepared a draft.",
+                usage=FakeUsage(),
+                drafts=[draft_spec],
+            )
+
+        draft = AIActionDraft.objects.get(interaction=self.interaction)
+
+        # display must have icon matching the expense family and a non-empty kicker
+        self.assertEqual(draft.display.get("icon"), "expense")
+        self.assertTrue(draft.display.get("kicker"))
+
+        # summary must contain the draft title and status
+        self.assertIn("Dinner", draft.summary)
+        self.assertIn(AIActionDraftStatus.READY, draft.summary)

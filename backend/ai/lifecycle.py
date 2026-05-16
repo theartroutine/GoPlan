@@ -6,6 +6,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from ai.agent.display import build_display
 from ai.models import AIActionDraft, AIActionDraftStatus, AIInteraction, AIInteractionStatus
 from ai.services import (
     AI_LOCK_TTL,
@@ -15,6 +16,11 @@ from ai.services import (
 from chat.models import ChatMessage, ChatMessageAIStatus, ChatMessageSenderKind
 from chat.services import push_chat_message
 from trips.models import Trip
+
+
+def summarize_draft(*, action_type: str, payload: dict, status: str) -> str:
+    title = payload.get("title") or action_type
+    return f"[{status}] {action_type}: {title[:160]}"
 
 
 class InteractionAlreadyRunningError(Exception):
@@ -106,6 +112,10 @@ def finish_interaction_success(
         expires_at = now + timedelta(
             seconds=settings.GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS
         )
+        trip_context = {
+            "timezone": interaction.trip.timezone,
+            "currency_code": interaction.trip.currency_code,
+        }
         AIActionDraft.objects.bulk_create(
             [
                 AIActionDraft(
@@ -121,6 +131,16 @@ def finish_interaction_success(
                     ),
                     payload=draft.payload,
                     preview=draft.preview,
+                    display=build_display(
+                        action_type=draft.action_type,
+                        payload=draft.payload,
+                        trip_context=trip_context,
+                    ),
+                    summary=summarize_draft(
+                        action_type=draft.action_type,
+                        payload=draft.payload,
+                        status=draft.status or AIActionDraftStatus.NEEDS_INFO,
+                    ),
                     missing_fields=draft.missing_fields,
                     preconditions=draft.preconditions,
                     required_confirmation=draft.required_confirmation,
