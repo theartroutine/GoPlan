@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -9,30 +9,76 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 SYSTEM_TYPE_LABELS = {
+    "TRANSPORTATION": "Transportation",
+    "FOOD": "Food",
+    "CHECKIN_OUT": "Check-in / Check-out",
+    "FREE_TIME": "Free Time",
     "SIGHTSEEING": "Sightseeing",
-    "DINING": "Dining",
     "SHOPPING": "Shopping",
-    "NIGHTLIFE": "Nightlife",
-    "TRANSPORT": "Transport",
     "ACCOMMODATION": "Accommodation",
     "OTHER": "Other",
+    "DINING": "Food",
+    "NIGHTLIFE": "Nightlife",
+    "TRANSPORT": "Transportation",
 }
 
 ASSIGNEE_LABELS = {
     "GROUP": "Whole group",
+    "EVERYONE": "Whole group",
     "USER": "Assigned member",
+    "NONE": "Unassigned",
 }
 
 
-def _fmt_time_range(start: str | None, end: str | None, tz: str) -> str | None:
-    if not start:
+def _activity_payload(payload: dict) -> dict:
+    data = payload.get("data")
+    return data if isinstance(data, dict) else payload
+
+
+def _non_empty_string(payload: dict, key: str) -> str | None:
+    value = payload.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _fmt_clock(value, tz: str) -> str | None:
+    if not value:
         return None
-    zone = ZoneInfo(tz)
-    s = datetime.fromisoformat(start).astimezone(zone)
-    label = s.strftime("%H:%M")
+    if isinstance(value, time):
+        return value.strftime("%H:%M")
+    if isinstance(value, datetime):
+        dt = value.astimezone(ZoneInfo(tz)) if value.tzinfo else value
+        return dt.strftime("%H:%M")
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        if "T" in text:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if dt.tzinfo:
+                dt = dt.astimezone(ZoneInfo(tz))
+            return dt.strftime("%H:%M")
+        parsed_time = time.fromisoformat(text)
+        return parsed_time.strftime("%H:%M")
+    except ValueError:
+        return text[:5] if len(text) >= 5 else text
+
+
+def _fmt_time_range(start, end, tz: str, time_mode: str | None = None) -> str | None:
+    if not start:
+        if time_mode == "ALL_DAY":
+            return "All day"
+        if time_mode == "FLEXIBLE":
+            return "Flexible"
+        return None
+    label = _fmt_clock(start, tz)
+    if not label:
+        return None
     if end:
-        e = datetime.fromisoformat(end).astimezone(zone)
-        label += " – " + e.strftime("%H:%M")
+        end_label = _fmt_clock(end, tz)
+        if end_label:
+            label += " – " + end_label
     return label
 
 
@@ -42,32 +88,99 @@ def _fmt_amount(value: int | str | Decimal, currency: str) -> dict:
     return {"kind": "amount", "value": formatted, "currency": currency}
 
 
+def _location_label(payload: dict) -> str | None:
+    label = _non_empty_string(payload, "location_label")
+    if label:
+        return label
+    place = payload.get("place")
+    if not isinstance(place, dict):
+        return None
+    title = _non_empty_string(place, "title")
+    if title:
+        return title
+    return _non_empty_string(place, "address")
+
+
+def _activity_meta(payload: dict) -> list[dict]:
+    meta = []
+    for label, field in (
+        ("Meeting point", "meeting_point"),
+        ("Location note", "location_note"),
+        ("Note", "note"),
+    ):
+        value = _non_empty_string(payload, field)
+        if value:
+            meta.append({"label": label, "value": value})
+
+    contact_name = _non_empty_string(payload, "contact_name")
+    contact_phone = _non_empty_string(payload, "contact_phone")
+    if contact_name and contact_phone:
+        meta.append(
+            {"label": "Contact", "value": f"{contact_name} · {contact_phone}"}
+        )
+    elif contact_name:
+        meta.append({"label": "Contact", "value": contact_name})
+    elif contact_phone:
+        meta.append({"label": "Contact phone", "value": contact_phone})
+
+    for label, field in (
+        ("Booking", "booking_reference"),
+        ("Link", "external_link"),
+    ):
+        value = _non_empty_string(payload, field)
+        if value:
+            meta.append({"label": label, "value": value})
+    return meta
+
+
 def _build_timeline_activity(*, payload: dict, trip_context: dict, tone: str) -> dict:
+    activity_payload = _activity_payload(payload)
     tz = trip_context.get("timezone", "UTC")
-    system_label = SYSTEM_TYPE_LABELS.get(payload.get("system_type", ""), "Activity")
+    system_label = SYSTEM_TYPE_LABELS.get(
+        activity_payload.get("system_type", ""),
+        "Activity",
+    )
     chips = []
-    time_label = _fmt_time_range(payload.get("start_time"), payload.get("end_time"), tz)
+    time_label = _fmt_time_range(
+        activity_payload.get("start_time"),
+        activity_payload.get("end_time"),
+        tz,
+        activity_payload.get("time_mode"),
+    )
     if time_label:
         chips.append({"icon": "clock", "label": time_label})
-    if payload.get("location_label"):
-        chips.append({"icon": "map-pin", "label": payload["location_label"]})
-    assignee = ASSIGNEE_LABELS.get(payload.get("assignee_scope", "GROUP"), "Whole group")
+    location_label = _location_label(activity_payload)
+    if location_label:
+        chips.append({"icon": "map-pin", "label": location_label})
+    assignee = ASSIGNEE_LABELS.get(
+        activity_payload.get("assignee_scope", "GROUP"),
+        "Whole group",
+    )
     chips.append({"icon": "users", "label": assignee})
     return {
         "icon": "activity",
         "tone": tone,
         "kicker": f"Activity · {system_label}",
-        "title": payload.get("title", ""),
+        "title": activity_payload.get("title", ""),
         "chips": chips,
+        "meta": _activity_meta(activity_payload),
     }
 
 
 def _build_timeline_create(payload: dict, trip_context: dict) -> dict:
-    return _build_timeline_activity(payload=payload, trip_context=trip_context, tone="create")
+    return _build_timeline_activity(
+        payload=payload,
+        trip_context=trip_context,
+        tone="create",
+    )
 
 
 def _build_timeline_update(payload: dict, trip_context: dict) -> dict:
-    return _build_timeline_activity(payload=payload, trip_context=trip_context, tone="update")
+    return _build_timeline_activity(
+        payload=payload,
+        trip_context=trip_context,
+        tone="update",
+    )
 
 
 def _build_timeline_delete(payload: dict, trip_context: dict) -> dict:
