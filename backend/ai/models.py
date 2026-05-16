@@ -21,6 +21,9 @@ class AIInteractionErrorCode(models.TextChoices):
     PROVIDER_BAD_RESPONSE = "PROVIDER_BAD_RESPONSE", "Provider bad response"
     CONFIG_MISSING = "CONFIG_MISSING", "Config missing"
     TASK_ERROR = "TASK_ERROR", "Task error"
+    INTERNAL_ERROR = "INTERNAL_ERROR", "Internal error"
+    TOOL_UNKNOWN = "TOOL_UNKNOWN", "Tool unknown"
+    TOOL_VALIDATION_FAILED = "TOOL_VALIDATION_FAILED", "Tool validation failed"
 
 
 class AIInteraction(models.Model):
