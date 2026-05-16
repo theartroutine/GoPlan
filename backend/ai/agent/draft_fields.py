@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from ai.agent.presets import presets_for
+
 MISSING_FIELD_DEFINITIONS = {
     "activity_id": {"label": "Activity"},
     "amount": {"label": "Amount", "type": "money"},
@@ -100,3 +102,68 @@ def normalize_missing_fields(value, *, strict: bool = True) -> list[dict]:
 
 def build_missing_fields(names: Iterable[str]) -> list[dict]:
     return [build_missing_field(name) for name in list(dict.fromkeys(names))]
+
+
+# -------- Section Context Resolver --------
+
+def _resolve_section_context(section_id) -> dict:
+    from trips.models import TimelineSection
+
+    try:
+        section = TimelineSection.objects.select_related("trip").get(pk=section_id)
+    except (TimelineSection.DoesNotExist, ValueError, TypeError):
+        return {}
+    sections = list(
+        TimelineSection.objects.filter(trip=section.trip)
+        .order_by("section_date", "position", "created_at")
+        .values_list("id", flat=True)
+    )
+    try:
+        index_one_based = sections.index(section.id) + 1
+    except ValueError:
+        index_one_based = 1
+    return {
+        "section_id": str(section.id),
+        "section_index": index_one_based,
+        "section_date": section.section_date.isoformat(),
+    }
+
+
+# -------- Activity Create Missing Fields Builder --------
+
+def build_missing_fields_for_create_activity(
+    *,
+    section_id,
+    time_mode: str,
+    missing: list[str],
+    system_type: str | None = None,
+) -> list[dict]:
+    """Build missing_fields list for a timeline.activity.create draft,
+    pairing start_time/end_time into a synthetic time_range field with
+    section context + presets when applicable.
+    """
+    missing_set = set(missing)
+    fields: list[dict] = []
+
+    if time_mode == "TIME_RANGE" and {"start_time", "end_time"} <= missing_set:
+        section_ctx = _resolve_section_context(section_id)
+        fields.append({
+            "name": "time_range",
+            "label": "Time",
+            "type": "time_range",
+            "required": True,
+            "constraints": {
+                **section_ctx,
+                "pair": ["start_time", "end_time"],
+            },
+            "presets": [p.as_dict() for p in presets_for(system_type or "OTHER")],
+        })
+        missing_set.discard("start_time")
+        missing_set.discard("end_time")
+
+    # Preserve other missing fields using the existing single-field builder.
+    for name in missing:
+        if name in missing_set:
+            fields.append(build_missing_field(name))
+
+    return fields
