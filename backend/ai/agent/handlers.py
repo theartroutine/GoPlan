@@ -6,6 +6,10 @@ from typing import Optional
 from ai.agent import schemas
 from ai.agent.drafts import create_action_draft
 from ai.agent.draft_mutations import patch_action_draft
+from ai.agent.preconditions import (
+    action_requires_stale_precondition,
+    build_backend_preconditions,
+)
 from ai.models import AIActionDraft
 
 
@@ -32,11 +36,23 @@ def _to_activity_data_payload(args, *, id_field: str) -> dict:
 
 
 def _create(*, trip, interaction, action_type: str, args) -> HandlerResult:
+    payload = _to_payload(args)
+    preconditions = (
+        build_backend_preconditions(
+            action_type=action_type,
+            trip_id=trip.id,
+            payload=payload,
+            required=True,
+        )
+        if action_requires_stale_precondition(action_type)
+        else {}
+    )
     draft = create_action_draft(
         trip=trip,
         interaction=interaction,
         action_type=action_type,
-        payload=_to_payload(args),
+        payload=payload,
+        preconditions=preconditions,
     )
     return HandlerResult(draft=draft)
 
@@ -52,11 +68,18 @@ def create_timeline_activity(*, trip, interaction, actor, args: schemas.CreateTi
 
 
 def update_timeline_activity(*, trip, interaction, actor, args: schemas.UpdateTimelineActivityArgs):
+    payload = _to_activity_data_payload(args, id_field="activity_id")
     draft = create_action_draft(
         trip=trip,
         interaction=interaction,
         action_type="timeline.activity.update",
-        payload=_to_activity_data_payload(args, id_field="activity_id"),
+        payload=payload,
+        preconditions=build_backend_preconditions(
+            action_type="timeline.activity.update",
+            trip_id=trip.id,
+            payload=payload,
+            required=True,
+        ),
     )
     return HandlerResult(draft=draft)
 

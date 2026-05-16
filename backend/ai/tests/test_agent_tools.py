@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 from django.test import SimpleTestCase, TestCase
@@ -101,13 +102,19 @@ class ToolHandlerTests(TestCase):
         from ai.agent import handlers, schemas
         from ai.models import AIActionDraft
 
-        activity_id = uuid4()
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        activity = section.activities.create(
+            trip=self.trip,
+            title="Old stop",
+            time_mode="FLEXIBLE",
+            system_type="SIGHTSEEING",
+        )
         result = handlers.update_timeline_activity(
             trip=self.trip,
             interaction=self.interaction,
             actor=self.user,
             args=schemas.UpdateTimelineActivityArgs(
-                activity_id=activity_id,
+                activity_id=activity.id,
                 title="Updated stop",
             ),
         )
@@ -117,11 +124,55 @@ class ToolHandlerTests(TestCase):
         self.assertEqual(
             result.draft.payload,
             {
-                "activity_id": str(activity_id),
+                "activity_id": str(activity.id),
                 "data": {
                     "title": "Updated stop",
                 },
             },
+        )
+        self.assertEqual(
+            result.draft.preconditions["target"]["id"],
+            str(activity.id),
+        )
+
+    def test_set_expense_contribution_persists_target_precondition(self):
+        from ai.agent import handlers, schemas
+        from ai.models import AIActionDraft
+        from expenses.services import create_expense
+
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.user,
+            title="Lunch",
+            description="",
+            total_amount=Decimal("2000000"),
+            collector_id=self.user.id,
+        )
+
+        result = handlers.set_expense_contribution(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.SetExpenseContributionArgs(
+                expense_id=expense.id,
+                contributions=[
+                    {
+                        "user_id": str(self.user.id),
+                        "amount": "2000000",
+                    },
+                ],
+            ),
+        )
+
+        self.assertIsInstance(result.draft, AIActionDraft)
+        self.assertEqual(result.draft.action_type, "expense.contribution.set")
+        self.assertEqual(
+            result.draft.preconditions["target"]["id"],
+            str(expense.id),
+        )
+        self.assertEqual(
+            result.draft.preconditions["target"]["type"],
+            "expense",
         )
 
     def test_respond_to_user_returns_message_without_draft(self):
