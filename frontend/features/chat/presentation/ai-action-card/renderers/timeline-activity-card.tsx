@@ -174,7 +174,7 @@ export function TimelineActivityCard({
       error={errorOverride}
     >
       {chips.length ? (
-        <div className="mt-1 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
           {chips.map((c, i) => (
             <Chip key={`${c.label}-${i}`} icon={c.icon} label={c.label} />
           ))}

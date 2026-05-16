@@ -111,7 +111,9 @@ describe("AIActionCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Confirm/i }));
 
-    expect(await screen.findByText("Confirmed")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "Confirmed" }),
+    ).toBeInTheDocument();
     expect(onDraftChanged).toHaveBeenCalledWith(
       expect.objectContaining({ status: "CONFIRMED" }),
     );
@@ -142,7 +144,9 @@ describe("AIActionCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Confirm/i }));
 
-    expect(await screen.findByText("Expired")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "Expired" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Draft expired.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Confirm/i })).toBeNull();
     expect(onDraftChanged).toHaveBeenCalledWith(expiredDraft);
@@ -193,7 +197,9 @@ describe("AIActionCard", () => {
     expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
       total_amount: "500000",
     });
-    expect(await screen.findByText("Ready")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "Ready" }),
+    ).toBeInTheDocument();
   });
 
   it("renders timeline activity details from preview when display is sparse", () => {
@@ -229,7 +235,7 @@ describe("AIActionCard", () => {
     );
 
     expect(screen.getByText("Dinh I")).toBeInTheDocument();
-    expect(screen.getByText("Activity · Sightseeing")).toBeInTheDocument();
+    expect(screen.queryByText("Activity · Sightseeing")).toBeNull();
     expect(screen.getByText("08:30 – 10:00")).toBeInTheDocument();
     expect(screen.getByText("Dinh I Palace")).toBeInTheDocument();
     expect(screen.getByText("Hotel lobby")).toBeInTheDocument();
@@ -256,6 +262,6 @@ describe("AIActionCard", () => {
     );
 
     expect(screen.getByText("Dinh I")).toBeInTheDocument();
-    expect(screen.getByText("Activity · Sightseeing")).toBeInTheDocument();
+    expect(screen.queryByText("Activity · Sightseeing")).toBeNull();
   });
 });

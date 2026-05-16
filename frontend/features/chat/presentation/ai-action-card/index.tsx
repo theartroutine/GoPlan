@@ -57,13 +57,6 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function statusHelper(draft: AIActionDraft, canConfirm: boolean): string | null {
-  if (draft.status === "READY" && canConfirm) {
-    return "All info filled — confirm to apply.";
-  }
-  return null;
-}
-
 export function AIActionCard(props: CardProps) {
   const { tripId, draft, onDraftChanged } = props;
   const trip = useTripContext();
@@ -162,7 +155,7 @@ export function AIActionCard(props: CardProps) {
     onDraftChanged,
     editorSlot,
     actionsSlot,
-    helperOverride: statusHelper(localDraft, localDraft.can_confirm),
+    helperOverride: null,
     errorOverride: error,
   });
 }

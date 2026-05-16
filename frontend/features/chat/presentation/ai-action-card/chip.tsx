@@ -12,11 +12,25 @@ const ICONS = {
   user: User,
 } as const;
 
+const ICON_TONE: Record<ChipIcon, string> = {
+  clock: "bg-sky-50 text-sky-700",
+  calendar: "bg-violet-50 text-violet-700",
+  "map-pin": "bg-indigo-50 text-indigo-700",
+  users: "bg-emerald-50 text-emerald-700",
+  user: "bg-amber-50 text-amber-700",
+};
+
 export function Chip({ icon, label }: { icon?: ChipIcon; label: string }) {
   const Icon = icon ? ICONS[icon] : null;
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-foreground">
-      {Icon ? <Icon className="size-3 opacity-70" aria-hidden /> : null}
+    <span className="inline-flex min-h-7 items-center gap-1.5 text-xs font-medium text-foreground">
+      {Icon ? (
+        <span
+          className={`inline-flex size-5 items-center justify-center rounded-md ${ICON_TONE[icon]}`}
+        >
+          <Icon className="size-3" aria-hidden />
+        </span>
+      ) : null}
       {label}
     </span>
   );

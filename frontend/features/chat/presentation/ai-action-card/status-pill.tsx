@@ -1,33 +1,72 @@
 "use client";
 
+import {
+  BadgeCheck,
+  CheckCircle2,
+  CircleHelp,
+  CircleX,
+  TimerOff,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
+
 import type { AIActionDraft } from "@/features/chat/domain/ai-action-drafts";
 
-const STATUS_LABEL: Record<AIActionDraft["status"], string> = {
-  NEEDS_INFO: "Needs info",
-  READY: "Ready",
-  CONFIRMED: "Confirmed",
-  EXECUTED: "Done",
-  CANCELLED: "Cancelled",
-  EXPIRED: "Expired",
-  FAILED: "Failed",
+type StatusConfig = {
+  label: string;
+  Icon: LucideIcon;
+  className: string;
 };
 
-const STATUS_TONE: Record<AIActionDraft["status"], string> = {
-  NEEDS_INFO: "bg-amber-100 text-amber-800",
-  READY: "bg-emerald-100 text-emerald-800",
-  CONFIRMED: "bg-slate-100 text-slate-700",
-  EXECUTED: "bg-slate-100 text-slate-700",
-  CANCELLED: "bg-slate-100 text-slate-500",
-  EXPIRED: "bg-slate-100 text-slate-500",
-  FAILED: "bg-red-100 text-red-800",
+const STATUS_CONFIG: Record<AIActionDraft["status"], StatusConfig> = {
+  NEEDS_INFO: {
+    label: "Needs info",
+    Icon: CircleHelp,
+    className: "bg-amber-50 text-amber-700 ring-amber-100",
+  },
+  READY: {
+    label: "Ready",
+    Icon: CheckCircle2,
+    className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  },
+  CONFIRMED: {
+    label: "Confirmed",
+    Icon: BadgeCheck,
+    className: "bg-blue-50 text-blue-700 ring-blue-100",
+  },
+  EXECUTED: {
+    label: "Done",
+    Icon: CheckCircle2,
+    className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  },
+  CANCELLED: {
+    label: "Cancelled",
+    Icon: CircleX,
+    className: "bg-rose-50 text-rose-700 ring-rose-100",
+  },
+  EXPIRED: {
+    label: "Expired",
+    Icon: TimerOff,
+    className: "bg-orange-50 text-orange-700 ring-orange-100",
+  },
+  FAILED: {
+    label: "Failed",
+    Icon: TriangleAlert,
+    className: "bg-red-50 text-red-700 ring-red-100",
+  },
 };
 
 export function StatusPill({ status }: { status: AIActionDraft["status"] }) {
+  const { label, Icon, className } = STATUS_CONFIG[status];
   return (
     <span
-      className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${STATUS_TONE[status]}`}
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full ring-1 ${className}`}
     >
-      {STATUS_LABEL[status]}
+      <Icon className="size-3.5" aria-hidden />
+      <span className="sr-only">{label}</span>
     </span>
   );
 }

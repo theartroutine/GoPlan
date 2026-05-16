@@ -34,10 +34,9 @@ export function CardShell({
       <div className="mb-2 flex items-start gap-3">
         <ActionIcon icon={display.icon} />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {display.kicker}
+          <div className="break-words font-semibold leading-snug">
+            {display.title}
           </div>
-          <div className="break-words font-semibold">{display.title}</div>
         </div>
         <StatusPill status={status} />
       </div>
