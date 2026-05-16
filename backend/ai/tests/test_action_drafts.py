@@ -335,6 +335,38 @@ class AIActionDraftAPITests(APITestCase, AIActionDraftModelTests):
     def _cancel_url(self, draft_id):
         return f"/api/trips/{self.trip.id}/ai/action-drafts/{draft_id}/cancel"
 
+    def test_action_draft_detail_exposes_display_and_summary(self):
+        self.client.force_authenticate(self.user)
+        display_value = {
+            "icon": "activity",
+            "kicker": "Activity · Sightseeing",
+            "title": "Museum Visit",
+            "tone": "create",
+        }
+        summary_value = "[READY] timeline.activity.create: Museum Visit"
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation="CAPTAIN",
+            payload={"data": {"title": "Museum Visit"}},
+            preview={"title": "Museum Visit"},
+            display=display_value,
+            summary=summary_value,
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        response = self.client.get(self._detail_url(draft.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["draft"]["display"], display_value)
+        self.assertEqual(response.data["draft"]["summary"], summary_value)
+
     def test_captain_reads_action_draft_detail(self):
         self.client.force_authenticate(self.user)
         draft = AIActionDraft.objects.create(

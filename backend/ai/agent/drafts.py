@@ -296,6 +296,8 @@ def build_action_draft_payload(draft: AIActionDraft, *, viewer) -> dict:
         "can_confirm": can_confirm_action_draft(draft, viewer=viewer),
         "can_cancel": can_cancel_action_draft(draft, viewer=viewer),
         "can_edit": can_edit_action_draft(draft, viewer=viewer),
+        "display": draft.display,
+        "summary": draft.summary,
         "preview": draft.preview,
         "missing_fields": missing_fields,
         "result": draft.result,
