@@ -8,9 +8,10 @@ import {
   confirmAIActionDraft,
   patchAIActionDraft,
 } from "@/features/chat/infrastructure/ai-action-drafts-api";
-import { AIActionFieldEditor } from "@/features/chat/presentation/ai-action-field-editor";
+import { useTripContext } from "@/features/trips/presentation/trip-context";
 
 import { CardActions } from "./card-actions";
+import { FieldEditor } from "./field-editor";
 import type { CardProps, CardRenderer } from "./display-types";
 import { ExpenseCard } from "./renderers/expense-card";
 import { GenericCard } from "./renderers/generic-card";
@@ -65,6 +66,8 @@ function statusHelper(draft: AIActionDraft, canConfirm: boolean): string | null 
 
 export function AIActionCard(props: CardProps) {
   const { tripId, draft, onDraftChanged } = props;
+  const trip = useTripContext();
+  const tripTimezone = trip.data?.timezone;
   const [localDraft, setLocalDraft] = useState(draft);
   const [pending, setPending] = useState<"confirm" | "cancel" | "patch" | null>(
     null,
@@ -113,7 +116,7 @@ export function AIActionCard(props: CardProps) {
   }
 
   async function handlePatch(payload: Record<string, unknown>) {
-    if (pending !== null) return;
+    if (pending !== null) throw new Error("already pending");
     setPending("patch");
     setError(null);
     try {
@@ -122,7 +125,9 @@ export function AIActionCard(props: CardProps) {
     } catch (caught) {
       const next = draftFromError(caught);
       if (next) applyDraft(next);
-      setError(errorMessage(caught, "Could not update this draft."));
+      const detail = errorMessage(caught, "");
+      if (detail) setError(detail);
+      throw caught;
     } finally {
       setPending(null);
     }
@@ -134,9 +139,10 @@ export function AIActionCard(props: CardProps) {
 
   const editorSlot =
     localDraft.status === "NEEDS_INFO" && localDraft.can_edit ? (
-      <AIActionFieldEditor
+      <FieldEditor
         fields={localDraft.missing_fields}
         pending={pending === "patch"}
+        tripTimezone={tripTimezone}
         onSave={handlePatch}
       />
     ) : null;

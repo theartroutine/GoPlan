@@ -14,6 +14,24 @@ vi.mock("@/features/chat/infrastructure/ai-action-drafts-api", () => ({
   patchAIActionDraft: vi.fn(),
 }));
 
+vi.mock("@/features/trips/presentation/trip-context", () => ({
+  useTripContext: () => ({
+    tripId: "trip-1",
+    data: { timezone: "UTC", currency_code: "VND" },
+    loading: false,
+    error: null,
+    notFound: false,
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 function makeDraft(overrides: Partial<AIActionDraft> = {}): AIActionDraft {
   return {
     id: "draft-1",

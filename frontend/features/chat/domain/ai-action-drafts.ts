@@ -2,6 +2,7 @@ export type AIActionDraftStatus =
   | "NEEDS_INFO"
   | "READY"
   | "CONFIRMED"
+  | "EXECUTED"
   | "CANCELLED"
   | "EXPIRED"
   | "FAILED";
@@ -24,11 +25,31 @@ export type AIActionDisplay = {
   meta?: Array<{ label: string; value: string }>;
 };
 
+export type AIActionDraftFieldType =
+  | "time"
+  | "time_range"
+  | "money"
+  | "text"
+  | "json"
+  | "select"
+  | "target";
+
 export type AIActionDraftMissingField = {
   name: string;
   label: string;
-  type?: string;
+  type?: AIActionDraftFieldType | string;
+  required?: boolean;
+  constraints?: {
+    section_id?: string;
+    section_index?: number;
+    section_date?: string;
+    pair?: string[];
+    min?: number;
+    min_length?: number;
+    max_length?: number;
+  } & Record<string, unknown>;
   options?: Array<{ label: string; value: string }>;
+  presets?: Array<{ label: string; start: string; end: string }>;
 };
 
 export type AIActionDraft = {
