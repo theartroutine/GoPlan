@@ -831,6 +831,68 @@ class AIActionDraftDisplayAndSummaryTests(AIActionDraftModelTests):
         self.assertIn(AIActionDraftStatus.READY, draft.summary)
 
 
+class AIActionDraftPatchFieldValidationTests(APITestCase, AIActionDraftModelTests):
+    """Pydantic schema validation on PATCH — structured field_errors response."""
+
+    def _create_needs_info_activity_draft(self):
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        return AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response_message,
+            requested_by=self.user,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.NEEDS_INFO,
+            required_confirmation="CAPTAIN",
+            payload={
+                "section_id": str(section.id),
+                "title": "Museum Visit",
+                "system_type": "SIGHTSEEING",
+                "time_mode": "TIME_RANGE",
+            },
+            preview={"title": "Museum Visit"},
+            missing_fields=[
+                {"name": "start_time", "label": "Start time"},
+                {"name": "end_time", "label": "End time"},
+            ],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+    def test_patch_returns_field_errors_when_end_before_start(self):
+        draft = self._create_needs_info_activity_draft()
+        self.client.force_authenticate(self.user)
+
+        res = self.client.patch(
+            f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
+            data={"payload": {
+                "start_time": "2026-04-20T10:00:00+07:00",
+                "end_time":   "2026-04-20T08:00:00+07:00",
+            }},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error_code"], "FIELD_VALIDATION_FAILED")
+        self.assertTrue(any("end_time" in k for k in res.data["field_errors"]))
+        self.assertIn("draft", res.data)
+
+    def test_patch_valid_time_range_passes_pydantic_check(self):
+        draft = self._create_needs_info_activity_draft()
+        self.client.force_authenticate(self.user)
+
+        res = self.client.patch(
+            f"/api/trips/{self.trip.id}/ai/action-drafts/{draft.id}",
+            data={"payload": {
+                "start_time": "2026-04-20T08:00:00+07:00",
+                "end_time":   "2026-04-20T10:00:00+07:00",
+            }},
+            format="json",
+        )
+
+        self.assertEqual(res.status_code, 200)
+
+
 class AIActionDraftNullResponseMessageTests(APITestCase, AIActionDraftModelTests):
     """Verify that v2 drafts with response_message=None don't crash."""
 
