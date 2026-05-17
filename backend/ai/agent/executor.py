@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime, parse_time
+from django.utils.dateparse import parse_date, parse_datetime, parse_time
 
 from ai.action_types import (
     AI_ACTION_EXPENSE_CONTRIBUTION_SET,
@@ -39,9 +39,17 @@ from expenses.services import (
     set_contribution,
     update_expense,
 )
-from trips.models import MemberStatus, TimelineActivity, Trip, TripMember
+from trips.models import (
+    MemberStatus,
+    TimelineActivity,
+    TimelineSection,
+    Trip,
+    TripMember,
+)
 from trips.services import (
+    TimelineSectionDateConflictError,
     create_timeline_activity,
+    create_timeline_day,
     delete_timeline_activity,
     patch_timeline_activity,
     update_timeline_activity_status,
@@ -383,6 +391,61 @@ def _set_single_contribution(*, draft: AIActionDraft, actor, payload: dict):
     )
 
 
+def _parse_section_date(value):
+    if value is None:
+        return None
+    parsed = parse_date(str(value))
+    if parsed is None:
+        raise AIActionDraftNotReadyError("Timeline day date is required.")
+    return parsed
+
+
+def _timeline_section_label_for_date(*, trip: Trip, section_date) -> str:
+    if trip.start_date:
+        day_number = (section_date - trip.start_date).days + 1
+        return f"Day {day_number}"
+    return section_date.isoformat()
+
+
+def _resolve_timeline_activity_section_id(
+    *,
+    draft: AIActionDraft,
+    actor,
+    payload: dict,
+):
+    if payload.get("section_id"):
+        return payload["section_id"]
+
+    section_date = _parse_section_date(payload.get("section_date"))
+    if section_date is None:
+        raise AIActionDraftNotReadyError("Timeline day is required.")
+
+    section = TimelineSection.objects.filter(
+        trip_id=draft.trip_id,
+        section_date=section_date,
+    ).first()
+    if section is not None:
+        return section.id
+
+    label = _timeline_section_label_for_date(
+        trip=draft.trip,
+        section_date=section_date,
+    )
+    try:
+        _, section = create_timeline_day(
+            draft.trip_id,
+            actor=actor,
+            section_date=section_date,
+            label=label,
+        )
+    except TimelineSectionDateConflictError:
+        section = TimelineSection.objects.get(
+            trip_id=draft.trip_id,
+            section_date=section_date,
+        )
+    return section.id
+
+
 def _execute(draft: AIActionDraft, *, actor) -> dict:
     payload = draft.payload
     if draft.action_type == AI_ACTION_EXPENSE_CREATE:
@@ -459,9 +522,14 @@ def _execute(draft: AIActionDraft, *, actor) -> dict:
         }
 
     if draft.action_type == AI_ACTION_TIMELINE_ACTIVITY_CREATE:
+        section_id = _resolve_timeline_activity_section_id(
+            draft=draft,
+            actor=actor,
+            payload=payload,
+        )
         activity = create_timeline_activity(
             draft.trip_id,
-            payload["section_id"],
+            section_id,
             actor=actor,
             data=payload["data"],
         )

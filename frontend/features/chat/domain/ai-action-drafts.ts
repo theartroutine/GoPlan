@@ -29,6 +29,7 @@ export type AIActionDraftFieldType =
   | "time"
   | "time_range"
   | "money"
+  | "date"
   | "text"
   | "json"
   | "select"

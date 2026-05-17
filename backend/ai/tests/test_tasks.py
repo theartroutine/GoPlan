@@ -438,3 +438,21 @@ class RetryPolicyTests(TestCase):
             self.interaction.error_code, AIInteractionErrorCode.TOOL_UNKNOWN
         )
         self.assertEqual(self.interaction.status, AIInteractionStatus.FAILED)
+
+    @patch("ai.tasks.push_ai_typing_stopped")
+    @patch("ai.tasks.push_ai_typing_started")
+    @patch("ai.tasks.run_goplan_ai_agent")
+    def test_tool_validation_failed_does_not_retry(self, mock_agent, _ts, _tp):
+        mock_agent.return_value = AgentRunResult(
+            error_code=AIInteractionErrorCode.TOOL_VALIDATION_FAILED
+        )
+
+        run_goplan_ai_interaction(str(self.interaction.id))
+
+        self.interaction.refresh_from_db()
+        self.assertEqual(
+            self.interaction.error_code,
+            AIInteractionErrorCode.TOOL_VALIDATION_FAILED,
+        )
+        self.assertEqual(self.interaction.status, AIInteractionStatus.FAILED)
+        self.assertIsNotNone(self.interaction.response_message_id)

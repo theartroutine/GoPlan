@@ -221,6 +221,8 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
     const type =
       field.type === "time"
         ? "time"
+        : field.type === "date"
+        ? "date"
         : field.type === "money"
         ? "text"
         : "text";

@@ -32,9 +32,16 @@ def _h(name: str) -> Callable:
 
 
 TOOLS: list[ToolSpec] = [
-    ToolSpec("create_timeline_activity",
-             "Draft a new activity on a specific timeline day.",
-             schemas.CreateTimelineActivityArgs, _h("create_timeline_activity")),
+    ToolSpec(
+        "create_timeline_activity",
+        (
+            "Draft a new activity on a timeline day. Use section_id for an "
+            "existing day, or section_date when the requested trip day has no "
+            "section yet."
+        ),
+        schemas.CreateTimelineActivityArgs,
+        _h("create_timeline_activity"),
+    ),
     ToolSpec("update_timeline_activity",
              "Draft updates to an existing activity.",
              schemas.UpdateTimelineActivityArgs, _h("update_timeline_activity")),
@@ -56,9 +63,15 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("set_expense_contribution",
              "Draft expense contributions. When the user says everyone/all participants already paid enough, use scope='all_participants_paid' instead of manually splitting amounts.",
              schemas.SetExpenseContributionArgs, _h("set_expense_contribution")),
-    ToolSpec("finalize_settlement",
-             "Draft finalizing the trip's current settlement.",
-             schemas.FinalizeSettlementArgs, _h("finalize_settlement")),
+    ToolSpec(
+        "finalize_settlement",
+        (
+            "Draft creating and finalizing the trip settlement from the "
+            "current expenses."
+        ),
+        schemas.FinalizeSettlementArgs,
+        _h("finalize_settlement"),
+    ),
     ToolSpec("reopen_settlement",
              "Draft reopening a finalized settlement.",
              schemas.ReopenSettlementArgs, _h("reopen_settlement")),

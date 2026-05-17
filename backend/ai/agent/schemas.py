@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
 from typing import Literal
@@ -65,7 +65,14 @@ class _ActivityBase(BaseModel):
 
 
 class CreateTimelineActivityArgs(_ActivityBase):
-    section_id: UUID
+    section_id: UUID | None = None
+    section_date: date | None = None
+
+    @model_validator(mode="after")
+    def requires_section_target(self):
+        if self.section_id is None and self.section_date is None:
+            raise ValueError("section_id or section_date is required")
+        return self
 
 
 class UpdateTimelineActivityArgs(BaseModel):
@@ -82,7 +89,14 @@ class DeleteTimelineActivityArgs(BaseModel):
 
 class UpdateTimelineActivityStatusArgs(BaseModel):
     activity_id: UUID
-    status: Literal["PLANNED", "IN_PROGRESS", "DONE", "CANCELLED"]
+    status: Literal["UPCOMING", "IN_PROGRESS", "DONE", "CANCELLED"]
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_legacy_status(cls, value):
+        if value == "PLANNED":
+            return "UPCOMING"
+        return value
 
 
 class CreateExpenseArgs(BaseModel):
@@ -125,7 +139,7 @@ class SetExpenseContributionArgs(BaseModel):
 
 
 class FinalizeSettlementArgs(BaseModel):
-    settlement_id: UUID
+    pass
 
 
 class ReopenSettlementArgs(BaseModel):
@@ -146,4 +160,4 @@ class UpdateActionDraftArgs(BaseModel):
 
 
 class RespondToUserArgs(BaseModel):
-    message: str = Field(min_length=1, max_length=2000)
+    message: str = Field(min_length=1, max_length=8000)

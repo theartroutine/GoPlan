@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from django.test import SimpleTestCase
 from pydantic import ValidationError
@@ -6,7 +6,9 @@ from pydantic import ValidationError
 from ai.agent.schemas import (
     CreateTimelineActivityArgs,
     CreateExpenseArgs,
+    FinalizeSettlementArgs,
     SetExpenseContributionArgs,
+    UpdateTimelineActivityStatusArgs,
     UpdateActionDraftArgs,
     RespondToUserArgs,
 )
@@ -28,6 +30,18 @@ class SchemaTests(SimpleTestCase):
         self.assertEqual(args.system_type, "FOOD")
         self.assertEqual(args.time_mode, "FLEXIBLE")
         self.assertEqual(args.assignee_scope, "EVERYONE")
+
+    def test_create_timeline_activity_accepts_section_date_for_uncreated_day(self):
+        args = CreateTimelineActivityArgs(
+            section_date=date(2026, 7, 3),
+            title="X",
+            system_type="FOOD",
+            time_mode="FLEXIBLE",
+        )
+
+        self.assertIsNone(args.section_id)
+        self.assertEqual(args.section_date, date(2026, 7, 3))
+        self.assertEqual(args.model_dump(mode="json")["section_date"], "2026-07-03")
 
     def test_activity_time_serializes_datetime_as_local_clock_time(self):
         args = CreateTimelineActivityArgs(
@@ -65,6 +79,19 @@ class SchemaTests(SimpleTestCase):
                 collector_id="00000000-0000-0000-0000-000000000001",
             )
 
+    def test_timeline_activity_status_uses_upcoming_and_maps_legacy_planned(self):
+        args = UpdateTimelineActivityStatusArgs(
+            activity_id="00000000-0000-0000-0000-000000000001",
+            status="UPCOMING",
+        )
+        legacy = UpdateTimelineActivityStatusArgs(
+            activity_id="00000000-0000-0000-0000-000000000001",
+            status="PLANNED",
+        )
+
+        self.assertEqual(args.status, "UPCOMING")
+        self.assertEqual(legacy.status, "UPCOMING")
+
     def test_set_contribution_accepts_all_paid_scope_without_manual_amounts(self):
         args = SetExpenseContributionArgs(
             expense_id="00000000-0000-0000-0000-000000000001",
@@ -80,9 +107,21 @@ class SchemaTests(SimpleTestCase):
                 expense_id="00000000-0000-0000-0000-000000000001",
             )
 
+    def test_finalize_settlement_does_not_require_existing_settlement_id(self):
+        args = FinalizeSettlementArgs()
+
+        self.assertEqual(args.model_dump(mode="json"), {})
+
     def test_respond_to_user_message_required(self):
         with self.assertRaises(ValidationError):
             RespondToUserArgs(message="")
+
+    def test_respond_to_user_accepts_detailed_summary(self):
+        message = "x" * 3000
+
+        args = RespondToUserArgs(message=message)
+
+        self.assertEqual(args.message, message)
 
     def test_update_action_draft_requires_draft_id(self):
         with self.assertRaises(ValidationError):

@@ -44,7 +44,13 @@ def _v2_system_prompt() -> str:
         "Vietnamese unless the user clearly uses another language. When the "
         "user says every participant has paid enough for an expense, call "
         "`set_expense_contribution` with `scope: \"all_participants_paid\"` "
-        "so the backend copies the exact current participant shares. Be "
+        "so the backend copies the exact current participant shares. If the "
+        "user asks to add an activity to a trip day/date that is not present "
+        "in `sections`, call `create_timeline_activity` with `section_date` "
+        "computed from `trip.start_date` (day 1 is the start date); the backend "
+        "will create the timeline day when the draft is confirmed. To create "
+        "or finalize a settlement from current expenses, call "
+        "`finalize_settlement` without a settlement_id. Be "
         "concise; the chat shows action cards beside your text reply."
     )
 

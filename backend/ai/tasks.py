@@ -26,7 +26,6 @@ _RETRY_POLICY: dict[str, tuple[int, str]] = {
     AIInteractionErrorCode.TIMEOUT: (3, "exp:5,20,60"),
     AIInteractionErrorCode.RATE_LIMIT: (2, "fixed:30"),
     AIInteractionErrorCode.PROVIDER_BAD_RESPONSE: (1, "fixed:0"),
-    AIInteractionErrorCode.TOOL_VALIDATION_FAILED: (1, "fixed:0"),
     AIInteractionErrorCode.INTERNAL_ERROR: (1, "fixed:10"),
 }
 

@@ -16,6 +16,7 @@ MISSING_FIELD_DEFINITIONS = {
     "location_mode": {"label": "Location mode", "type": "select"},
     "member_contributions": {"label": "Member contributions", "type": "json"},
     "place": {"label": "Place", "type": "json"},
+    "section_date": {"label": "Timeline date", "type": "date"},
     "section_id": {"label": "Timeline day"},
     "start_time": {"label": "Start time"},
     "status": {"label": "Status", "type": "select"},

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -97,6 +97,37 @@ class ToolHandlerTests(TestCase):
             },
         )
         self.assertEqual(result.draft.display["icon"], "activity")
+
+    def test_create_timeline_activity_persists_section_date_for_uncreated_day(self):
+        from ai.agent import handlers, schemas
+        from ai.models import AIActionDraft
+
+        result = handlers.create_timeline_activity(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.CreateTimelineActivityArgs(
+                section_date=date(2026, 7, 3),
+                title="X",
+                system_type="SIGHTSEEING",
+                time_mode="FLEXIBLE",
+            ),
+        )
+
+        self.assertIsInstance(result.draft, AIActionDraft)
+        self.assertEqual(result.draft.action_type, "timeline.activity.create")
+        self.assertEqual(
+            result.draft.payload,
+            {
+                "section_date": "2026-07-03",
+                "data": {
+                    "title": "X",
+                    "system_type": "SIGHTSEEING",
+                    "time_mode": "FLEXIBLE",
+                    "assignee_scope": "EVERYONE",
+                },
+            },
+        )
 
     def test_update_timeline_activity_persists_nested_patch_data(self):
         from ai.agent import handlers, schemas

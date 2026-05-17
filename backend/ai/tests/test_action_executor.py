@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
@@ -34,6 +34,7 @@ from trips.models import (
     MemberStatus,
     TimelineActivity,
     TimelineLocationMode,
+    TimelineSection,
     TimelineActivityTimeMode,
     TimelineSystemType,
     Trip,
@@ -703,6 +704,68 @@ class ActionExecutorTests(TestCase):
         self.assertEqual(confirmed.status, AIActionDraftStatus.CONFIRMED)
         self.assertEqual(TimelineActivity.objects.count(), 1)
         self.assertEqual(confirmed.result["object_type"], "timeline_activity")
+
+    def test_confirm_timeline_activity_create_creates_missing_section_date(self):
+        trip = create_trip(
+            captain=self.captain,
+            name="Three Day Trip",
+            destination="Da Lat",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 3),
+        )
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=self.captain,
+            sender_display_name_snapshot=self.captain.display_name,
+            sender_identify_tag_snapshot=self.captain.identify_tag,
+            content="@GoPlanAI add day three activity",
+            client_message_id=uuid4(),
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=self.captain,
+            prompt_message=prompt,
+            prompt="add day three activity",
+            status=AIInteractionStatus.SUCCEEDED,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        draft = AIActionDraft.objects.create(
+            trip=trip,
+            interaction=interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "section_date": "2026-06-03",
+                "data": {
+                    "title": "Langfarm stop",
+                    "system_type": "SHOPPING",
+                    "time_mode": "FLEXIBLE",
+                },
+            },
+            preview={"title": "Langfarm stop"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        self.assertFalse(
+            TimelineSection.objects.filter(
+                trip=trip,
+                section_date=date(2026, 6, 3),
+            ).exists()
+        )
+
+        confirmed = confirm_action_draft(
+            draft_id=draft.id,
+            trip_id=trip.id,
+            actor=self.captain,
+        )
+
+        activity = TimelineActivity.objects.get(pk=confirmed.result["object_id"])
+        self.assertEqual(activity.title, "Langfarm stop")
+        self.assertEqual(activity.section.section_date, date(2026, 6, 3))
 
     def test_confirm_timeline_activity_create_accepts_legacy_top_level_payload(self):
         section = self.trip.timeline_sections.order_by("section_date").first()

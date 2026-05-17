@@ -35,6 +35,18 @@ def _to_activity_data_payload(args, *, id_field: str) -> dict:
     }
 
 
+def _to_create_activity_payload(args: schemas.CreateTimelineActivityArgs) -> dict:
+    payload = _to_payload(args)
+    section_id = payload.pop("section_id", None)
+    section_date = payload.pop("section_date", None)
+    draft_payload = {"data": payload}
+    if section_id is not None:
+        draft_payload["section_id"] = section_id
+    elif section_date is not None:
+        draft_payload["section_date"] = section_date
+    return draft_payload
+
+
 def _create(
     *,
     trip,
@@ -77,7 +89,7 @@ def create_timeline_activity(
         trip=trip,
         interaction=interaction,
         action_type="timeline.activity.create",
-        payload=_to_activity_data_payload(args, id_field="section_id"),
+        payload=_to_create_activity_payload(args),
     )
     return HandlerResult(draft=draft)
 
