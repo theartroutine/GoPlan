@@ -138,6 +138,9 @@ class GoPlanAITaskTests(TestCase):
         with self.assertRaises(DeepSeekProviderError):
             run_goplan_ai_interaction(str(interaction.id))
 
+        interaction.refresh_from_db()
+        self.assertEqual(interaction.status, AIInteractionStatus.PENDING)
+        self.assertLessEqual(interaction.lock_expires_at, timezone.now())
         mock_typing_started.assert_called_once()
         mock_typing_stopped.assert_called_once()
 
@@ -351,6 +354,9 @@ class RetryPolicyTests(TestCase):
         )
         with self.assertRaises(DeepSeekProviderError):
             run_goplan_ai_interaction(str(self.interaction.id))
+        self.interaction.refresh_from_db()
+        self.assertEqual(self.interaction.status, AIInteractionStatus.PENDING)
+        self.assertLessEqual(self.interaction.lock_expires_at, timezone.now())
         mock_finish.assert_not_called()
 
     @patch("ai.tasks.push_ai_typing_stopped")

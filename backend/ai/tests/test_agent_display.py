@@ -92,6 +92,23 @@ class DisplayBuilderTests(TestCase):
         self.assertIn("2,000,000", display["hero"]["value"])
         self.assertNotIn("fd46f358", repr(display))
 
+    def test_expense_delete_displays_target_title_and_amount(self):
+        display = build_display(
+            action_type="expense.delete",
+            payload={
+                "expense_id": "00000000-0000-0000-0000-000000000001",
+                "title": "Hotel deposit",
+                "total_amount": "1000000.00",
+                "currency_code": "VND",
+            },
+            trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
+        )
+
+        self.assertEqual(display["kicker"], "Delete expense")
+        self.assertEqual(display["title"], "Hotel deposit")
+        self.assertEqual(display["hero"]["value"], "1,000,000")
+        self.assertEqual(display["hero"]["currency"], "VND")
+
     def test_expense_contribution_all_paid_does_not_show_zero_amount(self):
         display = build_display(
             action_type="expense.contribution.set",

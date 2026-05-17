@@ -13,6 +13,7 @@ from ai.lifecycle import (
     claim_interaction_for_run,
     finish_interaction_failure,
     finish_interaction_success,
+    release_interaction_for_retry,
 )
 from ai.models import AIInteraction, AIInteractionErrorCode
 from ai.realtime import push_ai_typing_started, push_ai_typing_stopped
@@ -47,6 +48,7 @@ def _handle_failure(task, *, interaction: AIInteraction, error_code: str) -> Non
     if error_code in _RETRY_POLICY:
         max_retries, schedule = _RETRY_POLICY[error_code]
         countdown = _retry_countdown(schedule, task.request.retries)
+        release_interaction_for_retry(interaction=interaction)
         # task.retry() always raises; it never returns.
         task.retry(
             exc=DeepSeekProviderError(error_code),

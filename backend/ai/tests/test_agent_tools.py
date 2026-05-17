@@ -319,6 +319,31 @@ class ToolHandlerTests(TestCase):
         self.assertEqual(result.draft.payload["title"], "Dragon Bridge photo walk")
         self.assertEqual(result.draft.display["title"], "Dragon Bridge photo walk")
 
+    def test_delete_expense_handler_enriches_display_payload_from_target(self):
+        from ai.agent import handlers, schemas
+        from expenses.services import create_expense
+
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.user,
+            title="Hotel deposit",
+            description="",
+            total_amount=Decimal("1000000"),
+            collector_id=self.user.id,
+        )
+
+        result = handlers.delete_expense(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.DeleteExpenseArgs(expense_id=expense.id),
+        )
+
+        self.assertEqual(result.draft.payload["title"], "Hotel deposit")
+        self.assertEqual(result.draft.payload["total_amount"], "1000000.00")
+        self.assertEqual(result.draft.display["title"], "Hotel deposit")
+        self.assertEqual(result.draft.display["hero"]["value"], "1,000,000")
+
     def test_respond_to_user_returns_message_without_draft(self):
         from ai.agent import handlers, schemas
 

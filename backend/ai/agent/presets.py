@@ -20,6 +20,11 @@ _DEFAULT = [
 
 _BY_SYSTEM_TYPE: dict[str, list[Preset]] = {
     "SIGHTSEEING": [Preset("Morning", "08:00", "11:00"), Preset("Afternoon", "14:00", "17:00")],
+    "FOOD": [
+        Preset("Breakfast", "07:00", "08:30"),
+        Preset("Lunch", "11:30", "13:00"),
+        Preset("Dinner", "18:30", "20:30"),
+    ],
     "DINING": [
         Preset("Breakfast", "07:00", "08:30"),
         Preset("Lunch", "11:30", "13:00"),

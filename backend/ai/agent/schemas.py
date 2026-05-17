@@ -9,6 +9,19 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+def _parse_clock_time(value):
+    if isinstance(value, datetime):
+        return value.time().replace(tzinfo=None, microsecond=0)
+    if isinstance(value, time):
+        return value.replace(tzinfo=None, microsecond=0)
+    if isinstance(value, str):
+        text = value.strip()
+        if "T" in text:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return parsed.time().replace(tzinfo=None, microsecond=0)
+    return value
+
+
 class SystemType(str, Enum):
     TRANSPORTATION = "TRANSPORTATION"
     ACCOMMODATION = "ACCOMMODATION"
@@ -46,16 +59,7 @@ class _ActivityBase(BaseModel):
     @field_validator("start_time", "end_time", mode="before")
     @classmethod
     def parse_clock_time(cls, value):
-        if isinstance(value, datetime):
-            return value.time().replace(tzinfo=None, microsecond=0)
-        if isinstance(value, time):
-            return value.replace(tzinfo=None, microsecond=0)
-        if isinstance(value, str):
-            text = value.strip()
-            if "T" in text:
-                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-                return parsed.time().replace(tzinfo=None, microsecond=0)
-        return value
+        return _parse_clock_time(value)
 
     @model_validator(mode="after")
     def end_after_start(self):
@@ -72,9 +76,20 @@ class CreateTimelineActivityArgs(_ActivityBase):
 class UpdateTimelineActivityArgs(BaseModel):
     activity_id: UUID
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    start_time: datetime | None = None
-    end_time: datetime | None = None
+    start_time: time | None = None
+    end_time: time | None = None
     location_label: str | None = None
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def parse_clock_time(cls, value):
+        return _parse_clock_time(value)
+
+    @model_validator(mode="after")
+    def end_after_start(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+        return self
 
 
 class DeleteTimelineActivityArgs(BaseModel):

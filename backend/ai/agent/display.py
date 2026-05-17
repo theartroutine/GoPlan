@@ -252,12 +252,17 @@ def _build_expense_contribution(payload: dict, trip_context: dict) -> dict:
 
 
 def _build_expense_delete(payload: dict, trip_context: dict) -> dict:
-    return {
+    currency = payload.get("currency_code") or trip_context.get("currency_code", "USD")
+    display = {
         "icon": "expense",
         "tone": "destroy",
         "kicker": "Delete expense",
         "title": payload.get("title", "Expense"),
     }
+    amount = payload.get("total_amount")
+    if amount not in (None, ""):
+        display["hero"] = _fmt_amount(amount, currency)
+    return display
 
 
 def _build_settlement(payload: dict, trip_context: dict) -> dict:

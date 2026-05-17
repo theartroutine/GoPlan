@@ -123,6 +123,28 @@ def finish_interaction_success(*, interaction, message_text: str) -> ChatMessage
     return message
 
 
+def release_interaction_for_retry(*, interaction) -> None:
+    now = timezone.now()
+    with transaction.atomic():
+        interaction = AIInteraction.objects.select_for_update().get(pk=interaction.pk)
+        if interaction.response_message_id is not None:
+            return
+        if interaction.status in (
+            AIInteractionStatus.SUCCEEDED,
+            AIInteractionStatus.FAILED,
+        ):
+            return
+        interaction.status = AIInteractionStatus.PENDING
+        interaction.lock_expires_at = now
+        interaction.save(
+            update_fields=[
+                "status",
+                "lock_expires_at",
+                "updated_at",
+            ]
+        )
+
+
 def finish_interaction_failure(*, interaction, error_code: str) -> ChatMessage:
     now = timezone.now()
     with transaction.atomic():

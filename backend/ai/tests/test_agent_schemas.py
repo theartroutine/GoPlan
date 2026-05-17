@@ -8,6 +8,7 @@ from ai.agent.schemas import (
     CreateExpenseArgs,
     FinalizeSettlementArgs,
     SetExpenseContributionArgs,
+    UpdateTimelineActivityArgs,
     UpdateTimelineActivityStatusArgs,
     UpdateActionDraftArgs,
     RespondToUserArgs,
@@ -75,6 +76,18 @@ class SchemaTests(SimpleTestCase):
                 start_time=start,
                 end_time=end,
             )
+
+    def test_update_timeline_activity_accepts_local_clock_time_strings(self):
+        args = UpdateTimelineActivityArgs(
+            activity_id="00000000-0000-0000-0000-000000000001",
+            title="Cà phê Chợ Hàn",
+            start_time="08:30:00",
+            end_time="09:30:00",
+        )
+
+        self.assertEqual(args.start_time, time(8, 30))
+        self.assertEqual(args.end_time, time(9, 30))
+        self.assertEqual(args.model_dump(mode="json")["start_time"], "08:30:00")
 
     def test_create_expense_allows_missing_amount_for_needs_info(self):
         args = CreateExpenseArgs(title="X")

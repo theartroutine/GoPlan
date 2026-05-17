@@ -157,6 +157,29 @@ class RunnerTests(TestCase):
         )
 
     @patch("ai.agent.runner.complete_with_tools")
+    def test_text_only_provider_response_is_recorded_as_respond_to_user_tool(
+        self,
+        mock_complete,
+    ):
+        mock_complete.return_value = DeepSeekToolResult(
+            text="Bạn muốn đặt tên hoạt động này là gì?",
+            tool_calls=[],
+            usage=DeepSeekUsage(1, 1, 2),
+            finish_reason="stop",
+        )
+
+        result = run_goplan_ai_agent(interaction=self.interaction)
+
+        self.assertIsNone(result.error_code)
+        self.assertEqual(result.message_text, "Bạn muốn đặt tên hoạt động này là gì?")
+        self.interaction.refresh_from_db()
+        self.assertEqual(self.interaction.tool_calls_count, 1)
+        self.assertEqual(
+            AIActionDraft.objects.filter(interaction=self.interaction).count(),
+            0,
+        )
+
+    @patch("ai.agent.runner.complete_with_tools")
     def test_finalize_settlement_prompt_is_repaired_when_model_only_replies(
         self,
         mock_complete,
@@ -185,7 +208,39 @@ class RunnerTests(TestCase):
         self.assertEqual(draft.payload, {})
 
     @patch("ai.agent.runner.complete_with_tools")
-    def test_missing_day_activity_prompt_retries_with_forced_activity_tool(
+    def test_existing_day_activity_prompt_synthesizes_activity_tool(
+        self,
+        mock_complete,
+    ):
+        section_2 = TimelineSection.objects.get(
+            trip=self.trip,
+            section_date=date(2026, 7, 2),
+        )
+        self.interaction.prompt = (
+            "Thêm một hoạt động vào ngày 2 từ 19:00 đến 20:00."
+        )
+        self.interaction.save(update_fields=["prompt"])
+        mock_complete.return_value = DeepSeekToolResult(
+            text="Bạn muốn đặt tên hoạt động này là gì?",
+            tool_calls=[],
+            usage=DeepSeekUsage(1, 1, 2),
+            finish_reason="stop",
+        )
+
+        result = run_goplan_ai_agent(interaction=self.interaction)
+
+        self.assertIsNone(result.error_code)
+        self.assertEqual(mock_complete.call_count, 1)
+        draft = AIActionDraft.objects.get(interaction=self.interaction)
+        self.assertEqual(draft.status, AIActionDraftStatus.NEEDS_INFO)
+        self.assertEqual(draft.payload["section_id"], str(section_2.id))
+        self.assertEqual(draft.payload["data"]["start_time"], "19:00:00")
+        self.assertEqual(draft.payload["data"]["end_time"], "20:00:00")
+        missing_names = {field["name"] for field in draft.missing_fields}
+        self.assertIn("title", missing_names)
+
+    @patch("ai.agent.runner.complete_with_tools")
+    def test_missing_day_activity_prompt_synthesizes_activity_tool(
         self,
         mock_complete,
     ):
@@ -193,53 +248,28 @@ class RunnerTests(TestCase):
             'Tạo activity "Sunset walk" ngày 4 lúc 17:00 ở biển Mỹ Khê.'
         )
         self.interaction.save(update_fields=["prompt"])
-        mock_complete.side_effect = [
-            DeepSeekToolResult(
-                text=None,
-                tool_calls=[
-                    ToolCallParsed(
-                        id="c1",
-                        name="respond_to_user",
-                        arguments_json=(
-                            '{"message":"Chưa có section cho ngày này."}'
-                        ),
-                    ),
-                ],
-                usage=DeepSeekUsage(1, 1, 2),
-                finish_reason="tool_calls",
-            ),
-            DeepSeekToolResult(
-                text=None,
-                tool_calls=[
-                    ToolCallParsed(
-                        id="c2",
-                        name="create_timeline_activity",
-                        arguments_json=(
-                            '{"title":"Sunset walk","system_type":"SIGHTSEEING",'
-                            '"time_mode":"AT_TIME","start_time":"17:00:00"}'
-                        ),
-                    ),
-                ],
-                usage=DeepSeekUsage(2, 2, 4),
-                finish_reason="tool_calls",
-            ),
-        ]
+        mock_complete.return_value = DeepSeekToolResult(
+            text=None,
+            tool_calls=[
+                ToolCallParsed(
+                    id="c1",
+                    name="respond_to_user",
+                    arguments_json='{"message":"Chưa có section cho ngày này."}',
+                ),
+            ],
+            usage=DeepSeekUsage(1, 1, 2),
+            finish_reason="tool_calls",
+        )
 
         result = run_goplan_ai_agent(interaction=self.interaction)
 
         self.assertIsNone(result.error_code)
-        self.assertEqual(mock_complete.call_count, 2)
-        self.assertEqual(
-            mock_complete.call_args.kwargs["tool_choice"],
-            {
-                "type": "function",
-                "function": {"name": "create_timeline_activity"},
-            },
-        )
+        self.assertEqual(mock_complete.call_count, 1)
         draft = AIActionDraft.objects.get(interaction=self.interaction)
         self.assertEqual(draft.action_type, "timeline.activity.create")
         self.assertEqual(draft.payload["section_date"], "2026-07-04")
         self.assertEqual(draft.payload["data"]["title"], "Sunset walk")
+        self.assertEqual(draft.payload["data"]["start_time"], "17:00:00")
 
     @patch("ai.agent.runner.complete_with_tools")
     def test_update_draft_precondition_uses_context_target_version(self, mock_complete):

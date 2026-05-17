@@ -11,7 +11,7 @@ from ai.agent.preconditions import (
     build_backend_preconditions,
 )
 from ai.models import AIActionDraft
-from expenses.models import SettlementStatus, SettlementTransfer
+from expenses.models import Expense, SettlementStatus, SettlementTransfer
 from trips.models import TimelineActivity
 
 
@@ -121,6 +121,23 @@ def _timeline_activity_snapshot(*, trip, activity_id) -> dict:
         key: value
         for key, value in snapshot.items()
         if value not in ("", None)
+    }
+
+
+def _expense_snapshot(*, trip, expense_id) -> dict:
+    try:
+        expense = Expense.objects.select_related("collector").get(
+            pk=expense_id,
+            trip=trip,
+        )
+    except Expense.DoesNotExist:
+        return {}
+    collector_name = _user_label(expense.collector)
+    return {
+        "title": expense.title,
+        "total_amount": str(expense.total_amount),
+        "currency_code": expense.currency_code,
+        "collector_name": collector_name,
     }
 
 
@@ -274,11 +291,15 @@ def delete_expense(
     args: schemas.DeleteExpenseArgs,
     target_versions: dict | None = None,
 ):
-    return _create(
+    payload = {
+        **_to_payload(args),
+        **_expense_snapshot(trip=trip, expense_id=args.expense_id),
+    }
+    return _create_from_payload(
         trip=trip,
         interaction=interaction,
         action_type="expense.delete",
-        args=args,
+        payload=payload,
         target_versions=target_versions,
     )
 
