@@ -106,6 +106,55 @@ class DisplayBuilderTests(TestCase):
         self.assertEqual(display["title"], "Mark all participants paid")
         self.assertNotIn("hero", display)
 
+    def test_transfer_display_uses_enriched_transfer_snapshot(self):
+        display = build_display(
+            action_type="settlement.transfer.mark_sent",
+            payload={
+                "transfer_id": "00000000-0000-0000-0000-000000000001",
+                "amount": "400000.00",
+                "currency_code": "VND",
+                "from_name": "E2E Binh",
+                "to_name": "Minh Duong",
+            },
+            trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
+        )
+
+        self.assertEqual(display["hero"]["value"], "400,000")
+        self.assertEqual(display["hero"]["currency"], "VND")
+        self.assertEqual(
+            display["meta"],
+            [
+                {"label": "From", "value": "E2E Binh"},
+                {"label": "To", "value": "Minh Duong"},
+            ],
+        )
+
+    def test_transfer_display_does_not_show_zero_amount_when_snapshot_missing(self):
+        display = build_display(
+            action_type="settlement.transfer.mark_sent",
+            payload={"transfer_id": "00000000-0000-0000-0000-000000000001"},
+            trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
+        )
+
+        self.assertNotIn("hero", display)
+        self.assertEqual(display["meta"], [])
+
+    def test_timeline_status_display_names_target_and_status(self):
+        display = build_display(
+            action_type="timeline.activity.status.update",
+            payload={
+                "activity_id": "00000000-0000-0000-0000-000000000001",
+                "title": "Dragon Bridge photo walk",
+                "system_type": "SIGHTSEEING",
+                "time_mode": "FLEXIBLE",
+                "status": "DONE",
+            },
+            trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
+        )
+
+        self.assertEqual(display["title"], "Dragon Bridge photo walk")
+        self.assertIn({"label": "Status", "value": "Done"}, display["meta"])
+
     def test_unknown_action_type_returns_generic_display(self):
         display = build_display(
             action_type="unknown.action",

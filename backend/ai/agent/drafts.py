@@ -18,7 +18,11 @@ from ai.action_types import (
     TRANSFER_RECIPIENT_ACTIONS,
 )
 from ai.agent.display import build_display
-from ai.agent.draft_fields import normalize_missing_fields
+from ai.agent.draft_fields import (
+    build_missing_fields_for_action,
+    normalize_missing_fields,
+)
+from ai.agent.payload_validation import missing_payload_field_names
 from ai.models import AIActionDraft, AIActionDraftStatus
 from expenses.models import SettlementStatus, SettlementTransfer
 from trips.models import (
@@ -78,7 +82,18 @@ def create_action_draft(
     """Persist a single AIActionDraft row from a tool handler."""
     from ai.lifecycle import summarize_draft  # avoid circular import at module level
 
-    missing = missing_fields or []
+    if missing_fields is None:
+        missing_names = missing_payload_field_names(
+            action_type=action_type,
+            payload=payload,
+        )
+        missing = build_missing_fields_for_action(
+            action_type=action_type,
+            payload=payload,
+            missing=missing_names,
+        )
+    else:
+        missing = missing_fields
     effective_status = status or (
         AIActionDraftStatus.NEEDS_INFO if missing else AIActionDraftStatus.READY
     )

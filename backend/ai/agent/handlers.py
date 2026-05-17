@@ -11,6 +11,8 @@ from ai.agent.preconditions import (
     build_backend_preconditions,
 )
 from ai.models import AIActionDraft
+from expenses.models import SettlementStatus, SettlementTransfer
+from trips.models import TimelineActivity
 
 
 @dataclass
@@ -56,6 +58,23 @@ def _create(
     target_versions: dict | None = None,
 ) -> HandlerResult:
     payload = _to_payload(args)
+    return _create_from_payload(
+        trip=trip,
+        interaction=interaction,
+        action_type=action_type,
+        payload=payload,
+        target_versions=target_versions,
+    )
+
+
+def _create_from_payload(
+    *,
+    trip,
+    interaction,
+    action_type: str,
+    payload: dict,
+    target_versions: dict | None = None,
+) -> HandlerResult:
     preconditions = (
         build_backend_preconditions(
             action_type=action_type,
@@ -75,6 +94,58 @@ def _create(
         preconditions=preconditions,
     )
     return HandlerResult(draft=draft)
+
+
+def _user_label(user) -> str:
+    return user.display_name or user.email
+
+
+def _timeline_activity_snapshot(*, trip, activity_id) -> dict:
+    try:
+        activity = TimelineActivity.objects.get(pk=activity_id, trip=trip)
+    except TimelineActivity.DoesNotExist:
+        return {}
+    snapshot = {
+        "title": activity.title,
+        "system_type": activity.system_type,
+        "time_mode": activity.time_mode,
+        "status": activity.status,
+        "location_label": activity.location_label,
+        "assignee_scope": activity.assignee_scope,
+    }
+    if activity.start_time:
+        snapshot["start_time"] = activity.start_time.isoformat()
+    if activity.end_time:
+        snapshot["end_time"] = activity.end_time.isoformat()
+    return {
+        key: value
+        for key, value in snapshot.items()
+        if value not in ("", None)
+    }
+
+
+def _transfer_snapshot(*, trip, transfer_id) -> dict:
+    try:
+        transfer = (
+            SettlementTransfer.objects
+            .select_related("payer", "recipient", "settlement__trip")
+            .get(
+                pk=transfer_id,
+                settlement__trip=trip,
+                settlement__status=SettlementStatus.FINALIZED,
+            )
+        )
+    except SettlementTransfer.DoesNotExist:
+        return {}
+    from_name = _user_label(transfer.payer)
+    to_name = _user_label(transfer.recipient)
+    return {
+        "amount": str(transfer.amount),
+        "currency_code": transfer.settlement.trip.currency_code,
+        "from_name": from_name,
+        "to_name": to_name,
+        "title": f"Transfer from {from_name} to {to_name}",
+    }
 
 
 def create_timeline_activity(
@@ -127,11 +198,15 @@ def delete_timeline_activity(
     args: schemas.DeleteTimelineActivityArgs,
     target_versions: dict | None = None,
 ):
-    return _create(
+    payload = {
+        **_to_payload(args),
+        **_timeline_activity_snapshot(trip=trip, activity_id=args.activity_id),
+    }
+    return _create_from_payload(
         trip=trip,
         interaction=interaction,
         action_type="timeline.activity.delete",
-        args=args,
+        payload=payload,
         target_versions=target_versions,
     )
 
@@ -144,11 +219,15 @@ def update_timeline_activity_status(
     args: schemas.UpdateTimelineActivityStatusArgs,
     target_versions: dict | None = None,
 ):
-    return _create(
+    payload = {
+        **_timeline_activity_snapshot(trip=trip, activity_id=args.activity_id),
+        **_to_payload(args),
+    }
+    return _create_from_payload(
         trip=trip,
         interaction=interaction,
         action_type="timeline.activity.status.update",
-        args=args,
+        payload=payload,
         target_versions=target_versions,
     )
 
@@ -263,11 +342,15 @@ def mark_transfer_sent(
     args: schemas.MarkTransferSentArgs,
     target_versions: dict | None = None,
 ):
-    return _create(
+    payload = {
+        **_to_payload(args),
+        **_transfer_snapshot(trip=trip, transfer_id=args.transfer_id),
+    }
+    return _create_from_payload(
         trip=trip,
         interaction=interaction,
         action_type="settlement.transfer.mark_sent",
-        args=args,
+        payload=payload,
         target_versions=target_versions,
     )
 
@@ -280,11 +363,15 @@ def confirm_transfer_received(
     args: schemas.ConfirmTransferReceivedArgs,
     target_versions: dict | None = None,
 ):
-    return _create(
+    payload = {
+        **_to_payload(args),
+        **_transfer_snapshot(trip=trip, transfer_id=args.transfer_id),
+    }
+    return _create_from_payload(
         trip=trip,
         interaction=interaction,
         action_type="settlement.transfer.confirm_received",
-        args=args,
+        payload=payload,
         target_versions=target_versions,
     )
 

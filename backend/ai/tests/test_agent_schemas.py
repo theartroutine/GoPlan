@@ -15,9 +15,15 @@ from ai.agent.schemas import (
 
 
 class SchemaTests(SimpleTestCase):
-    def test_create_timeline_activity_requires_section_id(self):
-        with self.assertRaises(ValidationError):
-            CreateTimelineActivityArgs(title="X", system_type="SIGHTSEEING", time_mode="FLEXIBLE")
+    def test_create_timeline_activity_allows_missing_section_for_needs_info(self):
+        args = CreateTimelineActivityArgs(
+            title="X",
+            system_type="SIGHTSEEING",
+            time_mode="FLEXIBLE",
+        )
+
+        self.assertIsNone(args.section_id)
+        self.assertIsNone(args.section_date)
 
     def test_create_timeline_activity_uses_current_timeline_enums(self):
         args = CreateTimelineActivityArgs(
@@ -70,14 +76,13 @@ class SchemaTests(SimpleTestCase):
                 end_time=end,
             )
 
-    def test_create_expense_amount_must_be_positive(self):
-        with self.assertRaises(ValidationError):
-            CreateExpenseArgs(
-                title="X",
-                total_amount="0",
-                currency_code="VND",
-                collector_id="00000000-0000-0000-0000-000000000001",
-            )
+    def test_create_expense_allows_missing_amount_for_needs_info(self):
+        args = CreateExpenseArgs(title="X")
+
+        self.assertEqual(args.title, "X")
+        self.assertIsNone(args.total_amount)
+        self.assertIsNone(args.currency_code)
+        self.assertIsNone(args.collector_id)
 
     def test_timeline_activity_status_uses_upcoming_and_maps_legacy_planned(self):
         args = UpdateTimelineActivityStatusArgs(

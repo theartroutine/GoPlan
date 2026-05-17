@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from ai.action_types import AI_ACTION_TIMELINE_ACTIVITY_CREATE
 from ai.agent.presets import presets_for
 
 MISSING_FIELD_DEFINITIONS = {
@@ -109,6 +110,25 @@ def normalize_missing_fields(value, *, strict: bool = True) -> list[dict]:
 
 def build_missing_fields(names: Iterable[str]) -> list[dict]:
     return [build_missing_field(name) for name in list(dict.fromkeys(names))]
+
+
+def build_missing_fields_for_action(
+    *,
+    action_type: str,
+    payload: dict,
+    missing: Iterable[str],
+) -> list[dict]:
+    missing_names = list(dict.fromkeys(missing))
+    if action_type != AI_ACTION_TIMELINE_ACTIVITY_CREATE:
+        return build_missing_fields(missing_names)
+
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    return build_missing_fields_for_create_activity(
+        section_id=payload.get("section_id"),
+        time_mode=str(data.get("time_mode") or ""),
+        missing=missing_names,
+        system_type=data.get("system_type"),
+    )
 
 
 # -------- Section Context Resolver --------

@@ -29,6 +29,13 @@ ASSIGNEE_LABELS = {
     "NONE": "Unassigned",
 }
 
+STATUS_LABELS = {
+    "UPCOMING": "Upcoming",
+    "IN_PROGRESS": "In Progress",
+    "DONE": "Done",
+    "CANCELLED": "Cancelled",
+}
+
 
 def _activity_payload(payload: dict) -> dict:
     data = payload.get("data")
@@ -103,6 +110,13 @@ def _location_label(payload: dict) -> str | None:
 
 def _activity_meta(payload: dict) -> list[dict]:
     meta = []
+    status = payload.get("status")
+    if status:
+        meta.append({
+            "label": "Status",
+            "value": STATUS_LABELS.get(status, str(status)),
+        })
+
     for label, field in (
         ("Meeting point", "meeting_point"),
         ("Location note", "location_note"),
@@ -257,17 +271,21 @@ def _build_settlement(payload: dict, trip_context: dict) -> dict:
 
 def _build_transfer(payload: dict, trip_context: dict) -> dict:
     currency = payload.get("currency_code") or trip_context.get("currency_code", "USD")
-    return {
+    display = {
         "icon": "transfer",
         "tone": "update",
         "kicker": "Transfer",
         "title": payload.get("title", "Money transfer"),
-        "hero": _fmt_amount(payload.get("amount", 0), currency),
-        "meta": [
-            {"label": "From", "value": payload.get("from_name", "")},
-            {"label": "To", "value": payload.get("to_name", "")},
-        ],
+        "meta": [],
     }
+    amount = payload.get("amount")
+    if amount not in (None, ""):
+        display["hero"] = _fmt_amount(amount, currency)
+    for label, field in (("From", "from_name"), ("To", "to_name")):
+        value = _non_empty_string(payload, field)
+        if value:
+            display["meta"].append({"label": label, "value": value})
+    return display
 
 
 def _build_generic(payload: dict, trip_context: dict) -> dict:

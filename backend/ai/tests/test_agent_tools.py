@@ -232,6 +232,93 @@ class ToolHandlerTests(TestCase):
         self.assertEqual(result.draft.payload["scope"], "all_participants_paid")
         self.assertNotIn("contributions", result.draft.payload)
 
+    def test_transfer_handler_enriches_display_payload_from_transfer(self):
+        from ai.agent import handlers, schemas
+        from expenses.services import (
+            create_expense,
+            finalize_settlement,
+            set_contribution,
+        )
+        from trips.models import MemberStatus, TripMember, TripRole
+        from test_helpers import create_completed_user
+
+        member = create_completed_user(
+            "tool-transfer-member@example.com",
+            "tooltransfer",
+            "TH002",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.user,
+            title="Hotel",
+            description="",
+            total_amount=Decimal("900000"),
+            collector_id=self.user.id,
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.user.id,
+            amount=Decimal("900000"),
+            actor=self.user,
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=member.id,
+            amount=Decimal("0"),
+            actor=self.user,
+        )
+        settlement = finalize_settlement(trip_id=self.trip.id, actor=self.user)
+        transfer = settlement.transfers.get()
+
+        result = handlers.mark_transfer_sent(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=member,
+            args=schemas.MarkTransferSentArgs(transfer_id=transfer.id),
+        )
+
+        self.assertEqual(result.draft.payload["amount"], "450000.00")
+        self.assertEqual(result.draft.payload["currency_code"], "VND")
+        self.assertEqual(result.draft.payload["from_name"], member.display_name)
+        self.assertEqual(result.draft.payload["to_name"], self.user.display_name)
+        self.assertEqual(result.draft.display["hero"]["value"], "450,000")
+        self.assertEqual(
+            result.draft.display["meta"],
+            [
+                {"label": "From", "value": member.display_name},
+                {"label": "To", "value": self.user.display_name},
+            ],
+        )
+
+    def test_delete_activity_handler_enriches_display_payload_from_target(self):
+        from ai.agent import handlers, schemas
+
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        activity = section.activities.create(
+            trip=self.trip,
+            title="Dragon Bridge photo walk",
+            time_mode="FLEXIBLE",
+            system_type="SIGHTSEEING",
+        )
+
+        result = handlers.delete_timeline_activity(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.DeleteTimelineActivityArgs(activity_id=activity.id),
+        )
+
+        self.assertEqual(result.draft.payload["title"], "Dragon Bridge photo walk")
+        self.assertEqual(result.draft.display["title"], "Dragon Bridge photo walk")
+
     def test_respond_to_user_returns_message_without_draft(self):
         from ai.agent import handlers, schemas
 

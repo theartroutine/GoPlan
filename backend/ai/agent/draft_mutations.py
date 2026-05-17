@@ -9,7 +9,7 @@ from ai.action_types import (
 )
 from ai.agent.display import build_display
 from ai.agent.draft_fields import (
-    build_missing_fields,
+    build_missing_fields_for_action,
     normalize_missing_fields,
     normalize_missing_field_names,
 )
@@ -125,7 +125,11 @@ def _refresh_missing_fields(draft: AIActionDraft, payload: dict) -> list[dict]:
         payload=payload,
         provider_missing_names=current_missing_names,
     )
-    return build_missing_fields(missing_names)
+    return build_missing_fields_for_action(
+        action_type=draft.action_type,
+        payload=payload,
+        missing=missing_names,
+    )
 
 
 def _touch_response_message(draft: AIActionDraft) -> None:

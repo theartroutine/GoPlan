@@ -3,16 +3,22 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 
 from django.db import transaction
 from pydantic import ValidationError as PydanticValidationError
 
 from ai.agent.context import build_agent_context_bundle
+from ai.agent.intent import (
+    missing_section_date_for_activity_prompt,
+    prompt_requests_settlement_finalization,
+)
 from ai.agent.tools import openai_tool_params, resolve_tool
 from ai.deepseek import (
     DeepSeekProviderError,
     DeepSeekToolResult,
+    ToolCallParsed,
     complete_with_tools,
 )
 from ai.models import AIInteractionErrorCode
@@ -29,6 +35,23 @@ class _AgentToolRunError(Exception):
     def __init__(self, error_code: str):
         super().__init__(error_code)
         self.error_code = error_code
+
+
+ACTION_TOOL_NAMES = {
+    "create_timeline_activity",
+    "update_timeline_activity",
+    "delete_timeline_activity",
+    "update_timeline_activity_status",
+    "create_expense",
+    "update_expense",
+    "delete_expense",
+    "set_expense_contribution",
+    "finalize_settlement",
+    "reopen_settlement",
+    "mark_transfer_sent",
+    "confirm_transfer_received",
+    "update_action_draft",
+}
 
 
 def _v2_system_prompt() -> str:
@@ -63,6 +86,121 @@ def _v2_log(event: str, *, interaction_id: str, **kwargs) -> None:
         event,
         extra={"event": event, "interaction_id": interaction_id, **kwargs},
     )
+
+
+def _has_action_tool_call(result: DeepSeekToolResult) -> bool:
+    return any(
+        tool_call.name in ACTION_TOOL_NAMES
+        for tool_call in result.tool_calls
+    )
+
+
+def _forced_tool_choice(tool_name: str) -> dict:
+    return {"type": "function", "function": {"name": tool_name}}
+
+
+def _synthesized_tool_call(name: str, arguments: dict) -> ToolCallParsed:
+    return ToolCallParsed(
+        id=f"local_{uuid.uuid4().hex}",
+        name=name,
+        arguments_json=json.dumps(arguments),
+    )
+
+
+def _with_usage_from(
+    result: DeepSeekToolResult,
+    *,
+    text: str | None,
+    tool_calls: list[ToolCallParsed],
+) -> DeepSeekToolResult:
+    return DeepSeekToolResult(
+        text=text,
+        tool_calls=tool_calls,
+        usage=result.usage,
+        finish_reason="tool_calls",
+    )
+
+
+def _inject_section_date(
+    result: DeepSeekToolResult,
+    *,
+    section_date: str,
+) -> DeepSeekToolResult:
+    tool_calls = []
+    changed = False
+    for tool_call in result.tool_calls:
+        if tool_call.name != "create_timeline_activity":
+            tool_calls.append(tool_call)
+            continue
+        try:
+            arguments = json.loads(tool_call.arguments_json or "{}")
+        except json.JSONDecodeError:
+            arguments = {}
+        if not arguments.get("section_id") and not arguments.get("section_date"):
+            arguments["section_date"] = section_date
+            changed = True
+        tool_calls.append(
+            ToolCallParsed(
+                id=tool_call.id,
+                name=tool_call.name,
+                arguments_json=json.dumps(arguments),
+            )
+        )
+    if not changed:
+        return result
+    return DeepSeekToolResult(
+        text=result.text,
+        tool_calls=tool_calls,
+        usage=result.usage,
+        finish_reason=result.finish_reason,
+    )
+
+
+def _maybe_repair_provider_result(
+    *,
+    interaction,
+    context: dict,
+    messages: list[dict],
+    tools: list[dict],
+    provider_result: DeepSeekToolResult,
+) -> DeepSeekToolResult:
+    if _has_action_tool_call(provider_result):
+        return provider_result
+
+    prompt = interaction.prompt
+    if prompt_requests_settlement_finalization(prompt):
+        return _with_usage_from(
+            provider_result,
+            text="Mình đã chuẩn bị draft quyết toán để bạn xác nhận.",
+            tool_calls=[_synthesized_tool_call("finalize_settlement", {})],
+        )
+
+    section_date = missing_section_date_for_activity_prompt(
+        prompt=prompt,
+        context=context,
+    )
+    if section_date is None:
+        return provider_result
+
+    repair_messages = [
+        *messages,
+        {
+            "role": "system",
+            "content": (
+                "REPAIR: The user is asking to create a timeline activity on "
+                f"{section_date}, which is not in sections yet. You must call "
+                "`create_timeline_activity` with that exact `section_date`. "
+                "If some activity details are missing, omit them so the backend "
+                "can create a NEEDS_INFO draft."
+            ),
+        },
+    ]
+    repaired = complete_with_tools(
+        messages=repair_messages,
+        tools=tools,
+        tool_choice=_forced_tool_choice("create_timeline_activity"),
+    )
+    return _inject_section_date(repaired, section_date=section_date)
 
 
 def run_goplan_ai_agent(*, interaction) -> AgentRunResult:
@@ -102,11 +240,19 @@ def run_goplan_ai_agent(*, interaction) -> AgentRunResult:
         {"role": "system", "content": "CONTEXT:\n" + json.dumps(context, default=str)},
         {"role": "user", "content": interaction.prompt},
     ]
+    tools = openai_tool_params()
     start = time.monotonic()
     try:
         provider_result: DeepSeekToolResult = complete_with_tools(
             messages=messages,
-            tools=openai_tool_params(),
+            tools=tools,
+        )
+        provider_result = _maybe_repair_provider_result(
+            interaction=interaction,
+            context=context,
+            messages=messages,
+            tools=tools,
+            provider_result=provider_result,
         )
     except DeepSeekProviderError as exc:
         _v2_log(

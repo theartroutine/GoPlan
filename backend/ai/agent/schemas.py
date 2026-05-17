@@ -34,9 +34,9 @@ class AssigneeScope(str, Enum):
 
 
 class _ActivityBase(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    system_type: SystemType
-    time_mode: TimeMode
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    system_type: SystemType | None = None
+    time_mode: TimeMode | None = None
     start_time: time | None = None
     end_time: time | None = None
     location_label: str | None = Field(default=None, max_length=200)
@@ -68,12 +68,6 @@ class CreateTimelineActivityArgs(_ActivityBase):
     section_id: UUID | None = None
     section_date: date | None = None
 
-    @model_validator(mode="after")
-    def requires_section_target(self):
-        if self.section_id is None and self.section_date is None:
-            raise ValueError("section_id or section_date is required")
-        return self
-
 
 class UpdateTimelineActivityArgs(BaseModel):
     activity_id: UUID
@@ -100,10 +94,10 @@ class UpdateTimelineActivityStatusArgs(BaseModel):
 
 
 class CreateExpenseArgs(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    total_amount: Decimal = Field(gt=0)
-    currency_code: str = Field(min_length=3, max_length=3)
-    collector_id: UUID
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    total_amount: Decimal | None = None
+    currency_code: str | None = Field(default=None, min_length=3, max_length=3)
+    collector_id: UUID | None = None
     description: str | None = Field(default=None, max_length=500)
 
 

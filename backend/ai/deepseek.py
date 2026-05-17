@@ -50,6 +50,7 @@ def complete_with_tools(
     *,
     messages: list[dict],
     tools: list[dict],
+    tool_choice: str | dict = "auto",
 ) -> DeepSeekToolResult:
     if not settings.DEEPSEEK_API_KEY:
         raise DeepSeekProviderError(AIInteractionErrorCode.CONFIG_MISSING)
@@ -63,7 +64,7 @@ def complete_with_tools(
             model=settings.DEEPSEEK_MODEL,
             messages=messages,
             tools=tools,
-            tool_choice="auto",
+            tool_choice=tool_choice,
             stream=False,
             max_tokens=settings.DEEPSEEK_MAX_OUTPUT_TOKENS,
         )
