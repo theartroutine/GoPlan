@@ -35,7 +35,14 @@ def _to_activity_data_payload(args, *, id_field: str) -> dict:
     }
 
 
-def _create(*, trip, interaction, action_type: str, args) -> HandlerResult:
+def _create(
+    *,
+    trip,
+    interaction,
+    action_type: str,
+    args,
+    target_versions: dict | None = None,
+) -> HandlerResult:
     payload = _to_payload(args)
     preconditions = (
         build_backend_preconditions(
@@ -43,6 +50,7 @@ def _create(*, trip, interaction, action_type: str, args) -> HandlerResult:
             trip_id=trip.id,
             payload=payload,
             required=True,
+            target_versions=target_versions,
         )
         if action_requires_stale_precondition(action_type)
         else {}
@@ -57,7 +65,14 @@ def _create(*, trip, interaction, action_type: str, args) -> HandlerResult:
     return HandlerResult(draft=draft)
 
 
-def create_timeline_activity(*, trip, interaction, actor, args: schemas.CreateTimelineActivityArgs):
+def create_timeline_activity(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.CreateTimelineActivityArgs,
+    target_versions: dict | None = None,
+):
     draft = create_action_draft(
         trip=trip,
         interaction=interaction,
@@ -67,7 +82,14 @@ def create_timeline_activity(*, trip, interaction, actor, args: schemas.CreateTi
     return HandlerResult(draft=draft)
 
 
-def update_timeline_activity(*, trip, interaction, actor, args: schemas.UpdateTimelineActivityArgs):
+def update_timeline_activity(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.UpdateTimelineActivityArgs,
+    target_versions: dict | None = None,
+):
     payload = _to_activity_data_payload(args, id_field="activity_id")
     draft = create_action_draft(
         trip=trip,
@@ -79,52 +101,190 @@ def update_timeline_activity(*, trip, interaction, actor, args: schemas.UpdateTi
             trip_id=trip.id,
             payload=payload,
             required=True,
+            target_versions=target_versions,
         ),
     )
     return HandlerResult(draft=draft)
 
 
-def delete_timeline_activity(*, trip, interaction, actor, args: schemas.DeleteTimelineActivityArgs):
-    return _create(trip=trip, interaction=interaction, action_type="timeline.activity.delete", args=args)
+def delete_timeline_activity(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.DeleteTimelineActivityArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="timeline.activity.delete",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def update_timeline_activity_status(*, trip, interaction, actor, args: schemas.UpdateTimelineActivityStatusArgs):
-    return _create(trip=trip, interaction=interaction, action_type="timeline.activity.status.update", args=args)
+def update_timeline_activity_status(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.UpdateTimelineActivityStatusArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="timeline.activity.status.update",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def create_expense(*, trip, interaction, actor, args: schemas.CreateExpenseArgs):
-    return _create(trip=trip, interaction=interaction, action_type="expense.create", args=args)
+def create_expense(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.CreateExpenseArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="expense.create",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def update_expense(*, trip, interaction, actor, args: schemas.UpdateExpenseArgs):
-    return _create(trip=trip, interaction=interaction, action_type="expense.update", args=args)
+def update_expense(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.UpdateExpenseArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="expense.update",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def delete_expense(*, trip, interaction, actor, args: schemas.DeleteExpenseArgs):
-    return _create(trip=trip, interaction=interaction, action_type="expense.delete", args=args)
+def delete_expense(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.DeleteExpenseArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="expense.delete",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def set_expense_contribution(*, trip, interaction, actor, args: schemas.SetExpenseContributionArgs):
-    return _create(trip=trip, interaction=interaction, action_type="expense.contribution.set", args=args)
+def set_expense_contribution(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.SetExpenseContributionArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="expense.contribution.set",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def finalize_settlement(*, trip, interaction, actor, args: schemas.FinalizeSettlementArgs):
-    return _create(trip=trip, interaction=interaction, action_type="settlement.finalize", args=args)
+def finalize_settlement(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.FinalizeSettlementArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="settlement.finalize",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def reopen_settlement(*, trip, interaction, actor, args: schemas.ReopenSettlementArgs):
-    return _create(trip=trip, interaction=interaction, action_type="settlement.reopen", args=args)
+def reopen_settlement(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.ReopenSettlementArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="settlement.reopen",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def mark_transfer_sent(*, trip, interaction, actor, args: schemas.MarkTransferSentArgs):
-    return _create(trip=trip, interaction=interaction, action_type="settlement.transfer.mark_sent", args=args)
+def mark_transfer_sent(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.MarkTransferSentArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="settlement.transfer.mark_sent",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def confirm_transfer_received(*, trip, interaction, actor, args: schemas.ConfirmTransferReceivedArgs):
-    return _create(trip=trip, interaction=interaction, action_type="settlement.transfer.confirm_received", args=args)
+def confirm_transfer_received(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.ConfirmTransferReceivedArgs,
+    target_versions: dict | None = None,
+):
+    return _create(
+        trip=trip,
+        interaction=interaction,
+        action_type="settlement.transfer.confirm_received",
+        args=args,
+        target_versions=target_versions,
+    )
 
 
-def update_action_draft(*, trip, interaction, actor, args: schemas.UpdateActionDraftArgs):
+def update_action_draft(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.UpdateActionDraftArgs,
+    target_versions: dict | None = None,
+):
     updated = patch_action_draft(
         draft_id=args.draft_id,
         trip_id=trip.id,
@@ -134,5 +294,12 @@ def update_action_draft(*, trip, interaction, actor, args: schemas.UpdateActionD
     return HandlerResult(draft=updated)
 
 
-def respond_to_user(*, trip, interaction, actor, args: schemas.RespondToUserArgs):
+def respond_to_user(
+    *,
+    trip,
+    interaction,
+    actor,
+    args: schemas.RespondToUserArgs,
+    target_versions: dict | None = None,
+):
     return HandlerResult(message=args.message)

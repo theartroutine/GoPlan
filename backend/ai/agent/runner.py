@@ -5,6 +5,7 @@ import logging
 import time
 from dataclasses import dataclass
 
+from django.db import transaction
 from pydantic import ValidationError as PydanticValidationError
 
 from ai.agent.context import build_agent_context_bundle
@@ -22,6 +23,12 @@ class AgentRunResult:
     drafts_created: int = 0
     message_text: str | None = None
     error_code: str | None = None
+
+
+class _AgentToolRunError(Exception):
+    def __init__(self, error_code: str):
+        super().__init__(error_code)
+        self.error_code = error_code
 
 
 def _v2_system_prompt() -> str:
@@ -67,6 +74,7 @@ def run_goplan_ai_agent(*, interaction) -> AgentRunResult:
             actor=interaction.requested_by,
         )
         context = bundle.context
+        target_versions = bundle.target_versions
         _v2_log(
             "ai.context.built",
             interaction_id=interaction_id,
@@ -121,68 +129,64 @@ def run_goplan_ai_agent(*, interaction) -> AgentRunResult:
     drafts_created = 0
     message_text: str | None = provider_result.text
 
-    for tc in provider_result.tool_calls:
-        try:
-            tool = resolve_tool(tc.name)
-        except KeyError:
-            _v2_log(
-                "ai.tool_call.rejected",
-                interaction_id=interaction_id,
-                tool_name=tc.name,
-                error_code=AIInteractionErrorCode.TOOL_UNKNOWN,
-            )
-            interaction.save(update_fields=save_fields)
-            return AgentRunResult(
-                error_code=AIInteractionErrorCode.TOOL_UNKNOWN,
-                drafts_created=drafts_created,
-            )
+    try:
+        with transaction.atomic():
+            for tc in provider_result.tool_calls:
+                try:
+                    tool = resolve_tool(tc.name)
+                except KeyError:
+                    _v2_log(
+                        "ai.tool_call.rejected",
+                        interaction_id=interaction_id,
+                        tool_name=tc.name,
+                        error_code=AIInteractionErrorCode.TOOL_UNKNOWN,
+                    )
+                    raise _AgentToolRunError(AIInteractionErrorCode.TOOL_UNKNOWN)
 
-        try:
-            args = tool.schema.model_validate_json(tc.arguments_json)
-        except PydanticValidationError as exc:
-            _v2_log(
-                "ai.tool_call.rejected",
-                interaction_id=interaction_id,
-                tool_name=tc.name,
-                error_code=AIInteractionErrorCode.TOOL_VALIDATION_FAILED,
-                errors=exc.errors(include_url=False),
-            )
-            interaction.save(update_fields=save_fields)
-            return AgentRunResult(
-                error_code=AIInteractionErrorCode.TOOL_VALIDATION_FAILED,
-                drafts_created=drafts_created,
-            )
+                try:
+                    args = tool.schema.model_validate_json(tc.arguments_json)
+                except PydanticValidationError as exc:
+                    _v2_log(
+                        "ai.tool_call.rejected",
+                        interaction_id=interaction_id,
+                        tool_name=tc.name,
+                        error_code=AIInteractionErrorCode.TOOL_VALIDATION_FAILED,
+                        errors=exc.errors(include_url=False),
+                    )
+                    raise _AgentToolRunError(
+                        AIInteractionErrorCode.TOOL_VALIDATION_FAILED
+                    )
 
-        try:
-            handler_result = tool.handler(
-                trip=interaction.trip,
-                interaction=interaction,
-                actor=interaction.requested_by,
-                args=args,
-            )
-        except Exception as exc:
-            _v2_log(
-                "ai.tool_call.failed",
-                interaction_id=interaction_id,
-                tool_name=tc.name,
-                reason=str(exc),
-            )
-            interaction.save(update_fields=save_fields)
-            return AgentRunResult(
-                error_code=AIInteractionErrorCode.INTERNAL_ERROR,
-                drafts_created=drafts_created,
-            )
+                try:
+                    handler_result = tool.handler(
+                        trip=interaction.trip,
+                        interaction=interaction,
+                        actor=interaction.requested_by,
+                        args=args,
+                        target_versions=target_versions,
+                    )
+                except Exception as exc:
+                    _v2_log(
+                        "ai.tool_call.failed",
+                        interaction_id=interaction_id,
+                        tool_name=tc.name,
+                        reason=str(exc),
+                    )
+                    raise _AgentToolRunError(AIInteractionErrorCode.INTERNAL_ERROR)
 
-        if handler_result.draft is not None:
-            drafts_created += 1
-            _v2_log(
-                "ai.tool_call.applied",
-                interaction_id=interaction_id,
-                tool_name=tc.name,
-                draft_id=str(handler_result.draft.id),
-            )
-        if handler_result.message is not None:
-            message_text = handler_result.message
+                if handler_result.draft is not None:
+                    drafts_created += 1
+                    _v2_log(
+                        "ai.tool_call.applied",
+                        interaction_id=interaction_id,
+                        tool_name=tc.name,
+                        draft_id=str(handler_result.draft.id),
+                    )
+                if handler_result.message is not None:
+                    message_text = handler_result.message
+    except _AgentToolRunError as exc:
+        interaction.save(update_fields=save_fields)
+        return AgentRunResult(error_code=exc.error_code)
 
     interaction.save(update_fields=save_fields)
     _v2_log(

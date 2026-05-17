@@ -8,6 +8,7 @@ import type {
 } from "@/features/chat/domain/ai-action-drafts";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { Textarea } from "@/shared/ui/textarea";
 import {
   TimeRangePicker,
   type TimeRangeValue,
@@ -36,6 +37,22 @@ function fieldErrorsFromError(error: unknown): Record<string, string> | null {
   return out;
 }
 
+function payloadFieldNames(field: AIActionDraftMissingField): string[] {
+  if (field.type === "time_range") {
+    const pair = field.constraints?.pair;
+    if (
+      Array.isArray(pair) &&
+      pair.length === 2 &&
+      pair.every((name) => typeof name === "string")
+    ) {
+      return pair;
+    }
+    return ["start_time", "end_time"];
+  }
+  if (field.type === "target") return [];
+  return [field.name];
+}
+
 export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const valuesRef = useRef<Record<string, unknown>>({});
@@ -43,12 +60,25 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
     {},
   );
 
-  const hasInlineError = Object.values(fieldErrors).some((e) => Boolean(e));
   const editableFields = fields.filter((f) => f.type !== "target");
+  const allowedPayloadNames = new Set(editableFields.flatMap(payloadFieldNames));
+  const editableFieldByPayloadName = new Map<string, AIActionDraftMissingField>();
+  for (const field of editableFields) {
+    for (const name of payloadFieldNames(field)) {
+      editableFieldByPayloadName.set(name, field);
+    }
+  }
+  const hasInlineError = Object.entries(fieldErrors).some(
+    ([name, error]) => allowedPayloadNames.has(name) && Boolean(error),
+  );
 
   function setField(name: string, value: unknown) {
     valuesRef.current = { ...valuesRef.current, [name]: value };
     setValues(valuesRef.current);
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev;
+      return { ...prev, [name]: null };
+    });
   }
 
   function setError(name: string, error: string | null) {
@@ -64,9 +94,20 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
     // Strip empty string values; they signal "not filled".
     const payload: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(valuesRef.current)) {
+      if (!allowedPayloadNames.has(k)) continue;
       if (typeof v === "string" && v.trim() === "") continue;
       if (v === null || v === undefined) continue;
-      payload[k] = v;
+      const field = editableFieldByPayloadName.get(k);
+      if (field?.type === "json" && typeof v === "string") {
+        try {
+          payload[k] = JSON.parse(v);
+        } catch {
+          setError(k, "Enter valid JSON.");
+          return;
+        }
+      } else {
+        payload[k] = v;
+      }
     }
     if (Object.keys(payload).length === 0) {
       toast.error("Fill in at least one field before saving.");
@@ -125,8 +166,10 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
             }}
             onError={(err) => setError("end_time", err)}
           />
-          {fieldErrors.start_time ? (
-            <span className="text-xs text-destructive">{fieldErrors.start_time}</span>
+          {fieldErrors.start_time || fieldErrors.end_time ? (
+            <span className="text-xs text-destructive">
+              {fieldErrors.start_time ?? fieldErrors.end_time}
+            </span>
           ) : null}
         </div>
       );
@@ -150,6 +193,24 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
               </option>
             ))}
           </select>
+          {fieldErrors[field.name] ? (
+            <span className="text-xs text-destructive">{fieldErrors[field.name]}</span>
+          ) : null}
+        </label>
+      );
+    }
+
+    if (field.type === "json") {
+      return (
+        <label key={field.name} className="block space-y-1 text-xs">
+          <span className="font-medium text-muted-foreground">{field.label}</span>
+          <Textarea
+            aria-label={field.label}
+            disabled={pending}
+            value={String(values[field.name] ?? "")}
+            onChange={(e) => setField(field.name, e.target.value)}
+            className={fieldErrors[field.name] ? "border-destructive" : undefined}
+          />
           {fieldErrors[field.name] ? (
             <span className="text-xs text-destructive">{fieldErrors[field.name]}</span>
           ) : null}

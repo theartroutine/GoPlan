@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -16,6 +17,8 @@ from ai.models import (
     AIInteractionStatus,
 )
 from chat.models import ChatMessage
+from expenses.models import Expense
+from expenses.services import create_expense as create_expense_service
 from test_helpers import create_completed_user
 from trips.models import TimelineSection
 from trips.services import create_trip
@@ -121,4 +124,74 @@ class RunnerTests(TestCase):
         self.assertEqual(
             result.error_code,
             AIInteractionErrorCode.TOOL_VALIDATION_FAILED,
+        )
+
+    @patch("ai.agent.runner.complete_with_tools")
+    def test_update_draft_precondition_uses_context_target_version(self, mock_complete):
+        expense = create_expense_service(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Original dinner",
+            total_amount=Decimal("600000"),
+        )
+        original_updated_at = expense.updated_at.isoformat()
+
+        def complete_after_external_update(*, messages, tools):
+            Expense.objects.filter(pk=expense.pk).update(
+                title="Changed after context",
+                updated_at=timezone.now() + timedelta(seconds=30),
+            )
+            return DeepSeekToolResult(
+                text=None,
+                tool_calls=[
+                    ToolCallParsed(
+                        id="c1",
+                        name="update_expense",
+                        arguments_json=(
+                            '{"expense_id":"%s","title":"AI planned title"}'
+                        )
+                        % expense.id,
+                    ),
+                ],
+                usage=DeepSeekUsage(1, 1, 2),
+                finish_reason="tool_calls",
+            )
+
+        mock_complete.side_effect = complete_after_external_update
+
+        result = run_goplan_ai_agent(interaction=self.interaction)
+
+        self.assertIsNone(result.error_code)
+        draft = AIActionDraft.objects.get(interaction=self.interaction)
+        self.assertEqual(
+            draft.preconditions["target"]["updated_at"],
+            original_updated_at,
+        )
+
+    @patch("ai.agent.runner.complete_with_tools")
+    def test_later_tool_error_rolls_back_earlier_draft(self, mock_complete):
+        mock_complete.return_value = DeepSeekToolResult(
+            text=None,
+            tool_calls=[
+                ToolCallParsed(
+                    id="c1",
+                    name="create_timeline_activity",
+                    arguments_json=(
+                        '{"section_id":"%s","title":"X",'
+                        '"system_type":"SIGHTSEEING","time_mode":"FLEXIBLE"}'
+                    )
+                    % self.section.id,
+                ),
+                ToolCallParsed(id="c2", name="not_a_tool", arguments_json="{}"),
+            ],
+            usage=DeepSeekUsage(1, 1, 2),
+            finish_reason="tool_calls",
+        )
+
+        result = run_goplan_ai_agent(interaction=self.interaction)
+
+        self.assertEqual(result.error_code, AIInteractionErrorCode.TOOL_UNKNOWN)
+        self.assertEqual(
+            AIActionDraft.objects.filter(interaction=self.interaction).count(),
+            0,
         )

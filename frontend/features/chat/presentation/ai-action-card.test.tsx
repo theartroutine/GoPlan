@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AIActionDraft } from "@/features/chat/domain/ai-action-drafts";
@@ -274,6 +274,124 @@ describe("AIActionCard", () => {
       end_time: "10:00",
     });
     expect(await screen.findByRole("img", { name: "Ready" })).toBeInTheDocument();
+  });
+
+  it("parses JSON missing fields before patching drafts", async () => {
+    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({ status: "READY", missing_fields: [] }),
+    });
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          action_type: "timeline.activity.update",
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          can_edit: true,
+          missing_fields: [
+            { name: "data", label: "Activity details", type: "json" },
+          ],
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Activity details"), {
+      target: { value: '{"title":"Museum"}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    await waitFor(() => {
+      expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
+        data: { title: "Museum" },
+      });
+    });
+  });
+
+  it("does not resubmit fields that are no longer missing after a partial save", async () => {
+    vi.mocked(patchAIActionDraft)
+      .mockResolvedValueOnce({
+        draft: makeDraft({
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          can_edit: true,
+          missing_fields: [{ name: "total_amount", label: "Amount" }],
+          preview: { title: "Lunch" },
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Lunch",
+            tone: "create",
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        draft: makeDraft({
+          status: "READY",
+          missing_fields: [],
+          preview: { title: "Lunch", total_amount: "500000" },
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Lunch",
+            tone: "create",
+            hero: { kind: "amount", value: "500,000", currency: "VND" },
+          },
+        }),
+      });
+
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          can_edit: true,
+          missing_fields: [
+            { name: "title", label: "Title" },
+            { name: "total_amount", label: "Amount" },
+          ],
+          preview: {},
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Expense",
+            tone: "create",
+          },
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Lunch" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    await screen.findByLabelText("Amount");
+    expect(patchAIActionDraft).toHaveBeenNthCalledWith(
+      1,
+      "trip-1",
+      "draft-1",
+      { title: "Lunch" },
+    );
+
+    fireEvent.change(screen.getByLabelText("Amount"), {
+      target: { value: "500000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    await waitFor(() => {
+      expect(patchAIActionDraft).toHaveBeenNthCalledWith(
+        2,
+        "trip-1",
+        "draft-1",
+        { total_amount: "500000" },
+      );
+    });
   });
 
   it("renders timeline activity details from preview when display is sparse", () => {
