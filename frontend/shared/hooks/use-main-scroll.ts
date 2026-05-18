@@ -39,6 +39,7 @@ export function useMainScroll<T extends Element>(elementRef: RefObject<T | null>
     };
 
     scroller.addEventListener("scroll", handleScroll, { passive: true });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial read of scroll position on mount; not a cascade
     setScrollY(scroller.scrollTop);
 
     return () => {

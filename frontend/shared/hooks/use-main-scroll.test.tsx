@@ -4,10 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import { useMainScroll } from "./use-main-scroll";
 
 function Probe({ onScroll }: { onScroll: (n: number) => void }) {
-  const ref = (el: HTMLElement | null) => {
-    if (!el) return;
-    // attach in next tick via the hook
-  };
   const Inner = () => {
     const y = useMainScroll<HTMLDivElement>(scrollerRef);
     onScroll(y);
@@ -16,7 +12,7 @@ function Probe({ onScroll }: { onScroll: (n: number) => void }) {
   const scrollerRef = { current: null } as { current: HTMLDivElement | null };
   return (
     <div
-      ref={(node) => { scrollerRef.current = node; ref(node); }}
+      ref={(node) => { scrollerRef.current = node; }}
       style={{ overflowY: "auto", height: 100 }}
       data-testid="scroller"
     >
