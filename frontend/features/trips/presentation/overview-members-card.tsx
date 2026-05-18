@@ -10,6 +10,7 @@ type Props = {
   members: TripMemberItem[];
 };
 
+const MAX_FEATURED_MEMBERS = 3;
 const MAX_VISIBLE_AVATARS = 5;
 
 function CommunityPattern() {
@@ -80,12 +81,12 @@ function CaptainHero({ member }: { member: TripMemberItem }) {
   );
 }
 
-function MemberRichRow({ member }: { member: TripMemberItem }) {
+function FeaturedMemberRow({ member }: { member: TripMemberItem }) {
   return (
     <div
       data-member-row
-      data-role="member"
-      className="flex items-center gap-3 rounded-xl border border-border/60 bg-white/60 px-3 py-2 shadow-xs backdrop-blur-sm"
+      data-role="featured"
+      className="flex items-center gap-3 rounded-xl border border-violet-100/70 bg-white/65 px-3 py-2.5 shadow-xs backdrop-blur-sm"
     >
       <UserAvatar user={member.user} size="default" />
       <div className="min-w-0 flex-1">
@@ -98,9 +99,18 @@ function MemberRichRow({ member }: { member: TripMemberItem }) {
           </p>
         )}
       </div>
-      <span className="shrink-0 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Member
-      </span>
+    </div>
+  );
+}
+
+function FeaturedMembers({ members }: { members: TripMemberItem[] }) {
+  if (members.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {members.map((member) => (
+        <FeaturedMemberRow key={member.membership_id} member={member} />
+      ))}
     </div>
   );
 }
@@ -153,12 +163,10 @@ export function OverviewMembersCard({ tripId, members }: Props) {
     ? members.filter((m) => m.membership_id !== captain.membership_id)
     : members;
 
-  // Display strategy:
-  // - 1 member (captain only): hero row only
-  // - 2 members: captain hero + 1 rich row
-  // - 3+ members: captain hero + avatar cluster (bounded height)
-  const showRichRow = others.length === 1;
-  const showCluster = others.length >= 2;
+  // Keep a few names readable before the compact crew cluster.
+  const featuredMembers = others.slice(0, MAX_FEATURED_MEMBERS);
+  const crewMembers = others.slice(MAX_FEATURED_MEMBERS);
+  const showCluster = crewMembers.length > 0;
 
   return (
     <div className="relative h-full overflow-hidden rounded-[inherit] bg-gradient-to-br from-violet-50 via-white to-rose-50/60">
@@ -186,21 +194,23 @@ export function OverviewMembersCard({ tripId, members }: Props) {
           </Link>
         </div>
 
-        {captain && <CaptainHero member={captain} />}
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          {captain && <CaptainHero member={captain} />}
 
-        {showRichRow && <MemberRichRow member={others[0]!} />}
+          <FeaturedMembers members={featuredMembers} />
 
-        {showCluster && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                Crew
-              </span>
-              <span className="h-px flex-1 bg-gradient-to-r from-violet-200/60 to-transparent" />
+          {showCluster ? (
+            <div className="mt-auto space-y-2 pt-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                  Crew
+                </span>
+                <span className="h-px flex-1 bg-gradient-to-r from-violet-200/60 to-transparent" />
+              </div>
+              <AvatarCluster tripId={tripId} members={crewMembers} />
             </div>
-            <AvatarCluster tripId={tripId} members={others} />
-          </div>
-        )}
+          ) : null}
+        </div>
       </div>
     </div>
   );
