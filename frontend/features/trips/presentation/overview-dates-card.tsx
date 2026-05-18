@@ -18,14 +18,18 @@ type Props = {
   today: string;
 };
 
+function pluralizeDays(n: number): string {
+  return n === 1 ? "day" : "days";
+}
+
 function countdownLabel(state: TripCountdownState): string {
   switch (state.kind) {
     case "future":
-      return `D-${state.daysUntilStart} days to go`;
+      return `D-${state.daysUntilStart} ${pluralizeDays(state.daysUntilStart)} to go`;
     case "in_progress":
       return "Trip in progress";
     case "past":
-      return `Ended ${state.daysSinceEnd} days ago`;
+      return `Ended ${state.daysSinceEnd} ${pluralizeDays(state.daysSinceEnd)} ago`;
     case "cancelled":
       return "Trip cancelled";
   }
@@ -52,7 +56,7 @@ export function OverviewDatesCard({ start, end, status, today }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex items-start gap-3">
-        <CalendarDays className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+        <CalendarDays aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0">
           <p className="text-base font-semibold leading-tight">{dateRange}</p>
           <p className="text-xs text-muted-foreground">{days} days</p>
