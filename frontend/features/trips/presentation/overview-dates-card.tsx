@@ -1,3 +1,5 @@
+import { Cloud, Compass, MapPin, Mountain, Plane, Sun } from "lucide-react";
+
 import {
   formatDateOnly,
   getInclusiveDateOnlySpan,
@@ -36,13 +38,13 @@ function countdownLabel(state: TripCountdownState): string {
 function countdownTone(state: TripCountdownState): string {
   switch (state.kind) {
     case "future":
-      return "border-sky-200/80 bg-sky-50 text-sky-700";
+      return "border-sky-200/80 bg-white/80 text-sky-700 backdrop-blur-sm";
     case "in_progress":
-      return "border-emerald-200/80 bg-emerald-50 text-emerald-700";
+      return "border-emerald-200/80 bg-white/80 text-emerald-700 backdrop-blur-sm";
     case "past":
-      return "border-slate-200/80 bg-slate-100 text-slate-600";
+      return "border-slate-200/80 bg-white/80 text-slate-600 backdrop-blur-sm";
     case "cancelled":
-      return "border-rose-200/80 bg-rose-50 text-rose-700";
+      return "border-rose-200/80 bg-white/80 text-rose-700 backdrop-blur-sm";
   }
 }
 
@@ -59,6 +61,33 @@ function leafTone(state: TripCountdownState): string {
   }
 }
 
+function JourneyPattern() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 overflow-hidden"
+    >
+      {/* dashed flight arc */}
+      <svg
+        className="absolute -right-6 -top-3 size-32 text-sky-400/30"
+        viewBox="0 0 100 100"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeDasharray="2 3"
+      >
+        <path d="M5 80 Q 50 -10 95 60" />
+      </svg>
+      <Plane className="absolute right-3 top-3 size-7 -rotate-[25deg] text-sky-500/35" />
+      <Sun className="absolute left-3 top-3 size-8 text-amber-400/35" />
+      <Cloud className="absolute left-1/2 top-2 size-6 -translate-x-1/2 text-sky-300/30" />
+      <Mountain className="absolute -bottom-1 right-2 size-12 text-indigo-400/25" />
+      <Compass className="absolute -bottom-1 left-2 size-9 -rotate-12 text-amber-500/25" />
+      <MapPin className="absolute bottom-3 left-1/2 size-4 text-rose-400/30" />
+    </div>
+  );
+}
+
 function CalendarLeaf({
   month,
   day,
@@ -71,7 +100,7 @@ function CalendarLeaf({
   return (
     <div
       aria-hidden="true"
-      className="relative shrink-0 w-16 overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+      className="relative shrink-0 w-16 overflow-hidden rounded-xl border border-border bg-card shadow-md ring-1 ring-white/60"
     >
       <div className={cn("px-2 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-white", tone)}>
         {month}
@@ -81,7 +110,6 @@ function CalendarLeaf({
           {day}
         </div>
       </div>
-      {/* binding holes for paper-y feel */}
       <div className="pointer-events-none absolute inset-x-0 top-[18px] flex justify-between px-2">
         <span className="size-1 rounded-full bg-background ring-1 ring-border" />
         <span className="size-1 rounded-full bg-background ring-1 ring-border" />
@@ -102,23 +130,29 @@ export function OverviewDatesCard({ start, end, status, today }: Props) {
   const day = getStartDay(start);
 
   return (
-    <div className="flex items-center gap-4">
-      <CalendarLeaf month={month} day={day} tone={leafTone(state)} />
-      <div className="min-w-0 flex-1 space-y-2">
-        <div className="space-y-0.5">
-          <p className="truncate text-base font-semibold leading-tight">{dateRange}</p>
-          <p className="text-xs text-muted-foreground">
-            {days} {pluralizeDays(days)}
-          </p>
+    <div className="relative h-full overflow-hidden rounded-[inherit] bg-gradient-to-br from-sky-50 via-white to-amber-50/70">
+      <JourneyPattern />
+
+      <div className="relative flex items-center gap-4 p-4 sm:p-5">
+        <CalendarLeaf month={month} day={day} tone={leafTone(state)} />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="space-y-0.5">
+            <p className="truncate text-base font-semibold leading-tight text-foreground">
+              {dateRange}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {days} {pluralizeDays(days)}
+            </p>
+          </div>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium shadow-sm",
+              countdownTone(state),
+            )}
+          >
+            {countdownLabel(state)}
+          </span>
         </div>
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
-            countdownTone(state),
-          )}
-        >
-          {countdownLabel(state)}
-        </span>
       </div>
     </div>
   );

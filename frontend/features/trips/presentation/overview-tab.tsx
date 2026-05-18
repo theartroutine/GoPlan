@@ -48,10 +48,18 @@ export function OverviewTab() {
 
   const { trip, members } = data;
   const today = getTodayDateOnly();
-  const cards: { key: string; node: ReactNode; span?: boolean; fullBleed?: boolean }[] = [];
+  const hasDescription = Boolean(trip.description?.trim());
+  const cards: {
+    key: string;
+    node: ReactNode;
+    fullBleed?: boolean;
+    className?: string;
+  }[] = [];
 
   cards.push({
     key: "dates",
+    fullBleed: true,
+    className: "sm:col-start-1 sm:row-start-1",
     node: (
       <OverviewDatesCard
         start={trip.start_date}
@@ -64,12 +72,17 @@ export function OverviewTab() {
 
   cards.push({
     key: "members",
+    fullBleed: true,
+    className: hasDescription
+      ? "h-full sm:col-start-2 sm:row-start-1 sm:row-span-3"
+      : "h-full sm:col-start-2 sm:row-start-1 sm:row-span-2",
     node: <OverviewMembersCard tripId={tripId} members={members} />,
   });
 
   cards.push({
     key: "budget",
     fullBleed: true,
+    className: "sm:col-start-1 sm:row-start-2",
     node: (
       <OverviewBudgetCard
         tripId={tripId}
@@ -80,22 +93,22 @@ export function OverviewTab() {
     ),
   });
 
-  if (trip.description && trip.description.trim()) {
+  if (hasDescription) {
     cards.push({
       key: "description",
+      className: "sm:col-start-1 sm:row-start-3",
       node: <OverviewDescriptionCard description={trip.description} />,
-      span: true,
     });
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch sm:gap-4">
       {cards.map((c, i) => (
         <StaggerCard
           key={c.key}
           index={i}
           fullBleed={c.fullBleed}
-          className={c.span ? "sm:col-span-2" : ""}
+          className={c.className}
         >
           {c.node}
         </StaggerCard>

@@ -39,7 +39,7 @@ describe("OverviewMembersCard", () => {
     );
   });
 
-  it("renders all rows when member count is within visible threshold", () => {
+  it("renders captain hero plus an avatar cluster for the rest when within threshold", () => {
     const members = [
       buildMember("0", "Alice", "CAPTAIN"),
       buildMember("1", "Bob"),
@@ -51,9 +51,13 @@ describe("OverviewMembersCard", () => {
       <OverviewMembersCard tripId="trip-1" members={members} />,
     );
     expect(screen.getByText("5 members")).toBeInTheDocument();
+    // 1 captain hero row + 4 cluster avatar tiles = 5 rendered member slots
     expect(container.querySelectorAll("[data-member-row]").length).toBe(5);
+    // Captain is rendered as a hero row with visible name
     expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("Eve")).toBeInTheDocument();
+    // Other members are rendered as avatar tiles with names in title attributes
+    expect(container.querySelector('[title="Eve"]')).not.toBeNull();
+    expect(container.querySelector('[title="Bob"]')).not.toBeNull();
     expect(screen.queryByText(/\+\d+ more/)).toBeNull();
   });
 
