@@ -44,17 +44,17 @@ vi.mock("@/features/trips/presentation/trip-context", () => ({
 import { OverviewTab } from "./overview-tab";
 
 describe("OverviewTab", () => {
-  it("renders Dates + Members; skips Budget and Description when absent", () => {
+  it("renders Dates + Members + Budget empty state when no budget; skips Description when absent", () => {
     tripContextValue.data.trip.budget_estimate = null;
     tripContextValue.data.trip.description = "";
     render(<OverviewTab />);
     expect(screen.getByText(/May 30/)).toBeInTheDocument();
     expect(screen.getByText(/1 member/i)).toBeInTheDocument();
-    expect(screen.queryByText(/per person/i)).toBeNull();
+    expect(screen.getByText(/Not set yet/i)).toBeInTheDocument();
     expect(screen.queryByText(/^About$/)).toBeNull();
   });
 
-  it("renders Budget and Description when present", () => {
+  it("renders Budget total and Description when present", () => {
     tripContextValue.data.trip.budget_estimate = "4000000.00";
     tripContextValue.data.trip.description = "We will fly out together.";
     render(<OverviewTab />);

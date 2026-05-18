@@ -1,5 +1,3 @@
-import { CalendarDays } from "lucide-react";
-
 import {
   formatDateOnly,
   getInclusiveDateOnlySpan,
@@ -48,28 +46,80 @@ function countdownTone(state: TripCountdownState): string {
   }
 }
 
+function leafTone(state: TripCountdownState): string {
+  switch (state.kind) {
+    case "future":
+      return "bg-sky-500";
+    case "in_progress":
+      return "bg-emerald-500";
+    case "past":
+      return "bg-slate-500";
+    case "cancelled":
+      return "bg-rose-500";
+  }
+}
+
+function CalendarLeaf({
+  month,
+  day,
+  tone,
+}: {
+  month: string;
+  day: number;
+  tone: string;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className="relative shrink-0 w-16 overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+    >
+      <div className={cn("px-2 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-white", tone)}>
+        {month}
+      </div>
+      <div className="flex items-center justify-center bg-card py-2.5">
+        <div className="text-[28px] font-bold leading-none tracking-tight text-foreground">
+          {day}
+        </div>
+      </div>
+      {/* binding holes for paper-y feel */}
+      <div className="pointer-events-none absolute inset-x-0 top-[18px] flex justify-between px-2">
+        <span className="size-1 rounded-full bg-background ring-1 ring-border" />
+        <span className="size-1 rounded-full bg-background ring-1 ring-border" />
+      </div>
+    </div>
+  );
+}
+
+function getStartDay(start: string): number {
+  return Number.parseInt(start.split("-")[2] ?? "1", 10);
+}
+
 export function OverviewDatesCard({ start, end, status, today }: Props) {
   const dateRange = `${formatDateOnly(start, { month: "short", day: "numeric" })} – ${formatDateOnly(end, { month: "short", day: "numeric", year: "numeric" })}`;
   const days = getInclusiveDateOnlySpan(start, end);
   const state = getTripCountdownState({ start, end, status, today });
+  const month = formatDateOnly(start, { month: "short" }).toUpperCase();
+  const day = getStartDay(start);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-start gap-3">
-        <CalendarDays aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0">
-          <p className="text-base font-semibold leading-tight">{dateRange}</p>
-          <p className="text-xs text-muted-foreground">{days} days</p>
+    <div className="flex items-center gap-4">
+      <CalendarLeaf month={month} day={day} tone={leafTone(state)} />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="space-y-0.5">
+          <p className="truncate text-base font-semibold leading-tight">{dateRange}</p>
+          <p className="text-xs text-muted-foreground">
+            {days} {pluralizeDays(days)}
+          </p>
         </div>
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
+            countdownTone(state),
+          )}
+        >
+          {countdownLabel(state)}
+        </span>
       </div>
-      <span
-        className={cn(
-          "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium",
-          countdownTone(state),
-        )}
-      >
-        {countdownLabel(state)}
-      </span>
     </div>
   );
 }

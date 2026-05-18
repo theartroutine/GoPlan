@@ -4,20 +4,26 @@ import { describe, expect, it } from "vitest";
 import { OverviewBudgetCard } from "./overview-budget-card";
 
 describe("OverviewBudgetCard", () => {
-  it("returns null when budgetEstimate is empty", () => {
-    const { container } = render(
+  it("renders empty state with Set a budget link when budgetEstimate is null", () => {
+    render(
       <OverviewBudgetCard
+        tripId="trip-1"
         budgetEstimate={null}
         currencyCode="VND"
         memberCount={4}
       />,
     );
-    expect(container.firstChild).toBeNull();
+    expect(screen.getByText(/Not set yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Set a budget/i })).toHaveAttribute(
+      "href",
+      "/trips/trip-1/edit",
+    );
   });
 
   it("renders total and per-person amount", () => {
     render(
       <OverviewBudgetCard
+        tripId="trip-1"
         budgetEstimate="4000000.00"
         currencyCode="VND"
         memberCount={4}
@@ -29,15 +35,16 @@ describe("OverviewBudgetCard", () => {
     expect(screen.getByText(/1\.000\.000/)).toBeInTheDocument();
   });
 
-  it("renders total without per-person when memberCount is 0", () => {
+  it("hints to add members when memberCount is 0", () => {
     render(
       <OverviewBudgetCard
+        tripId="trip-1"
         budgetEstimate="500000.00"
         currencyCode="VND"
         memberCount={0}
       />,
     );
     expect(screen.getByText(/500\.000/)).toBeInTheDocument();
-    expect(screen.queryByText(/per person/i)).toBeNull();
+    expect(screen.getByText(/Add members to split/i)).toBeInTheDocument();
   });
 });
