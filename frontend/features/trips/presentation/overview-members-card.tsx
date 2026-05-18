@@ -54,6 +54,7 @@ export function OverviewMembersCard({ tripId, members }: Props) {
               className="flex aspect-square items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               +{extra} more
+              <span className="sr-only"> members, view all</span>
             </Link>
           )}
         </div>
