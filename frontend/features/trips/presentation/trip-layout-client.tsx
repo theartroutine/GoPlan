@@ -6,11 +6,12 @@ import { usePathname } from "next/navigation";
 
 import { Spinner } from "@/shared/ui/spinner";
 import { TripProvider, useTripContext } from "@/features/trips/presentation/trip-context";
-import { TripHeader } from "@/features/trips/presentation/trip-header";
 import { TripTabBar } from "@/features/trips/presentation/trip-tab-bar";
+import { OverviewHero } from "@/features/trips/presentation/overview-hero";
+import { OverviewActionStrip } from "@/features/trips/presentation/overview-action-strip";
 
 function TripShell({ children }: { children: React.ReactNode }) {
-  const { data, loading, error, notFound } = useTripContext();
+  const { tripId, data, loading, error, notFound, refresh } = useTripContext();
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
 
@@ -53,8 +54,6 @@ function TripShell({ children }: { children: React.ReactNode }) {
   };
   const tabTitle = TAB_TITLES[pathname.split("/").pop() ?? ""];
 
-  // Chat owns its own viewport: no page title, no horizontal padding, fills
-  // the remaining height of <main>. Other tabs keep the standard padded layout.
   if (isChat) {
     return (
       <>
@@ -64,17 +63,45 @@ function TripShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (isOverview) {
+    const { trip, my_membership, members } = data;
+    const isCaptain = my_membership.role === "CAPTAIN";
+    const isTerminal = trip.status === "COMPLETED" || trip.status === "CANCELLED";
+    return (
+      <>
+        {portalTarget && createPortal(<TripTabBar />, portalTarget)}
+        <div>
+          <OverviewHero
+            tripName={trip.name}
+            destination={trip.destination}
+            coverImageUrl={trip.cover_image_url}
+            status={trip.status}
+          />
+          <OverviewActionStrip
+            tripId={tripId}
+            isCaptain={isCaptain}
+            isTerminal={isTerminal}
+            memberCount={members.length}
+            onCancelled={refresh}
+          />
+          <div className="px-4 pb-6 pt-2 sm:px-6 sm:pb-8">
+            {children}
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       {portalTarget && createPortal(<TripTabBar />, portalTarget)}
       <div>
-        {isOverview && <TripHeader />}
-        {!isOverview && tabTitle && (
+        {tabTitle && (
           <div className="px-4 pt-5 pb-1 sm:px-6">
             <h1 className="text-xl font-semibold tracking-tight">{tabTitle}</h1>
           </div>
         )}
-        <div className={`px-4 pb-4 sm:px-6 sm:pb-6 ${isOverview ? "border-t border-border/40 pt-4" : "pt-3"}`}>
+        <div className="px-4 pb-4 pt-3 sm:px-6 sm:pb-6">
           {children}
         </div>
       </div>
