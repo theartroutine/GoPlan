@@ -86,6 +86,7 @@ class RunnerTests(TestCase):
         self.assertEqual(result.message_text, "Created.")
         self.interaction.refresh_from_db()
         self.assertEqual(self.interaction.input_tokens, 10)
+        self.assertEqual(self.interaction.total_tokens, 15)
         self.assertEqual(self.interaction.tool_calls_count, 2)
         draft = AIActionDraft.objects.get(interaction=self.interaction)
         self.assertEqual(draft.required_confirmation, "CAPTAIN")
@@ -187,16 +188,10 @@ class RunnerTests(TestCase):
         self.interaction.prompt = "Finalize settlement cho chuyến đi hiện tại từ tất cả expenses."
         self.interaction.save(update_fields=["prompt"])
         mock_complete.return_value = DeepSeekToolResult(
-            text=None,
-            tool_calls=[
-                ToolCallParsed(
-                    id="c1",
-                    name="respond_to_user",
-                    arguments_json='{"message":"Bạn cần tạo settlement trước."}',
-                ),
-            ],
+            text="Bạn cần tạo settlement trước.",
+            tool_calls=[],
             usage=DeepSeekUsage(1, 1, 2),
-            finish_reason="tool_calls",
+            finish_reason="stop",
         )
 
         result = run_goplan_ai_agent(interaction=self.interaction)
@@ -206,6 +201,35 @@ class RunnerTests(TestCase):
         self.assertEqual(draft.action_type, "settlement.finalize")
         self.assertEqual(draft.status, AIActionDraftStatus.READY)
         self.assertEqual(draft.payload, {})
+
+    @patch("ai.agent.runner.complete_with_tools")
+    def test_explicit_respond_to_user_tool_is_not_repaired_to_action(
+        self,
+        mock_complete,
+    ):
+        self.interaction.prompt = "Mình có nên quyết toán chi phí chuyến đi hiện tại không?"
+        self.interaction.save(update_fields=["prompt"])
+        mock_complete.return_value = DeepSeekToolResult(
+            text=None,
+            tool_calls=[
+                ToolCallParsed(
+                    id="c1",
+                    name="respond_to_user",
+                    arguments_json='{"message":"Chưa nên quyết toán nếu còn khoản chưa nhập."}',
+                ),
+            ],
+            usage=DeepSeekUsage(1, 1, 2),
+            finish_reason="tool_calls",
+        )
+
+        result = run_goplan_ai_agent(interaction=self.interaction)
+
+        self.assertIsNone(result.error_code)
+        self.assertEqual(result.message_text, "Chưa nên quyết toán nếu còn khoản chưa nhập.")
+        self.assertEqual(
+            AIActionDraft.objects.filter(interaction=self.interaction).count(),
+            0,
+        )
 
     @patch("ai.agent.runner.complete_with_tools")
     def test_existing_day_activity_prompt_synthesizes_activity_tool(

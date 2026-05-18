@@ -46,13 +46,38 @@ class AssigneeScope(str, Enum):
     EVERYONE = "EVERYONE"
 
 
+class LocationMode(str, Enum):
+    MANUAL = "MANUAL"
+    STRUCTURED = "STRUCTURED"
+
+
+class PlaceArgs(BaseModel):
+    provider: str = Field(min_length=1, max_length=16)
+    provider_id: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=1, max_length=200)
+    address: str | None = Field(default=None, max_length=255)
+    lat: Decimal | None = None
+    lng: Decimal | None = None
+
+
 class _ActivityBase(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     system_type: SystemType | None = None
+    custom_type_id: UUID | None = None
     time_mode: TimeMode | None = None
     start_time: time | None = None
     end_time: time | None = None
+    location_mode: LocationMode | None = None
     location_label: str | None = Field(default=None, max_length=200)
+    location_note: str | None = Field(default=None, max_length=200)
+    place: PlaceArgs | None = None
+    note: str | None = None
+    meeting_point: str | None = Field(default=None, max_length=200)
+    contact_name: str | None = Field(default=None, max_length=120)
+    contact_phone: str | None = Field(default=None, max_length=32)
+    booking_reference: str | None = Field(default=None, max_length=120)
+    external_link: str | None = Field(default=None, max_length=500)
+    reminder_offsets_minutes: list[int] | None = None
     assignee_scope: AssigneeScope = AssigneeScope.EVERYONE
     assignee_user_id: UUID | None = None
 
@@ -76,9 +101,24 @@ class CreateTimelineActivityArgs(_ActivityBase):
 class UpdateTimelineActivityArgs(BaseModel):
     activity_id: UUID
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    system_type: SystemType | None = None
+    custom_type_id: UUID | None = None
+    time_mode: TimeMode | None = None
     start_time: time | None = None
     end_time: time | None = None
-    location_label: str | None = None
+    assignee_scope: AssigneeScope | None = None
+    assignee_user_id: UUID | None = None
+    location_mode: LocationMode | None = None
+    location_label: str | None = Field(default=None, max_length=200)
+    location_note: str | None = Field(default=None, max_length=200)
+    place: PlaceArgs | None = None
+    note: str | None = None
+    meeting_point: str | None = Field(default=None, max_length=200)
+    contact_name: str | None = Field(default=None, max_length=120)
+    contact_phone: str | None = Field(default=None, max_length=32)
+    booking_reference: str | None = Field(default=None, max_length=120)
+    external_link: str | None = Field(default=None, max_length=500)
+    reminder_offsets_minutes: list[int] | None = None
 
     @field_validator("start_time", "end_time", mode="before")
     @classmethod
@@ -119,7 +159,9 @@ class CreateExpenseArgs(BaseModel):
 class UpdateExpenseArgs(BaseModel):
     expense_id: UUID
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=500)
     total_amount: Decimal | None = Field(default=None, gt=0)
+    collector_id: UUID | None = None
 
 
 class DeleteExpenseArgs(BaseModel):

@@ -109,6 +109,25 @@ class DisplayBuilderTests(TestCase):
         self.assertEqual(display["hero"]["value"], "1,000,000")
         self.assertEqual(display["hero"]["currency"], "VND")
 
+    def test_expense_update_description_only_shows_target_and_changed_field(self):
+        display = build_display(
+            action_type="expense.update",
+            payload={
+                "expense_id": "00000000-0000-0000-0000-000000000001",
+                "target_title": "Hotel deposit",
+                "description": "Refundable deposit paid by card.",
+            },
+            trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
+        )
+
+        self.assertEqual(display["kicker"], "Update expense")
+        self.assertEqual(display["title"], "Hotel deposit")
+        self.assertNotIn("hero", display)
+        self.assertIn(
+            {"label": "Description", "value": "Refundable deposit paid by card."},
+            display["meta"],
+        )
+
     def test_expense_contribution_all_paid_does_not_show_zero_amount(self):
         display = build_display(
             action_type="expense.contribution.set",

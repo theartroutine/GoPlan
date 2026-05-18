@@ -166,6 +166,74 @@ class ToolHandlerTests(TestCase):
             str(activity.id),
         )
 
+    def test_update_timeline_activity_persists_extended_patch_data(self):
+        from ai.agent import handlers, schemas
+
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        activity = section.activities.create(
+            trip=self.trip,
+            title="Old stop",
+            time_mode="FLEXIBLE",
+            system_type="SIGHTSEEING",
+        )
+        result = handlers.update_timeline_activity(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.UpdateTimelineActivityArgs(
+                activity_id=activity.id,
+                note="Bring cash.",
+                meeting_point="Hotel lobby",
+                reminder_offsets_minutes=[30],
+            ),
+        )
+
+        self.assertEqual(
+            result.draft.payload,
+            {
+                "activity_id": str(activity.id),
+                "data": {
+                    "note": "Bring cash.",
+                    "meeting_point": "Hotel lobby",
+                    "reminder_offsets_minutes": [30],
+                },
+            },
+        )
+
+    def test_update_expense_persists_description_and_collector(self):
+        from ai.agent import handlers, schemas
+        from expenses.services import create_expense
+
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.user,
+            title="Lunch",
+            description="Old",
+            total_amount=Decimal("2000000"),
+            collector_id=self.user.id,
+        )
+        result = handlers.update_expense(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.UpdateExpenseArgs(
+                expense_id=expense.id,
+                description="Updated description",
+                collector_id=self.user.id,
+            ),
+        )
+
+        self.assertEqual(result.draft.action_type, "expense.update")
+        self.assertEqual(
+            result.draft.payload,
+            {
+                "expense_id": str(expense.id),
+                "target_title": "Lunch",
+                "description": "Updated description",
+                "collector_id": str(self.user.id),
+            },
+        )
+
     def test_set_expense_contribution_persists_target_precondition(self):
         from ai.agent import handlers, schemas
         from ai.models import AIActionDraft
@@ -296,6 +364,45 @@ class ToolHandlerTests(TestCase):
                 {"label": "From", "value": member.display_name},
                 {"label": "To", "value": self.user.display_name},
             ],
+        )
+
+    def test_finalize_settlement_skips_draft_when_trip_already_finalized(self):
+        from ai.agent import handlers, schemas
+        from ai.models import AIActionDraft
+        from expenses.services import (
+            create_expense,
+            finalize_settlement,
+            set_contribution,
+        )
+
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.user,
+            title="Hotel",
+            description="",
+            total_amount=Decimal("1000000"),
+            collector_id=self.user.id,
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.user.id,
+            amount=Decimal("1000000"),
+            actor=self.user,
+        )
+        finalize_settlement(trip_id=self.trip.id, actor=self.user)
+
+        result = handlers.finalize_settlement(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.FinalizeSettlementArgs(),
+        )
+
+        self.assertIsNone(result.draft)
+        self.assertIn("đã được quyết toán", result.message)
+        self.assertFalse(
+            AIActionDraft.objects.filter(action_type="settlement.finalize").exists()
         )
 
     def test_delete_activity_handler_enriches_display_payload_from_target(self):

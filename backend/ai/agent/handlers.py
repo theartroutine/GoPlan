@@ -11,7 +11,12 @@ from ai.agent.preconditions import (
     build_backend_preconditions,
 )
 from ai.models import AIActionDraft
-from expenses.models import Expense, SettlementStatus, SettlementTransfer
+from expenses.models import (
+    Expense,
+    SettlementStatus,
+    SettlementTransfer,
+    TripSettlement,
+)
 from trips.models import TimelineActivity
 
 
@@ -141,6 +146,15 @@ def _expense_snapshot(*, trip, expense_id) -> dict:
     }
 
 
+def _expense_update_target_snapshot(*, trip, expense_id) -> dict:
+    snapshot = _expense_snapshot(trip=trip, expense_id=expense_id)
+    if not snapshot:
+        return {}
+    return {
+        "target_title": snapshot["title"],
+    }
+
+
 def _transfer_snapshot(*, trip, transfer_id) -> dict:
     try:
         transfer = (
@@ -163,6 +177,13 @@ def _transfer_snapshot(*, trip, transfer_id) -> dict:
         "to_name": to_name,
         "title": f"Transfer from {from_name} to {to_name}",
     }
+
+
+def _has_finalized_settlement(*, trip) -> bool:
+    return TripSettlement.objects.filter(
+        trip=trip,
+        status=SettlementStatus.FINALIZED,
+    ).exists()
 
 
 def create_timeline_activity(
@@ -274,11 +295,22 @@ def update_expense(
     args: schemas.UpdateExpenseArgs,
     target_versions: dict | None = None,
 ):
-    return _create(
+    payload = _to_payload(args)
+    payload.update(
+        {
+            key: value
+            for key, value in _expense_update_target_snapshot(
+                trip=trip,
+                expense_id=args.expense_id,
+            ).items()
+            if key not in payload
+        }
+    )
+    return _create_from_payload(
         trip=trip,
         interaction=interaction,
         action_type="expense.update",
-        args=args,
+        payload=payload,
         target_versions=target_versions,
     )
 
@@ -329,6 +361,14 @@ def finalize_settlement(
     args: schemas.FinalizeSettlementArgs,
     target_versions: dict | None = None,
 ):
+    if _has_finalized_settlement(trip=trip):
+        return HandlerResult(
+            message=(
+                "Chuyến đi đã được quyết toán hoàn tất rồi. "
+                "Không cần tạo thêm hành động quyết toán mới."
+            ),
+        )
+
     return _create(
         trip=trip,
         interaction=interaction,

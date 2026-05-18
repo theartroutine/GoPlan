@@ -128,6 +128,26 @@ def _maybe_repair_provider_result(
         return provider_result
 
     prompt = interaction.prompt
+    if prompt_requests_timeline_activity_creation(prompt):
+        repair_arguments = timeline_activity_repair_arguments(
+            prompt=prompt,
+            context=context,
+        )
+        if repair_arguments is not None:
+            return _with_usage_from(
+                provider_result,
+                text=provider_result.text,
+                tool_calls=[
+                    _synthesized_tool_call(
+                        "create_timeline_activity",
+                        repair_arguments,
+                    ),
+                ],
+            )
+
+    if provider_result.tool_calls:
+        return provider_result
+
     if prompt_requests_settlement_finalization(prompt):
         return _with_usage_from(
             provider_result,
@@ -135,25 +155,7 @@ def _maybe_repair_provider_result(
             tool_calls=[_synthesized_tool_call("finalize_settlement", {})],
         )
 
-    if not prompt_requests_timeline_activity_creation(prompt):
-        return provider_result
-
-    repair_arguments = timeline_activity_repair_arguments(
-        prompt=prompt,
-        context=context,
-    )
-    if repair_arguments is None:
-        return provider_result
-    return _with_usage_from(
-        provider_result,
-        text=provider_result.text,
-        tool_calls=[
-            _synthesized_tool_call(
-                "create_timeline_activity",
-                repair_arguments,
-            ),
-        ],
-    )
+    return provider_result
 
 
 def _ensure_tool_call_result(result: DeepSeekToolResult) -> DeepSeekToolResult:
@@ -240,9 +242,16 @@ def run_goplan_ai_agent(*, interaction) -> AgentRunResult:
 
     interaction.input_tokens = provider_result.usage.input_tokens
     interaction.output_tokens = provider_result.usage.output_tokens
+    interaction.total_tokens = provider_result.usage.total_tokens
     interaction.latency_ms = latency_ms
     interaction.tool_calls_count = len(provider_result.tool_calls)
-    save_fields = ["input_tokens", "output_tokens", "latency_ms", "tool_calls_count"]
+    save_fields = [
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "latency_ms",
+        "tool_calls_count",
+    ]
 
     drafts_created = 0
     message_text: str | None = provider_result.text

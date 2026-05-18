@@ -208,21 +208,41 @@ def _build_timeline_delete(payload: dict, trip_context: dict) -> dict:
 
 def _build_expense_create(payload: dict, trip_context: dict) -> dict:
     currency = payload.get("currency_code") or trip_context.get("currency_code", "USD")
+    meta = []
+    collector_name = _non_empty_string(payload, "collector_name")
+    if collector_name:
+        meta.append({"label": "Collected by", "value": collector_name})
+    description = _non_empty_string(payload, "description")
+    if description:
+        meta.append({"label": "Description", "value": description})
     return {
         "icon": "expense",
         "tone": "create",
         "kicker": "Expense",
         "title": payload.get("title", ""),
         "hero": _fmt_amount(payload.get("total_amount", 0), currency),
-        "meta": [
-            {"label": "Collected by", "value": payload.get("collector_name", "")}
-        ] if payload.get("collector_name") else [],
+        "meta": meta,
     }
 
 
 def _build_expense_update(payload: dict, trip_context: dict) -> dict:
-    out = _build_expense_create(payload, trip_context)
-    out["tone"] = "update"
+    currency = payload.get("currency_code") or trip_context.get("currency_code", "USD")
+    meta = []
+    description = _non_empty_string(payload, "description")
+    if description:
+        meta.append({"label": "Description", "value": description})
+    collector_name = _non_empty_string(payload, "collector_name")
+    if collector_name:
+        meta.append({"label": "Collected by", "value": collector_name})
+    out = {
+        "icon": "expense",
+        "tone": "update",
+        "kicker": "Update expense",
+        "title": payload.get("title") or payload.get("target_title") or "Expense",
+        "meta": meta,
+    }
+    if payload.get("total_amount") is not None:
+        out["hero"] = _fmt_amount(payload.get("total_amount"), currency)
     return out
 
 

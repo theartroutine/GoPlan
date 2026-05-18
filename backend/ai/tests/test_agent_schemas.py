@@ -8,6 +8,7 @@ from ai.agent.schemas import (
     CreateExpenseArgs,
     FinalizeSettlementArgs,
     SetExpenseContributionArgs,
+    UpdateExpenseArgs,
     UpdateTimelineActivityArgs,
     UpdateTimelineActivityStatusArgs,
     UpdateActionDraftArgs,
@@ -89,6 +90,46 @@ class SchemaTests(SimpleTestCase):
         self.assertEqual(args.end_time, time(9, 30))
         self.assertEqual(args.model_dump(mode="json")["start_time"], "08:30:00")
 
+    def test_update_timeline_activity_accepts_supported_patch_fields(self):
+        args = UpdateTimelineActivityArgs(
+            activity_id="00000000-0000-0000-0000-000000000001",
+            title="Cà phê Chợ Hàn",
+            time_mode="TIME_RANGE",
+            system_type="FOOD",
+            assignee_scope="USER",
+            assignee_user_id="00000000-0000-0000-0000-000000000002",
+            start_time="08:30:00",
+            end_time="09:30:00",
+            location_mode="MANUAL",
+            location_label="Chợ Hàn",
+            location_note="Cổng chính",
+            note="Đi nhẹ nhàng.",
+            meeting_point="Lobby khách sạn",
+            contact_name="Anh Nam",
+            contact_phone="0900000000",
+            booking_reference="BOOK-123",
+            external_link="https://example.com/booking",
+            reminder_offsets_minutes=[30],
+        )
+
+        payload = args.model_dump(mode="json", exclude_none=True)
+        self.assertEqual(payload["time_mode"], "TIME_RANGE")
+        self.assertEqual(payload["system_type"], "FOOD")
+        self.assertEqual(payload["assignee_scope"], "USER")
+        self.assertEqual(
+            payload["assignee_user_id"],
+            "00000000-0000-0000-0000-000000000002",
+        )
+        self.assertEqual(payload["location_mode"], "MANUAL")
+        self.assertEqual(payload["location_note"], "Cổng chính")
+        self.assertEqual(payload["note"], "Đi nhẹ nhàng.")
+        self.assertEqual(payload["meeting_point"], "Lobby khách sạn")
+        self.assertEqual(payload["contact_name"], "Anh Nam")
+        self.assertEqual(payload["contact_phone"], "0900000000")
+        self.assertEqual(payload["booking_reference"], "BOOK-123")
+        self.assertEqual(payload["external_link"], "https://example.com/booking")
+        self.assertEqual(payload["reminder_offsets_minutes"], [30])
+
     def test_create_expense_allows_missing_amount_for_needs_info(self):
         args = CreateExpenseArgs(title="X")
 
@@ -96,6 +137,20 @@ class SchemaTests(SimpleTestCase):
         self.assertIsNone(args.total_amount)
         self.assertIsNone(args.currency_code)
         self.assertIsNone(args.collector_id)
+
+    def test_update_expense_accepts_description_and_collector(self):
+        args = UpdateExpenseArgs(
+            expense_id="00000000-0000-0000-0000-000000000001",
+            description="Shared seafood dinner",
+            collector_id="00000000-0000-0000-0000-000000000002",
+        )
+
+        payload = args.model_dump(mode="json", exclude_none=True)
+        self.assertEqual(payload["description"], "Shared seafood dinner")
+        self.assertEqual(
+            payload["collector_id"],
+            "00000000-0000-0000-0000-000000000002",
+        )
 
     def test_timeline_activity_status_uses_upcoming_and_maps_legacy_planned(self):
         args = UpdateTimelineActivityStatusArgs(
