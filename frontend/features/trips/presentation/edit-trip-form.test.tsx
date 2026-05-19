@@ -188,4 +188,36 @@ describe("EditTripForm", () => {
 
     expect(screen.getByRole("option", { name: "Asia/Tokyo" })).toBeTruthy();
   });
+
+  it("limits edited trip description to the overview-safe length", () => {
+    render(
+      <EditTripForm
+        trip={{
+          id: "trip-1",
+          name: "Summer Trip",
+          destination: "Da Nang",
+          destination_provider: "",
+          destination_provider_id: "",
+          destination_lat: null,
+          destination_lng: null,
+          destination_country_code: "",
+          cover_image_url: "",
+          start_date: "2026-06-01",
+          end_date: "2026-06-05",
+          description: "Short note",
+          status: "PLANNING",
+          currency_code: "VND",
+          timezone: "Asia/Ho_Chi_Minh",
+          budget_estimate: "3000000.00",
+          cancelled_at: null,
+          created_at: "2026-04-20T00:00:00Z",
+        }}
+      />,
+    );
+
+    const description = screen.getByLabelText(/description/i);
+
+    expect(description).toHaveAttribute("maxLength", "180");
+    expect(screen.getByText("10/180 characters")).toBeInTheDocument();
+  });
 });

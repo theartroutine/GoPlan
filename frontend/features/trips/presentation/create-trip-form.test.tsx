@@ -158,4 +158,13 @@ describe("CreateTripForm", () => {
 
     expect(screen.getByRole("option", { name: "Asia/Tokyo" })).toBeTruthy();
   });
+
+  it("limits trip description to the overview-safe length", () => {
+    render(<CreateTripForm />);
+
+    const description = screen.getByLabelText(/description/i);
+
+    expect(description).toHaveAttribute("maxLength", "180");
+    expect(screen.getByText("0/180 characters")).toBeInTheDocument();
+  });
 });

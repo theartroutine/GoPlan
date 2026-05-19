@@ -1,4 +1,4 @@
-import { Cloud, Compass, MapPin, Mountain, Plane, Sun } from "lucide-react";
+import type { CSSProperties } from "react";
 
 import {
   formatDateOnly,
@@ -17,6 +17,14 @@ type Props = {
   status: TripStatus;
   today: string;
 };
+
+const datesCardBackgroundStyle = {
+  backgroundColor: "rgb(248 250 252)",
+  backgroundImage:
+    "linear-gradient(135deg, rgba(255,255,255,0.93), rgba(248,250,252,0.78)), url('/images/trip-overview/overview-dates-card.webp')",
+  backgroundPosition: "center",
+  backgroundSize: "cover",
+} satisfies CSSProperties;
 
 function pluralizeDays(n: number): string {
   return n === 1 ? "day" : "days";
@@ -38,7 +46,7 @@ function countdownLabel(state: TripCountdownState): string {
 function countdownTone(state: TripCountdownState): string {
   switch (state.kind) {
     case "future":
-      return "border-sky-200/80 bg-white/80 text-sky-700 backdrop-blur-sm";
+      return "border-slate-200/80 bg-white/80 text-slate-700 backdrop-blur-sm";
     case "in_progress":
       return "border-emerald-200/80 bg-white/80 text-emerald-700 backdrop-blur-sm";
     case "past":
@@ -51,41 +59,14 @@ function countdownTone(state: TripCountdownState): string {
 function leafTone(state: TripCountdownState): string {
   switch (state.kind) {
     case "future":
-      return "bg-sky-500";
+      return "bg-slate-700";
     case "in_progress":
-      return "bg-emerald-500";
+      return "bg-emerald-700";
     case "past":
       return "bg-slate-500";
     case "cancelled":
-      return "bg-rose-500";
+      return "bg-rose-700";
   }
-}
-
-function JourneyPattern() {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 overflow-hidden"
-    >
-      {/* dashed flight arc */}
-      <svg
-        className="absolute -right-6 -top-3 size-32 text-sky-400/30"
-        viewBox="0 0 100 100"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeDasharray="2 3"
-      >
-        <path d="M5 80 Q 50 -10 95 60" />
-      </svg>
-      <Plane className="absolute right-3 top-3 size-7 -rotate-[25deg] text-sky-500/35" />
-      <Sun className="absolute left-3 top-3 size-8 text-amber-400/35" />
-      <Cloud className="absolute left-1/2 top-2 size-6 -translate-x-1/2 text-sky-300/30" />
-      <Mountain className="absolute -bottom-1 right-2 size-12 text-indigo-400/25" />
-      <Compass className="absolute -bottom-1 left-2 size-9 -rotate-12 text-amber-500/25" />
-      <MapPin className="absolute bottom-3 left-1/2 size-4 text-rose-400/30" />
-    </div>
-  );
 }
 
 function CalendarLeaf({
@@ -100,7 +81,7 @@ function CalendarLeaf({
   return (
     <div
       aria-hidden="true"
-      className="relative shrink-0 w-16 overflow-hidden rounded-xl border border-border bg-card shadow-md ring-1 ring-white/60"
+      className="relative w-16 shrink-0 overflow-hidden rounded-lg border border-border bg-card shadow-md ring-1 ring-white/60"
     >
       <div className={cn("px-2 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-white", tone)}>
         {month}
@@ -130,8 +111,12 @@ export function OverviewDatesCard({ start, end, status, today }: Props) {
   const day = getStartDay(start);
 
   return (
-    <div className="relative h-full overflow-hidden rounded-[inherit] bg-gradient-to-br from-sky-50 via-white to-amber-50/70">
-      <JourneyPattern />
+    <div className="relative h-full overflow-hidden rounded-[inherit] bg-card">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={datesCardBackgroundStyle}
+      />
 
       <div className="relative flex items-center gap-4 p-4 sm:p-5">
         <CalendarLeaf month={month} day={day} tone={leafTone(state)} />

@@ -9,6 +9,10 @@ import {
   DEFAULT_TRIP_CURRENCY,
   normalizeBudgetInputForCurrencyChange,
 } from "@/features/trips/domain/money";
+import {
+  isTripDescriptionTooLong,
+  TRIP_DESCRIPTION_MAX_LENGTH,
+} from "@/features/trips/domain/trip-description";
 import { detectBrowserTimezone } from "@/features/trips/domain/timezones";
 import type { CreateTripPayload } from "@/features/trips/domain/types";
 import { bffCreateTrip } from "@/features/trips/infrastructure/trips-api";
@@ -17,12 +21,12 @@ import { CoverImagePicker } from "@/features/trips/presentation/cover-image-pick
 import { CurrencySelect } from "@/features/trips/presentation/currency-select";
 import type { DestinationPickerValue } from "@/features/trips/presentation/destination-picker";
 import { DestinationPicker } from "@/features/trips/presentation/destination-picker";
+import { TripDescriptionField } from "@/features/trips/presentation/trip-description-field";
 import { TimezonePicker } from "@/features/trips/presentation/timezone-picker";
 import { Button } from "@/shared/ui/button";
 import { DatePicker } from "@/shared/ui/date-picker";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
-import { Textarea } from "@/shared/ui/textarea";
 
 export function CreateTripForm() {
   const router = useRouter();
@@ -82,16 +86,22 @@ export function CreateTripForm() {
       return;
     }
 
+    const form = new FormData(e.currentTarget);
+    const description = (form.get("description") as string | null) ?? "";
+    if (isTripDescriptionTooLong(description)) {
+      setError(`Description must be ${TRIP_DESCRIPTION_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+
     setLoading(true);
 
-    const form = new FormData(e.currentTarget);
     const submittedBudgetEstimate = budgetInputToPayload(budgetEstimate, currencyCode);
     const payload: CreateTripPayload = {
       name:        (form.get("name") as string | null) ?? "",
       destination,
       start_date:  startDate,
       end_date:    endDate,
-      description: (form.get("description") as string | null) || undefined,
+      description: description || undefined,
       currency_code: currencyCode,
       ...(submittedBudgetEstimate && { budget_estimate: submittedBudgetEstimate }),
       ...(pickerValue && {
@@ -182,10 +192,7 @@ export function CreateTripForm() {
           />
         </div>
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="description">Description</Label>
-        <Textarea id="description" name="description" placeholder="What's this trip about?" rows={3} />
-      </div>
+      <TripDescriptionField />
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <Button asChild variant="outline" className="w-full sm:w-auto">

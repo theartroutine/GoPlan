@@ -6,6 +6,9 @@ export type TimelineUrlState = {
   replacementHref: string | null;
 };
 
+export const TIMELINE_NOW_FOCUS_QUERY_PARAM = "now";
+export const TIMELINE_NOW_FOCUS_QUERY_VALUE = "1";
+
 const EMPTY_ACTIVITY_SECTION_IDS: ReadonlyMap<string, string> = new Map();
 
 export function buildDayHref(
@@ -18,6 +21,21 @@ export function buildDayHref(
   params.delete("activity");
   params.delete("section");
   params.delete("openSections");
+  params.delete(TIMELINE_NOW_FOCUS_QUERY_PARAM);
+  return toHref(pathname, params);
+}
+
+export function buildNowHref(
+  pathname: string,
+  search: SearchSource,
+  dayId: string,
+): string {
+  const params = toParams(search);
+  params.set("day", dayId);
+  params.delete("activity");
+  params.delete("section");
+  params.delete("openSections");
+  params.set(TIMELINE_NOW_FOCUS_QUERY_PARAM, TIMELINE_NOW_FOCUS_QUERY_VALUE);
   return toHref(pathname, params);
 }
 
@@ -27,6 +45,7 @@ export function buildOverviewHref(pathname: string, search: SearchSource): strin
   params.delete("activity");
   params.delete("section");
   params.delete("openSections");
+  params.delete(TIMELINE_NOW_FOCUS_QUERY_PARAM);
   return toHref(pathname, params);
 }
 
@@ -40,6 +59,7 @@ export function buildActivityHref(
   params.delete("activity");
   params.delete("section");
   params.delete("openSections");
+  params.delete(TIMELINE_NOW_FOCUS_QUERY_PARAM);
   params.set("activity", activityId);
   return toHref(pathname, params);
 }
@@ -162,6 +182,7 @@ function buildCanonicalActivityHref(
   params.delete("activity");
   params.delete("section");
   params.delete("openSections");
+  params.delete(TIMELINE_NOW_FOCUS_QUERY_PARAM);
   params.set("day", dayId);
   params.set("activity", activityId);
   return toHref(pathname, params);

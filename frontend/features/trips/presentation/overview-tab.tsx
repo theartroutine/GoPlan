@@ -48,7 +48,6 @@ export function OverviewTab() {
 
   const { trip, members } = data;
   const today = getTodayDateOnly();
-  const hasDescription = Boolean(trip.description?.trim());
   const cards: {
     key: string;
     node: ReactNode;
@@ -73,9 +72,7 @@ export function OverviewTab() {
   cards.push({
     key: "members",
     fullBleed: true,
-    className: hasDescription
-      ? "h-full sm:col-start-2 sm:row-start-1 sm:row-span-3"
-      : "h-full sm:col-start-2 sm:row-start-1 sm:row-span-2",
+    className: "h-full sm:col-start-2 sm:row-start-1 sm:row-span-3",
     node: <OverviewMembersCard tripId={tripId} members={members} />,
   });
 
@@ -93,13 +90,11 @@ export function OverviewTab() {
     ),
   });
 
-  if (hasDescription) {
-    cards.push({
-      key: "description",
-      className: "sm:col-start-1 sm:row-start-3",
-      node: <OverviewDescriptionCard description={trip.description} />,
-    });
-  }
+  cards.push({
+    key: "description",
+    className: "sm:col-start-1 sm:row-start-3",
+    node: <OverviewDescriptionCard tripId={tripId} description={trip.description} />,
+  });
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch sm:gap-4">

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { ArrowRight, Crown, Heart, Sparkles, Star, UserPlus, Users } from "lucide-react";
+import type { CSSProperties } from "react";
+import { ArrowRight, Crown, UserPlus, Users } from "lucide-react";
 
 import type { TripMemberItem } from "@/features/trips/domain/types";
-import { cn } from "@/shared/lib/utils";
 import { UserAvatar } from "@/shared/ui/user-avatar";
 
 type Props = {
@@ -13,32 +13,13 @@ type Props = {
 const MAX_FEATURED_MEMBERS = 3;
 const MAX_VISIBLE_AVATARS = 5;
 
-function CommunityPattern() {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 overflow-hidden"
-    >
-      <Sparkles className="absolute right-3 top-2 size-7 text-violet-400/30" />
-      <Heart className="absolute left-4 top-4 size-5 -rotate-12 text-rose-400/25" />
-      <Star className="absolute right-10 top-1/3 size-4 rotate-12 text-amber-400/30" />
-      <Users className="absolute -bottom-2 right-2 size-14 text-violet-300/20" />
-      <Sparkles className="absolute bottom-4 left-3 size-5 text-rose-300/25" />
-      <Star className="absolute bottom-6 right-1/3 size-3 text-violet-400/25" />
-      {/* gentle connecting dots */}
-      <svg
-        className="absolute inset-x-0 top-1/2 h-12 w-full text-violet-300/20"
-        viewBox="0 0 200 40"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="0.8"
-        strokeDasharray="1 4"
-      >
-        <path d="M10 20 Q 60 0 110 20 T 200 18" />
-      </svg>
-    </div>
-  );
-}
+const membersCardBackgroundStyle = {
+  backgroundColor: "rgb(248 250 252)",
+  backgroundImage:
+    "linear-gradient(135deg, rgba(255,255,255,0.92), rgba(248,250,252,0.8)), url('/images/trip-overview/overview-members-card.webp')",
+  backgroundPosition: "center",
+  backgroundSize: "cover",
+} satisfies CSSProperties;
 
 function findCaptain(members: TripMemberItem[]): TripMemberItem | undefined {
   return members.find((m) => m.role === "CAPTAIN");
@@ -49,7 +30,7 @@ function CaptainHero({ member }: { member: TripMemberItem }) {
     <div
       data-member-row
       data-role="captain"
-      className="flex items-center gap-3 rounded-xl border border-amber-200/70 bg-white/70 px-3 py-2.5 shadow-sm backdrop-blur-sm"
+      className="flex items-center gap-3 rounded-lg border border-border/70 bg-white/75 px-3 py-2.5 shadow-sm backdrop-blur-sm"
     >
       <div className="relative shrink-0">
         <UserAvatar user={member.user} size="default" />
@@ -71,9 +52,7 @@ function CaptainHero({ member }: { member: TripMemberItem }) {
         )}
       </div>
       <span
-        className={cn(
-          "shrink-0 rounded-full border border-amber-300/70 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700",
-        )}
+        className="shrink-0 rounded-full border border-amber-300/60 bg-white/85 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800"
       >
         Captain
       </span>
@@ -86,7 +65,7 @@ function FeaturedMemberRow({ member }: { member: TripMemberItem }) {
     <div
       data-member-row
       data-role="featured"
-      className="flex items-center gap-3 rounded-xl border border-violet-100/70 bg-white/65 px-3 py-2.5 shadow-xs backdrop-blur-sm"
+      className="flex items-center gap-3 rounded-lg border border-border/60 bg-white/70 px-3 py-2.5 shadow-xs backdrop-blur-sm"
     >
       <UserAvatar user={member.user} size="default" />
       <div className="min-w-0 flex-1">
@@ -142,7 +121,7 @@ function AvatarCluster({
       {overflow > 0 ? (
         <Link
           href={`/trips/${tripId}/members`}
-          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-violet-200/80 bg-white/85 px-2.5 text-[11px] font-semibold text-violet-700 shadow-sm backdrop-blur-sm transition-colors hover:border-violet-300 hover:bg-violet-50 hover:text-violet-900"
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-border/80 bg-white/85 px-2.5 text-[11px] font-semibold text-foreground/70 shadow-sm backdrop-blur-sm transition-colors hover:border-foreground/30 hover:bg-white hover:text-foreground"
         >
           +{overflow} more
           <ArrowRight aria-hidden="true" className="size-3" />
@@ -169,15 +148,19 @@ export function OverviewMembersCard({ tripId, members }: Props) {
   const showCluster = crewMembers.length > 0;
 
   return (
-    <div className="relative h-full overflow-hidden rounded-[inherit] bg-gradient-to-br from-violet-50 via-white to-rose-50/60">
-      <CommunityPattern />
+    <div className="relative h-full overflow-hidden rounded-[inherit] bg-card">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={membersCardBackgroundStyle}
+      />
 
       <div className="relative flex h-full flex-col gap-3 p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <div
               aria-hidden="true"
-              className="flex size-9 items-center justify-center rounded-full bg-violet-500 text-white shadow-sm ring-2 ring-violet-100"
+              className="flex size-9 items-center justify-center rounded-full bg-slate-800 text-white shadow-sm ring-2 ring-white/70"
             >
               <Users className="size-4" />
             </div>
@@ -187,7 +170,7 @@ export function OverviewMembersCard({ tripId, members }: Props) {
           </div>
           <Link
             href={`/trips/${tripId}/members`}
-            className="inline-flex items-center gap-1 rounded-full border border-violet-200/80 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-violet-700 shadow-sm backdrop-blur-sm transition-colors hover:border-violet-300 hover:bg-violet-50"
+            className="inline-flex items-center gap-1 rounded-full border border-border/80 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-foreground/75 shadow-sm backdrop-blur-sm transition-colors hover:border-foreground/30 hover:bg-white hover:text-foreground"
           >
             <UserPlus aria-hidden="true" className="size-3" />
             Invite
@@ -205,7 +188,7 @@ export function OverviewMembersCard({ tripId, members }: Props) {
                 <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                   Crew
                 </span>
-                <span className="h-px flex-1 bg-gradient-to-r from-violet-200/60 to-transparent" />
+                <span className="h-px flex-1 bg-gradient-to-r from-border/70 to-transparent" />
               </div>
               <AvatarCluster tripId={tripId} members={crewMembers} />
             </div>

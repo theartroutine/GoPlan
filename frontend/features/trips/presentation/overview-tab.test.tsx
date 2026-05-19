@@ -44,14 +44,18 @@ vi.mock("@/features/trips/presentation/trip-context", () => ({
 import { OverviewTab } from "./overview-tab";
 
 describe("OverviewTab", () => {
-  it("renders Dates + Members + Budget empty state when no budget; skips Description when absent", () => {
+  it("renders Dates + Members + Budget and About empty states when optional fields are absent", () => {
     tripContextValue.data.trip.budget_estimate = null;
     tripContextValue.data.trip.description = "";
     render(<OverviewTab />);
     expect(screen.getByText(/May 30/)).toBeInTheDocument();
     expect(screen.getByText(/1 member/i)).toBeInTheDocument();
-    expect(screen.getByText(/Not set yet/i)).toBeInTheDocument();
-    expect(screen.queryByText(/^About$/)).toBeNull();
+    expect(screen.getAllByText(/Not set yet/i)).toHaveLength(2);
+    expect(screen.getByText(/^About$/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Set a description/i })).toHaveAttribute(
+      "href",
+      "/trips/trip-1/edit",
+    );
   });
 
   it("renders Budget total and Description when present", () => {

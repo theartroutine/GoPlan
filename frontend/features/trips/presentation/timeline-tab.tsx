@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -52,8 +52,11 @@ import {
 } from "@/features/trips/presentation/timeline-view-model";
 import {
   buildDayHref,
+  buildNowHref,
   buildOverviewHref,
   resolveTimelineUrlState,
+  TIMELINE_NOW_FOCUS_QUERY_PARAM,
+  TIMELINE_NOW_FOCUS_QUERY_VALUE,
 } from "@/features/trips/presentation/timeline-url-state";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import { cn } from "@/shared/lib/utils";
@@ -98,6 +101,7 @@ type DeleteDialogState =
   | { kind: "section"; section: TimelineSection };
 
 type NowMarkerPlacement = ReturnType<typeof getNowMarkerPlacement>;
+const TIMELINE_NOW_MARKER_ELEMENT_ID = "timeline-now-marker";
 const EMPTY_ACTIVE_IDS: ReadonlySet<string> = new Set();
 
 function TimelineSkeleton() {
@@ -209,8 +213,7 @@ function getTimelineFocusScrollBehavior(): ScrollBehavior {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
-function scrollTimelineActivityIntoView(activityId: string): boolean {
-  const element = document.getElementById(timelineActivityElementId(activityId));
+function scrollTimelineElementIntoView(element: HTMLElement | null): boolean {
   if (typeof element?.scrollIntoView !== "function") return false;
 
   window.requestAnimationFrame(() => {
@@ -220,6 +223,14 @@ function scrollTimelineActivityIntoView(activityId: string): boolean {
     });
   });
   return true;
+}
+
+function scrollTimelineActivityIntoView(activityId: string): boolean {
+  return scrollTimelineElementIntoView(document.getElementById(timelineActivityElementId(activityId)));
+}
+
+function scrollTimelineNowMarkerIntoView(): boolean {
+  return scrollTimelineElementIntoView(document.getElementById(TIMELINE_NOW_MARKER_ELEMENT_ID));
 }
 
 function isNowMarkerBefore(activity: TimelineActivity, placement: NowMarkerPlacement): boolean {
@@ -238,13 +249,8 @@ function isNowMarkerAfter(activity: TimelineActivity, placement: NowMarkerPlacem
 
 function NowMarkerItem({ displayTime }: { displayTime: string }) {
   return (
-    <li className="flex items-center gap-2 py-1 text-xs font-semibold text-primary">
-      <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
-      <span className="h-0.5 min-w-6 flex-1 bg-primary/50" />
-      <span className="whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5">
-        Now · {displayTime}
-      </span>
-      <span className="h-0.5 min-w-6 flex-1 bg-primary/50" />
+    <li id={TIMELINE_NOW_MARKER_ELEMENT_ID} className="scroll-mt-24">
+      <NowDivider displayTime={displayTime} />
     </li>
   );
 }
@@ -289,24 +295,35 @@ function NowDivider({
   displayTime,
   href,
 }: {
-  label: string;
+  label?: string;
   displayTime: string;
-  href: string;
+  href?: string;
 }) {
+  const text = label ? `Now · ${label} · ${displayTime}` : `Now · ${displayTime}`;
+  const pillClassName =
+    "mx-2 shrink-0 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground transition-colors";
+
   return (
     <div
       className="relative my-1 flex items-center pl-7"
       role="separator"
-      aria-label={`Current time: ${label} ${displayTime}`}
+      aria-label={label ? `Current time: ${label} ${displayTime}` : `Current time: ${displayTime}`}
     >
       <span className="absolute left-0 size-4 animate-pulse rounded-full bg-primary ring-2 ring-primary/20" />
       <span className="h-0.5 flex-1 bg-primary/70" />
-      <Link
-        href={href}
-        className="mx-2 shrink-0 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      >
-        Now · {label} · {displayTime}
-      </Link>
+      {href ? (
+        <Link
+          href={href}
+          className={cn(
+            pillClassName,
+            "hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          )}
+        >
+          {text}
+        </Link>
+      ) : (
+        <span className={pillClassName}>{text}</span>
+      )}
       <span className="h-0.5 flex-1 bg-primary/70" />
     </div>
   );
@@ -408,6 +425,16 @@ export function TimelineTab() {
     [pathname, searchParamString, sectionIds, activitySectionIds],
   );
   const targetActivityId = timelineUrlState.targetActivityId ?? null;
+  const shouldFocusNowMarker =
+    searchParams.get(TIMELINE_NOW_FOCUS_QUERY_PARAM) === TIMELINE_NOW_FOCUS_QUERY_VALUE;
+  const lastNowMarkerFocusKeyRef = useRef<string | null>(null);
+  const selectedSection = useMemo(
+    () =>
+      data && timelineUrlState.dayId
+        ? data.sections.find((section) => section.id === timelineUrlState.dayId) ?? null
+        : null,
+    [data, timelineUrlState.dayId],
+  );
 
   useEffect(() => {
     if (!data || timelineUrlState.replacementHref === null) {
@@ -444,6 +471,27 @@ export function TimelineTab() {
     [data, now.date],
   );
 
+  useEffect(() => {
+    if (!shouldFocusNowMarker || targetActivityId || !selectedSection) {
+      lastNowMarkerFocusKeyRef.current = null;
+      return;
+    }
+
+    if (selectedSection.section_date !== now.date) {
+      lastNowMarkerFocusKeyRef.current = null;
+      return;
+    }
+
+    const focusKey = `${selectedSection.id}:${searchParamString}`;
+    if (lastNowMarkerFocusKeyRef.current === focusKey) {
+      return;
+    }
+
+    if (scrollTimelineNowMarkerIntoView()) {
+      lastNowMarkerFocusKeyRef.current = focusKey;
+    }
+  }, [now.date, searchParamString, selectedSection, shouldFocusNowMarker, targetActivityId]);
+
   if (loading && !data) return <TimelineSkeleton />;
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!data) return null;
@@ -453,9 +501,6 @@ export function TimelineTab() {
   const canCreateSections = canEdit && timelineData.permissions.can_create_sections;
   const canManageCustomTypes = canEdit && timelineData.permissions.can_manage_custom_types;
   const unavailableSectionDates = timelineData.sections.map((section) => section.section_date);
-  const selectedSection = timelineUrlState.dayId
-    ? timelineData.sections.find((section) => section.id === timelineUrlState.dayId) ?? null
-    : null;
 
   function sectionDateExists(sectionDate: string, excludeSectionId?: string): boolean {
     return timelineData.sections.some(
@@ -903,7 +948,7 @@ export function TimelineTab() {
                 <NowDivider
                   label={section.label}
                   displayTime={now.displayTime}
-                  href={buildDayHref(pathname, searchParamString, section.id)}
+                  href={buildNowHref(pathname, searchParamString, section.id)}
                 />
               )}
             </Fragment>

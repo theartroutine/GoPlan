@@ -8,6 +8,10 @@ import {
   budgetInputToPayload,
   normalizeBudgetInputForCurrencyChange,
 } from "@/features/trips/domain/money";
+import {
+  isTripDescriptionTooLong,
+  TRIP_DESCRIPTION_MAX_LENGTH,
+} from "@/features/trips/domain/trip-description";
 import type { TripDetail, UpdateTripPayload } from "@/features/trips/domain/types";
 import { bffUpdateTrip } from "@/features/trips/infrastructure/trips-api";
 import { BudgetEstimateInput } from "@/features/trips/presentation/budget-estimate-input";
@@ -15,12 +19,12 @@ import { CoverImagePicker } from "@/features/trips/presentation/cover-image-pick
 import { CurrencySelect } from "@/features/trips/presentation/currency-select";
 import type { DestinationPickerValue } from "@/features/trips/presentation/destination-picker";
 import { DestinationPicker } from "@/features/trips/presentation/destination-picker";
+import { TripDescriptionField } from "@/features/trips/presentation/trip-description-field";
 import { TimezonePicker } from "@/features/trips/presentation/timezone-picker";
 import { Button } from "@/shared/ui/button";
 import { DatePicker } from "@/shared/ui/date-picker";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
-import { Textarea } from "@/shared/ui/textarea";
 
 export function EditTripForm({
   trip,
@@ -81,10 +85,16 @@ export function EditTripForm({
 
     const form = new FormData(e.currentTarget);
     const destination = pickerValue?.destination ?? rawDestination;
+    const description = (form.get("description") as string | null) ?? "";
     const submittedBudgetEstimate = budgetInputToPayload(budgetEstimate, currencyCode);
 
     if (!destination.trim()) {
       setError("Please enter a destination.");
+      return;
+    }
+
+    if (isTripDescriptionTooLong(description)) {
+      setError(`Description must be ${TRIP_DESCRIPTION_MAX_LENGTH} characters or fewer.`);
       return;
     }
 
@@ -95,7 +105,7 @@ export function EditTripForm({
       name:        (form.get("name") as string) || undefined,
       start_date:  startDate || undefined,
       end_date:    endDate || undefined,
-      description: (form.get("description") as string) || undefined,
+      description,
     };
 
     // Include destination fields only when the user changed the destination.
@@ -216,15 +226,7 @@ export function EditTripForm({
           />
         </div>
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          name="description"
-          defaultValue={trip.description ?? ""}
-          rows={3}
-        />
-      </div>
+      <TripDescriptionField defaultValue={trip.description} />
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-3">
         <Button type="submit" disabled={isSubmitDisabled}>
