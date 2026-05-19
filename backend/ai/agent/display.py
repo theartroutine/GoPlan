@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, time
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -93,6 +93,16 @@ def _fmt_amount(value: int | str | Decimal, currency: str) -> dict:
     amount = Decimal(str(value))
     formatted = f"{amount:,.0f}" if amount == amount.to_integral_value() else f"{amount:,}"
     return {"kind": "amount", "value": formatted, "currency": currency}
+
+
+def _has_positive_amount(value) -> bool:
+    if value in (None, ""):
+        return False
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+    return amount.is_finite() and amount > 0
 
 
 def _location_label(payload: dict) -> str | None:
@@ -215,14 +225,17 @@ def _build_expense_create(payload: dict, trip_context: dict) -> dict:
     description = _non_empty_string(payload, "description")
     if description:
         meta.append({"label": "Description", "value": description})
-    return {
+    display = {
         "icon": "expense",
         "tone": "create",
         "kicker": "Expense",
         "title": payload.get("title", ""),
-        "hero": _fmt_amount(payload.get("total_amount", 0), currency),
         "meta": meta,
     }
+    amount = payload.get("total_amount")
+    if _has_positive_amount(amount):
+        display["hero"] = _fmt_amount(amount, currency)
+    return display
 
 
 def _build_expense_update(payload: dict, trip_context: dict) -> dict:

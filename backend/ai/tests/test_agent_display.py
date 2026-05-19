@@ -92,6 +92,17 @@ class DisplayBuilderTests(TestCase):
         self.assertIn("2,000,000", display["hero"]["value"])
         self.assertNotIn("fd46f358", repr(display))
 
+    def test_expense_create_without_amount_does_not_show_zero_amount(self):
+        display = build_display(
+            action_type="expense.create",
+            payload={"title": "Lunch"},
+            trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
+        )
+
+        self.assertEqual(display["icon"], "expense")
+        self.assertEqual(display["title"], "Lunch")
+        self.assertNotIn("hero", display)
+
     def test_expense_delete_displays_target_title_and_amount(self):
         display = build_display(
             action_type="expense.delete",

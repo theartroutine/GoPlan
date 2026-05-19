@@ -87,16 +87,25 @@ type Props = {
 
 function DetailLine({
   icon: Icon,
+  label,
   value,
 }: {
   icon: LucideIcon;
+  label: string;
   value: string;
 }) {
   if (!value) return null;
   return (
     <div className="flex min-w-0 items-start gap-2">
       <Icon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-foreground/45" />
-      <p className="min-w-0 break-words text-sm leading-5 text-foreground/85">{value}</p>
+      <div className="min-w-0">
+        <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {label}
+        </dt>
+        <dd className="mt-0.5 break-words text-sm leading-5 text-foreground/85">
+          {value}
+        </dd>
+      </div>
     </div>
   );
 }
@@ -301,26 +310,35 @@ export function TimelineActivityNode({
       )}
 
       {hasDetails && (
-        <div className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-          <DetailLine icon={StickyNote} value={activity.note} />
-          <DetailLine icon={MapPin} value={activity.meeting_point} />
-          <DetailLine icon={UserRound} value={activity.contact_name} />
-          <DetailLine icon={Phone} value={activity.contact_phone} />
-          <DetailLine icon={Ticket} value={activity.booking_reference} />
-          <DetailLine icon={UserRound} value={assigneeLabel} />
+        <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+          <DetailLine icon={StickyNote} label="Note" value={activity.note} />
+          <DetailLine icon={MapPin} label="Meeting point" value={activity.meeting_point} />
+          <DetailLine icon={UserRound} label="Contact" value={activity.contact_name} />
+          <DetailLine icon={Phone} label="Phone" value={activity.contact_phone} />
+          <DetailLine icon={Ticket} label="Booking" value={activity.booking_reference} />
+          <DetailLine icon={UserRound} label="Assigned to" value={assigneeLabel} />
           {activity.external_link && (
-            <a
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              href={activity.external_link}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <div className="flex min-w-0 items-start gap-2">
               <LinkIcon aria-hidden="true" className="size-3.5" />
-              Open link
-              <ExternalLink aria-hidden="true" className="size-3.5" />
-            </a>
+              <div className="min-w-0">
+                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Link
+                </dt>
+                <dd className="mt-0.5">
+                  <a
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    href={activity.external_link}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open link
+                    <ExternalLink aria-hidden="true" className="size-3.5" />
+                  </a>
+                </dd>
+              </div>
+            </div>
           )}
-        </div>
+        </dl>
       )}
     </div>
   );

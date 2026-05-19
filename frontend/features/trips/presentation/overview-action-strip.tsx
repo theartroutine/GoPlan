@@ -90,7 +90,10 @@ export function OverviewActionStrip({
                 variant="destructive"
                 size="sm"
                 disabled={loading}
-                onClick={() => void handleCancel()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleCancel();
+                }}
               >
                 {loading ? "Cancelling…" : "Yes, cancel"}
               </AlertDialogAction>
