@@ -2,7 +2,6 @@
 
 import {
   ChevronDown,
-  Clock,
   ExternalLink,
   Link as LinkIcon,
   MapPin,
@@ -16,6 +15,7 @@ import {
 import type { ReactNode } from "react";
 
 import type { TimelineActivity, TimelineActivityStatus } from "@/features/trips/domain/types";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -33,19 +33,49 @@ function formatTimeRange(activity: TimelineActivity): string {
   return start && end ? `${start} – ${end}` : start || end;
 }
 
-const CARD_STATUS_TONE: Record<TimelineActivity["status"], string> = {
-  UPCOMING: "border-border/60 bg-card",
-  IN_PROGRESS: "border-sky-200 bg-sky-50/70",
-  DONE: "border-border/50 bg-card opacity-70",
-  CANCELLED: "border-rose-200 bg-rose-50/50 opacity-70",
+function activityCardSurface(status: TimelineActivity["status"]): string {
+  if (status === "IN_PROGRESS")
+    return "border-sky-200/80 bg-gradient-to-br from-sky-50/80 via-white to-white";
+  if (status === "DONE")
+    return "border-emerald-200/60 bg-gradient-to-br from-emerald-50/40 via-white to-white opacity-90";
+  if (status === "CANCELLED")
+    return "border-rose-200/60 bg-gradient-to-br from-rose-50/40 via-white to-white opacity-70";
+  return "border-stone-200/70 bg-white";
+}
+
+function statusPillTone(status: TimelineActivity["status"]): string {
+  if (status === "IN_PROGRESS")
+    return "border-sky-300/60 bg-sky-100/80 text-sky-800 hover:bg-sky-200/70";
+  if (status === "DONE")
+    return "border-emerald-300/60 bg-emerald-100/80 text-emerald-800 hover:bg-emerald-200/70";
+  if (status === "CANCELLED")
+    return "border-rose-300/60 bg-rose-100/70 text-rose-800 hover:bg-rose-200/70";
+  return "border-stone-300/70 bg-white text-foreground/75 hover:bg-stone-50";
+}
+
+const TYPE_COLOR_TEXT: Record<string, string> = {
+  sky: "text-sky-700",
+  blue: "text-blue-700",
+  indigo: "text-indigo-700",
+  violet: "text-violet-700",
+  fuchsia: "text-fuchsia-700",
+  pink: "text-pink-700",
+  rose: "text-rose-700",
+  red: "text-red-700",
+  orange: "text-orange-700",
+  amber: "text-amber-700",
+  yellow: "text-yellow-700",
+  lime: "text-lime-700",
+  green: "text-green-700",
+  emerald: "text-emerald-700",
+  teal: "text-teal-700",
+  cyan: "text-cyan-700",
 };
 
-const STATUS_PILL_TONE: Record<TimelineActivity["status"], string> = {
-  UPCOMING: "border-border text-muted-foreground",
-  IN_PROGRESS: "border-sky-200 bg-sky-100 text-sky-900",
-  DONE: "border-emerald-200 bg-emerald-100 text-emerald-900",
-  CANCELLED: "border-rose-200 bg-rose-100 text-rose-900",
-};
+function typeColorText(token?: string | null): string {
+  if (!token) return "text-foreground/60";
+  return TYPE_COLOR_TEXT[token] ?? "text-foreground/60";
+}
 
 type Props = {
   activity: TimelineActivity;
@@ -55,23 +85,18 @@ type Props = {
   onStatusChange?: (status: TimelineActivityStatus) => void;
 };
 
-function DetailRow({
+function DetailLine({
   icon: Icon,
-  label,
   value,
 }: {
   icon: LucideIcon;
-  label: string;
   value: string;
 }) {
   if (!value) return null;
   return (
-    <div className="flex min-w-0 gap-2">
-      <Icon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-      <div className="min-w-0">
-        <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</dt>
-        <dd className="mt-0.5 break-words text-sm leading-5 text-foreground/85">{value}</dd>
-      </div>
+    <div className="flex min-w-0 items-start gap-2">
+      <Icon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-foreground/45" />
+      <p className="min-w-0 break-words text-sm leading-5 text-foreground/85">{value}</p>
     </div>
   );
 }
@@ -106,6 +131,10 @@ function activityAssigneeLabel(activity: TimelineActivity): string {
   return activity.assignee?.display_name ?? "";
 }
 
+function isFixedTimeMode(mode: TimelineActivity["time_mode"]): boolean {
+  return mode === "AT_TIME" || mode === "TIME_RANGE";
+}
+
 export function TimelineActivityNode({
   activity,
   isCurrent = false,
@@ -115,6 +144,7 @@ export function TimelineActivityNode({
 }: Props) {
   const timeText = formatTimeRange(activity);
   const typeLabel = activity.activity_type?.label ?? null;
+  const typeColor = typeColorText(activity.activity_type?.color_token);
   const buttons = activity.capabilities.can_update_status ? statusButtons(activity) : [];
   const canOpenStatusMenu = Boolean(onStatusChange && buttons.length > 0);
   const statusLabel = formatStatusLabel(activity.status);
@@ -134,6 +164,7 @@ export function TimelineActivityNode({
       activity.external_link ||
       assigneeLabel,
   );
+
   const statusControl = canOpenStatusMenu ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -142,7 +173,10 @@ export function TimelineActivityNode({
           size="xs"
           variant="outline"
           aria-label="Change status"
-          className={`shrink-0 uppercase ${STATUS_PILL_TONE[activity.status]}`}
+          className={cn(
+            "shrink-0 border font-semibold uppercase tracking-wide transition-colors",
+            statusPillTone(activity.status),
+          )}
         >
           {activity.status === "UPCOMING" ? "Status" : statusLabel}
           <ChevronDown aria-hidden="true" className="size-3" />
@@ -161,7 +195,10 @@ export function TimelineActivityNode({
     </DropdownMenu>
   ) : activity.status !== "UPCOMING" ? (
     <span
-      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase ${STATUS_PILL_TONE[activity.status]}`}
+      className={cn(
+        "shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        statusPillTone(activity.status),
+      )}
     >
       {statusLabel}
     </span>
@@ -172,119 +209,118 @@ export function TimelineActivityNode({
       data-current={isCurrent ? "true" : undefined}
       data-highlighted={isHighlighted ? "true" : undefined}
       data-status={activity.status}
-      className={[
-        "rounded-lg border p-4 shadow-sm transition-[background-color,border-color,box-shadow] duration-300 ease-out",
-        CARD_STATUS_TONE[activity.status],
+      className={cn(
+        "relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 ease-out",
+        activityCardSurface(activity.status),
         isHighlighted
-          ? "ring-2 ring-primary/70 ring-offset-2 ring-offset-background"
+          ? "ring-2 ring-amber-400/60 ring-offset-2 ring-offset-background"
           : isCurrent
-            ? "ring-2 ring-primary/40"
+            ? "ring-2 ring-sky-400/40"
             : "",
-      ].join(" ")}
+      )}
     >
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-        <div className="min-w-0">
-          <p className="text-base font-semibold leading-6 text-foreground">{activity.title}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {timeText && (
-              <span className="inline-flex min-h-6 items-center gap-1 rounded-full bg-muted px-2.5 py-1 font-medium text-foreground/80">
-                <Clock aria-hidden="true" className="size-3.5" />
-                {timeText}
-              </span>
-            )}
-            {typeLabel && (
-              <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide">
-                {typeLabel}
-              </span>
-            )}
-          </div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {timeText && (
+            <p
+              className={cn(
+                isFixedTimeMode(activity.time_mode)
+                  ? "tabular-nums text-sm font-bold leading-none text-foreground"
+                  : "text-[10px] font-bold uppercase leading-none tracking-[0.18em] text-foreground/55",
+              )}
+            >
+              {timeText}
+            </p>
+          )}
+          <p className="mt-1.5 break-words text-base font-semibold leading-snug text-foreground">
+            {activity.title}
+          </p>
+          {typeLabel && (
+            <p
+              className={cn(
+                "mt-1 text-[10px] font-bold uppercase leading-none tracking-[0.16em]",
+                typeColor,
+              )}
+            >
+              {typeLabel}
+            </p>
+          )}
         </div>
         {(statusControl || actions) && (
-          <div className="flex shrink-0 items-center justify-end gap-1.5 sm:justify-start">
+          <div className="flex shrink-0 items-center gap-1.5">
             {statusControl}
             {actions}
           </div>
         )}
       </div>
+
       {locationTitle && locationOpenUrl && (
         <a
-          className="mt-4 flex w-full flex-col gap-3 border-l-2 border-primary bg-primary/5 px-3 py-2.5 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex-row sm:items-center sm:justify-between"
+          className="group/loc mt-3 flex items-center gap-3 rounded-xl bg-foreground/[0.03] px-3 py-2.5 transition-colors hover:bg-foreground/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           href={locationOpenUrl}
           target="_blank"
           rel="noreferrer"
           aria-label={`Open directions to ${locationTitle}`}
         >
-          <span className="flex min-w-0 items-start gap-3">
-            <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <MapPin aria-hidden="true" className="size-4" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[10px] font-semibold uppercase tracking-wide text-primary">
-                Directions
-              </span>
-              <span className="block break-words text-sm font-semibold text-foreground">{locationTitle}</span>
-              {locationSubtitle && (
-                <span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">
-                  {locationSubtitle}
-                </span>
-              )}
-              {locationAddress && locationNote && locationNote !== locationAddress && (
-                <span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">
-                  {locationNote}
-                </span>
-              )}
-            </span>
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sky-500 text-white shadow-sm shadow-sky-500/30">
+            <MapPin aria-hidden="true" className="size-4" />
           </span>
-          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-primary">
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-foreground">
+              {locationTitle}
+            </span>
+            {locationSubtitle && (
+              <span className="mt-0.5 block truncate text-xs text-foreground/60">
+                {locationSubtitle}
+              </span>
+            )}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-sky-700 transition-transform group-hover/loc:translate-x-0.5">
             Open map
             <Navigation aria-hidden="true" className="size-3.5" />
           </span>
         </a>
       )}
+
       {locationTitle && !locationOpenUrl && (
-        <div className="mt-4 flex min-w-0 items-start gap-2 text-sm text-muted-foreground">
-          <MapPin aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+        <div className="mt-3 flex items-start gap-2.5">
+          <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground/55" />
           <div className="min-w-0">
-            <p className="break-words text-foreground/80">{locationTitle}</p>
+            <p className="break-words text-sm text-foreground/85">{locationTitle}</p>
             {locationSubtitle && (
-              <p className="mt-0.5 break-words text-xs leading-5 text-muted-foreground">
+              <p className="mt-0.5 break-words text-xs leading-5 text-foreground/55">
                 {locationSubtitle}
               </p>
             )}
           </div>
         </div>
       )}
+
       {activity.location.location_note && !locationSubtitle && (
-        <p className="mt-1 text-xs text-muted-foreground">{activity.location.location_note}</p>
+        <p className="mt-2 text-xs text-foreground/55">{activity.location.location_note}</p>
       )}
+
       {hasDetails && (
-        <dl className="mt-4 grid gap-x-6 gap-y-3 border-t border-border/60 pt-4 sm:grid-cols-2 lg:grid-cols-3">
-          <DetailRow icon={StickyNote} label="Note" value={activity.note} />
-          <DetailRow icon={MapPin} label="Meeting point" value={activity.meeting_point} />
-          <DetailRow icon={UserRound} label="Contact" value={activity.contact_name} />
-          <DetailRow icon={Phone} label="Phone" value={activity.contact_phone} />
-          <DetailRow icon={Ticket} label="Booking" value={activity.booking_reference} />
-          <DetailRow icon={UserRound} label="Assigned to" value={assigneeLabel} />
+        <div className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+          <DetailLine icon={StickyNote} value={activity.note} />
+          <DetailLine icon={MapPin} value={activity.meeting_point} />
+          <DetailLine icon={UserRound} value={activity.contact_name} />
+          <DetailLine icon={Phone} value={activity.contact_phone} />
+          <DetailLine icon={Ticket} value={activity.booking_reference} />
+          <DetailLine icon={UserRound} value={assigneeLabel} />
           {activity.external_link && (
-            <div className="flex min-w-0 gap-2">
-              <LinkIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-              <div>
-                <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Link</dt>
-                <dd className="mt-0.5">
-                  <a
-                    className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    href={activity.external_link}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open link
-                    <ExternalLink aria-hidden="true" className="size-3.5" />
-                  </a>
-                </dd>
-              </div>
-            </div>
+            <a
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              href={activity.external_link}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <LinkIcon aria-hidden="true" className="size-3.5" />
+              Open link
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+            </a>
           )}
-        </dl>
+        </div>
       )}
     </div>
   );
