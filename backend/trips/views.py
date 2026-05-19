@@ -215,6 +215,13 @@ class TripInvitationsAPIView(APIView):
     permission_classes = TRIP_PERMISSIONS
     throttle_scope = "trips_send_invitations"
 
+    def get_throttles(self):
+        if self.request.method == "GET":
+            self.throttle_scope = "trips_invitations_list"
+        else:
+            self.throttle_scope = "trips_send_invitations"
+        return super().get_throttles()
+
     def get(self, request, trip_id):
         try:
             trip, membership = get_trip_detail(trip_id, request.user)

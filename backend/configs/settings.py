@@ -197,6 +197,7 @@ REST_FRAMEWORK = {
         'public_media': '600/hour',
         'trips_list_create': '60/hour',
         'trips_detail_update': '120/hour',
+        'trips_invitations_list': '240/hour',
         'trips_send_invitations': '10/hour',
         'trips_invitable_friends': '60/hour',
         'trips_accept_invitation': '30/hour',

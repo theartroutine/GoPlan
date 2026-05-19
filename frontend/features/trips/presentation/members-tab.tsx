@@ -130,7 +130,15 @@ export function MembersTab() {
 
   useEffect(() => {
     if (isCaptain && data) {
-      bffGetInvitations(tripId).then((d) => setPendingInvitations(d.invitations));
+      bffGetInvitations(tripId)
+        .then((d) => {
+          setPendingInvitations(d.invitations);
+          setActionError(null);
+        })
+        .catch(() => {
+          setPendingInvitations([]);
+          setActionError("Could not load pending invitations. Please try again.");
+        });
     }
   }, [isCaptain, tripId, data]);
 
@@ -161,7 +169,14 @@ export function MembersTab() {
   }
 
   function refreshInvitations() {
-    bffGetInvitations(tripId).then((d) => setPendingInvitations(d.invitations));
+    bffGetInvitations(tripId)
+      .then((d) => {
+        setPendingInvitations(d.invitations);
+        setActionError(null);
+      })
+      .catch(() => {
+        setActionError("Could not load pending invitations. Please try again.");
+      });
   }
 
   return (
