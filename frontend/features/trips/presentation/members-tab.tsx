@@ -26,23 +26,23 @@ import { UserAvatar } from "@/shared/ui/user-avatar";
 
 function CaptainSpotlight({ member }: { member: TripMemberItem }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 via-orange-50/40 to-white p-4 shadow-sm sm:p-5">
+    <div className="relative overflow-hidden rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-3 sm:px-4">
       <div className="flex items-center gap-4">
         <div className="relative shrink-0">
           <UserAvatar
             user={member.user}
-            size="lg"
+            size="default"
             className="ring-2 ring-white shadow-sm"
           />
           <span
             aria-hidden="true"
-            className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-amber-500 text-white shadow ring-2 ring-white"
+            className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm ring-2 ring-white"
           >
-            <Crown className="size-3.5" />
+            <Crown className="size-3" />
           </span>
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-semibold leading-tight">
+          <p className="truncate text-sm font-semibold leading-tight">
             {member.user.display_name}
           </p>
           <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700/90">
@@ -63,7 +63,7 @@ function MemberTile({
 }) {
   return (
     <div
-      className="group relative flex flex-col items-center gap-2.5 rounded-2xl border border-border/50 bg-white/80 p-4 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:bg-white hover:shadow-md sm:p-5"
+      className="group relative flex min-h-16 items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-3 transition-colors hover:border-border hover:bg-muted/35"
       title={
         member.user.identify_tag
           ? `${member.user.display_name} · @${member.user.identify_tag}`
@@ -72,18 +72,25 @@ function MemberTile({
     >
       <UserAvatar
         user={member.user}
-        size="lg"
-        className="ring-2 ring-white shadow-sm"
+        size="default"
+        className="shrink-0 ring-2 ring-white"
       />
-      <p className="line-clamp-1 max-w-full text-center text-sm font-medium leading-tight">
-        {member.user.display_name}
-      </p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium leading-tight">
+          {member.user.display_name}
+        </p>
+        {member.user.identify_tag && (
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            @{member.user.identify_tag}
+          </p>
+        )}
+      </div>
       {onRequestRemove && (
         <button
           type="button"
           onClick={onRequestRemove}
           aria-label={`Remove ${member.user.display_name}`}
-          className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full border border-border/60 bg-white/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-all hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
         >
           <UserMinus className="size-3.5" />
         </button>
@@ -158,14 +165,12 @@ export function MembersTab() {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-br from-orange-50/50 via-white to-sky-50/40 p-4 shadow-sm sm:p-6">
-      <header className="mb-5 flex items-end justify-between gap-3">
+    <div className="space-y-5">
+      <header className="flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-3xl font-bold leading-none tracking-tight sm:text-4xl">
-            {members.length}
-          </p>
-          <p className="mt-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-            {members.length === 1 ? "member" : "members"}
+          <h1 className="text-xl font-semibold tracking-tight">Members</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {members.length} {members.length === 1 ? "member" : "members"} in this trip
           </p>
         </div>
         {isCaptain && !isTerminal && (
@@ -181,7 +186,7 @@ export function MembersTab() {
       </header>
 
       {actionError && (
-        <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {actionError}
         </p>
       )}
@@ -190,7 +195,7 @@ export function MembersTab() {
         {captain && <CaptainSpotlight member={captain} />}
 
         {others.length > 0 && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {others.map((m) => (
               <MemberTile
                 key={m.membership_id}

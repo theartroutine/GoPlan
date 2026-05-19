@@ -48,7 +48,6 @@ function TripShell({ children }: { children: React.ReactNode }) {
   const portalTarget = mounted ? document.getElementById("trip-nav-portal") : null;
 
   const TAB_TITLES: Record<string, string> = {
-    members: "Members",
     timeline: "Timeline",
     expenses: "Expenses",
   };
