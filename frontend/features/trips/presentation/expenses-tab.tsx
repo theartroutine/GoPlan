@@ -36,10 +36,7 @@ import { ExpenseDetailDrawer } from "@/features/trips/presentation/expense-detai
 import { ExpenseFormDialog } from "@/features/trips/presentation/expense-form-dialog";
 import { ExpenseListControls } from "@/features/trips/presentation/expense-list-controls";
 import { ExpenseListRow } from "@/features/trips/presentation/expense-list-row";
-import {
-  ExpensePersonalBalanceCard,
-  ExpenseSummaryStrip,
-} from "@/features/trips/presentation/expense-summary-strip";
+import { ExpenseSummaryStrip } from "@/features/trips/presentation/expense-summary-strip";
 import {
   buildExpensesHref,
   filterExpenses,
@@ -530,8 +527,8 @@ export function ExpensesTab() {
           onCreate={() => setCreateDialogOpen(true)}
         />
       ) : (
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px] xl:items-start xl:gap-x-4">
-          <div className="min-w-0 xl:col-start-1 xl:row-start-1">
+        <div className="space-y-3">
+          <div className="min-w-0">
             <ExpenseListControls
               filter={expenseUrlState.filter}
               query={expenseUrlState.query}
@@ -541,7 +538,7 @@ export function ExpensesTab() {
             />
           </div>
 
-          <section className="min-w-0 xl:col-start-1 xl:row-start-2" aria-label="Expense list">
+          <section className="min-w-0" aria-label="Expense list">
             {expenseUrlState.visibleExpenses.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border bg-card px-4 py-10 text-center">
                 <p className="text-sm font-medium text-foreground">
@@ -564,10 +561,6 @@ export function ExpensesTab() {
               </div>
             )}
           </section>
-
-          <div className="min-w-0 xl:col-start-2 xl:row-start-2 xl:sticky xl:top-4 xl:self-start">
-            <ExpensePersonalBalanceCard dashboard={dashboard} />
-          </div>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -171,7 +171,9 @@ describe("ExpensesTab", () => {
     expect(await screen.findByText("Total expenses")).not.toBeNull();
     expect(screen.queryByText("Trip money overview")).toBeNull();
     expect(screen.queryByText("1 expense needs attention")).toBeNull();
-    expect(screen.getByText("My balance")).not.toBeNull();
+    const summary = screen.getByRole("region", { name: "Expense summary" });
+    expect(within(summary).getByText("My balance")).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "Personal expense balance" })).toBeNull();
     expect(screen.getByText("+100.000 ₫")).not.toBeNull();
     expect(screen.getByText(/Holding/)).not.toBeNull();
     expect(screen.getByText(/group surplus/)).not.toBeNull();
