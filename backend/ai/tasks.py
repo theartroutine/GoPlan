@@ -4,7 +4,6 @@ import logging
 
 from billiard.exceptions import SoftTimeLimitExceeded
 from celery import shared_task
-from celery.exceptions import Retry
 
 from ai.agent.runner import run_goplan_ai_agent
 from ai.deepseek import DeepSeekProviderError
@@ -47,6 +46,10 @@ def _handle_failure(task, *, interaction: AIInteraction, error_code: str) -> Non
     """
     if error_code in _RETRY_POLICY:
         max_retries, schedule = _RETRY_POLICY[error_code]
+        if task.request.retries >= max_retries:
+            finish_interaction_failure(interaction=interaction, error_code=error_code)
+            return
+
         countdown = _retry_countdown(schedule, task.request.retries)
         release_interaction_for_retry(interaction=interaction)
         # task.retry() always raises; it never returns.

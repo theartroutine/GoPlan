@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from django.test import TestCase
@@ -24,7 +24,7 @@ from ai.services import (
     message_for_error_code,
     recover_stale_ai_interactions,
 )
-from ai.tasks import run_goplan_ai_interaction
+from ai.tasks import _handle_failure, run_goplan_ai_interaction
 from chat.models import ChatMessage
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole
@@ -400,6 +400,31 @@ class RetryPolicyTests(TestCase):
         with self.assertRaises(DeepSeekProviderError):
             run_goplan_ai_interaction(str(self.interaction.id))
         mock_finish.assert_not_called()
+
+    def test_exhausted_retryable_error_finishes_with_original_error_code(self):
+        task = SimpleNamespace(
+            request=SimpleNamespace(retries=1),
+            retry=Mock(side_effect=AssertionError("retry should not be called")),
+        )
+
+        _handle_failure(
+            task,
+            interaction=self.interaction,
+            error_code=AIInteractionErrorCode.PROVIDER_BAD_RESPONSE,
+        )
+
+        self.interaction.refresh_from_db()
+        self.assertEqual(self.interaction.status, AIInteractionStatus.FAILED)
+        self.assertEqual(
+            self.interaction.error_code,
+            AIInteractionErrorCode.PROVIDER_BAD_RESPONSE,
+        )
+        self.assertIsNotNone(self.interaction.response_message_id)
+        self.assertEqual(
+            self.interaction.response_message.content,
+            message_for_error_code(AIInteractionErrorCode.PROVIDER_BAD_RESPONSE),
+        )
+        task.retry.assert_not_called()
 
     # -------- Non-retryable error codes --------
 

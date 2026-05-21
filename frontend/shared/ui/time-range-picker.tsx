@@ -14,7 +14,7 @@ type Props = {
   sectionDate: string; // YYYY-MM-DD
   tripTimezone: string;
   value: TimeRangeValue;
-  onChange: (next: { start: string; end: string }) => void;
+  onChange: (next: TimeRangeValue) => void;
   onError?: (error: string | null) => void;
   presets?: TimeRangePreset[];
   disabled?: boolean;
@@ -65,7 +65,9 @@ export function TimeRangePicker({
   );
 
   const error = useMemo(() => {
-    if (!start || !end) return null;
+    if (start && !end) return "End time is required.";
+    if (!start && end) return "Start time is required.";
+    if (!start && !end) return null;
     if (start >= end) return "End time must be after start time.";
     return null;
   }, [start, end]);
@@ -79,9 +81,10 @@ export function TimeRangePicker({
     endRef.current = nextEnd;
     setStart(nextStart);
     setEnd(nextEnd);
-    if (nextStart && nextEnd && nextStart < nextEnd) {
-      onChangeRef.current({ start: nextStart, end: nextEnd });
-    }
+    onChangeRef.current({
+      start: nextStart || null,
+      end: nextEnd || null,
+    });
   }
 
   function updateStart(nextStart: string) {
