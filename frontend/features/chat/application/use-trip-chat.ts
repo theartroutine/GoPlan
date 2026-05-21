@@ -665,7 +665,11 @@ export function useTripChat(
           dispatch({ type: "LOCK_SEND_TERMINAL", clientMessageId });
           return "failed";
         }
-        if (errorCode === "AI_BUSY" || errorCode === "INVALID_AI_PROMPT") {
+        if (
+          errorCode === "AI_BUSY" ||
+          errorCode === "INVALID_AI_PROMPT" ||
+          errorCode === "THROTTLED"
+        ) {
           dispatch({ type: "DROP_PENDING", clientMessageId });
           dispatch({ type: "WS_ERROR", errorCode });
           return "blocked";

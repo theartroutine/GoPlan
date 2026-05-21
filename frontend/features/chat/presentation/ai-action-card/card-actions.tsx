@@ -13,7 +13,7 @@ type Props = {
 };
 
 export function CardActions({ draft, pending, onConfirm, onCancel }: Props) {
-  if (draft.status !== "READY") return null;
+  if (draft.status !== "READY" && draft.status !== "NEEDS_INFO") return null;
   if (!draft.can_confirm && !draft.can_cancel) return null;
   return (
     <div className="mt-3 flex justify-end gap-2">

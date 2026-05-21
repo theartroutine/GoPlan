@@ -163,6 +163,25 @@ describe("ChatRoom", () => {
     expect(screen.getByLabelText("Message")).toBeDefined();
   });
 
+  it("shows throttling warning while keeping the composer available", () => {
+    chatMock.state.errorCode = "THROTTLED";
+
+    render(
+      <ChatRoom
+        tripId="trip-1"
+        isTerminal={false}
+        currentUser={CURRENT_USER}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Bạn đang gửi GoPlanAI quá nhanh. Prompt vẫn ở ô nhập, hãy gửi lại sau.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Message")).toBeDefined();
+  });
+
   it("keeps terminal chat history read-only, including reactions and deletes", () => {
     chatMock.state.messages = [
       makeMessage({

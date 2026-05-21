@@ -43,6 +43,9 @@ function getChatWarning(errorCode: string | null): string | null {
   if (errorCode === "INVALID_AI_PROMPT") {
     return "Bạn muốn hỏi GoPlanAI điều gì?";
   }
+  if (errorCode === "THROTTLED") {
+    return "Bạn đang gửi GoPlanAI quá nhanh. Prompt vẫn ở ô nhập, hãy gửi lại sau.";
+  }
   if (
     errorCode === "REACTION_DUPLICATE" ||
     errorCode === "REACTION_NOT_FOUND" ||

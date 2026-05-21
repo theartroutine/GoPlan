@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AIActionDraft } from "@/features/chat/domain/ai-action-drafts";
 import {
+  cancelAIActionDraft,
   confirmAIActionDraft,
   patchAIActionDraft,
 } from "@/features/chat/infrastructure/ai-action-drafts-api";
@@ -201,6 +202,50 @@ describe("AIActionCard", () => {
     expect(
       await screen.findByRole("img", { name: "Sẵn sàng" }),
     ).toBeInTheDocument();
+  });
+
+  it("allows cancelling needs-info drafts without filling fields first", async () => {
+    vi.mocked(cancelAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({
+        status: "CANCELLED",
+        can_confirm: false,
+        can_cancel: false,
+        can_edit: false,
+        missing_fields: [{ name: "total_amount", label: "Amount" }],
+      }),
+    });
+    const onDraftChanged = vi.fn();
+
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          can_edit: true,
+          missing_fields: [{ name: "total_amount", label: "Amount" }],
+          preview: { title: "Lunch" },
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Lunch",
+            tone: "create",
+          },
+        })}
+        onDraftChanged={onDraftChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Hủy" }));
+
+    expect(cancelAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1");
+    expect(
+      await screen.findByRole("img", { name: "Đã hủy" }),
+    ).toBeInTheDocument();
+    expect(onDraftChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "CANCELLED" }),
+    );
   });
 
   it("edits synthetic time range fields without losing entered values", async () => {
