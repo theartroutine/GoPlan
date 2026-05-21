@@ -66,7 +66,7 @@ describe("AIActionCard", () => {
     vi.clearAllMocks();
   });
 
-  it("shows confirm and cancel for authorized ready drafts", () => {
+  it("shows Vietnamese confirm and cancel actions for authorized ready drafts", () => {
     render(
       <AIActionCard
         tripId="trip-1"
@@ -75,8 +75,9 @@ describe("AIActionCard", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Confirm/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Cancel/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Xác nhận" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hủy" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Sẵn sàng" })).toBeInTheDocument();
   });
 
   it("hides action buttons for unauthorized ready drafts", () => {
@@ -88,8 +89,8 @@ describe("AIActionCard", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: /Confirm/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Cancel/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Xác nhận" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Hủy" })).toBeNull();
   });
 
   it("calls confirm handler and reports changed draft", async () => {
@@ -109,10 +110,10 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Confirm/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận" }));
 
     expect(
-      await screen.findByRole("img", { name: "Confirmed" }),
+      await screen.findByRole("img", { name: "Đã xác nhận" }),
     ).toBeInTheDocument();
     expect(onDraftChanged).toHaveBeenCalledWith(
       expect.objectContaining({ status: "CONFIRMED" }),
@@ -142,13 +143,13 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Confirm/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận" }));
 
     expect(
-      await screen.findByRole("img", { name: "Expired" }),
+      await screen.findByRole("img", { name: "Đã hết hạn" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Draft expired.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Confirm/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Xác nhận" })).toBeNull();
     expect(onDraftChanged).toHaveBeenCalledWith(expiredDraft);
   });
 
@@ -189,16 +190,16 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Amount"), {
+    fireEvent.change(screen.getByLabelText("Số tiền"), {
       target: { value: "500000" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
 
     expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
       total_amount: "500000",
     });
     expect(
-      await screen.findByRole("img", { name: "Ready" }),
+      await screen.findByRole("img", { name: "Sẵn sàng" }),
     ).toBeInTheDocument();
   });
 
@@ -261,19 +262,19 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Starts at"), {
+    fireEvent.change(screen.getByLabelText("Bắt đầu"), {
       target: { value: "08:30" },
     });
-    fireEvent.change(screen.getByLabelText("Ends at"), {
+    fireEvent.change(screen.getByLabelText("Kết thúc"), {
       target: { value: "10:00" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
 
     expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
       start_time: "08:30",
       end_time: "10:00",
     });
-    expect(await screen.findByRole("img", { name: "Ready" })).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "Sẵn sàng" })).toBeInTheDocument();
   });
 
   it("parses JSON missing fields before patching drafts", async () => {
@@ -297,10 +298,10 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Activity details"), {
+    fireEvent.change(screen.getByLabelText("Chi tiết hoạt động"), {
       target: { value: '{"title":"Museum"}' },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
 
     await waitFor(() => {
       expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
@@ -366,12 +367,12 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Title"), {
+    fireEvent.change(screen.getByLabelText("Tiêu đề"), {
       target: { value: "Lunch" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
 
-    await screen.findByLabelText("Amount");
+    await screen.findByLabelText("Số tiền");
     expect(patchAIActionDraft).toHaveBeenNthCalledWith(
       1,
       "trip-1",
@@ -379,10 +380,10 @@ describe("AIActionCard", () => {
       { title: "Lunch" },
     );
 
-    fireEvent.change(screen.getByLabelText("Amount"), {
+    fireEvent.change(screen.getByLabelText("Số tiền"), {
       target: { value: "500000" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
 
     await waitFor(() => {
       expect(patchAIActionDraft).toHaveBeenNthCalledWith(
@@ -428,6 +429,8 @@ describe("AIActionCard", () => {
 
     expect(screen.getByText("Dinh I")).toBeInTheDocument();
     expect(screen.queryByText("Activity · Sightseeing")).toBeNull();
+    expect(screen.queryByText("Whole group")).toBeNull();
+    expect(screen.getByText("Cả nhóm")).toBeInTheDocument();
     expect(screen.getByText("08:30 – 10:00")).toBeInTheDocument();
     expect(screen.getByText("Dinh I Palace")).toBeInTheDocument();
     expect(screen.getByText("Hotel lobby")).toBeInTheDocument();

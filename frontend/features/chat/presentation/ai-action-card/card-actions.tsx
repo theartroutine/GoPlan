@@ -25,7 +25,7 @@ export function CardActions({ draft, pending, onConfirm, onCancel }: Props) {
           disabled={pending !== null}
           onClick={onCancel}
         >
-          <X className="size-3.5" /> Cancel
+          <X className="size-3.5" /> Hủy
         </Button>
       ) : null}
       {draft.can_confirm ? (
@@ -36,7 +36,7 @@ export function CardActions({ draft, pending, onConfirm, onCancel }: Props) {
           onClick={onConfirm}
           className="bg-emerald-600 ring-2 ring-emerald-200 hover:bg-emerald-700"
         >
-          <Check className="size-3.5" /> Confirm
+          <Check className="size-3.5" /> Xác nhận
         </Button>
       ) : null}
     </div>

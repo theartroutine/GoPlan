@@ -16,11 +16,13 @@ const AI_MESSAGE_PREFIX = `${GOPLAN_AI_MENTION} `;
 const MAX_AI_PROMPT_LENGTH = MAX_CONTENT_LENGTH - AI_MESSAGE_PREFIX.length;
 const EMPTY_AI_PROMPT_MESSAGE = "Bạn muốn hỏi GoPlanAI điều gì?";
 
+type ComposerSendResult = void | "ok" | "duplicate" | "failed" | "blocked";
+
 type Props = {
   disabled: boolean;
   isSending: boolean;
   placeholder?: string;
-  onSend: (content: string) => void;
+  onSend: (content: string) => ComposerSendResult | Promise<ComposerSendResult>;
 };
 
 function normalizePlainText(value: string): string {
@@ -43,10 +45,12 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
   const [draft, setDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [localSending, setLocalSending] = useState(false);
 
   const normalizedDraft = normalizePlainText(draft);
+  const sending = isSending || localSending;
   const canSubmit =
-    !disabled && !isSending && (hasMention || normalizedDraft.length > 0);
+    !disabled && !sending && (hasMention || normalizedDraft.length > 0);
 
   function applyInput(rawValue: string): void {
     const parsed = parseGoPlanAIMention(rawValue);
@@ -72,22 +76,34 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
     setError(null);
   }
 
-  function submit(): void {
+  async function submit(): Promise<void> {
     if (!canSubmit) return;
     if (hasMention && normalizedDraft.length === 0) {
       setError(EMPTY_AI_PROMPT_MESSAGE);
       return;
     }
 
+    const submittedHasMention = hasMention;
+    const submittedDraft = draft;
     const content = hasMention
       ? `${GOPLAN_AI_MENTION} ${limitDraftForMode(normalizedDraft, true)}`.trim()
       : normalizedDraft;
 
-    onSend(content);
-    setHasMention(false);
-    setDraft("");
+    setLocalSending(true);
     setMenuOpen(false);
     setError(null);
+    try {
+      const result = await onSend(content);
+      if (result === "blocked") {
+        setHasMention(submittedHasMention);
+        setDraft(submittedDraft);
+        return;
+      }
+      setHasMention(false);
+      setDraft("");
+    } finally {
+      setLocalSending(false);
+    }
   }
 
   function handleChange(event: ChangeEvent<HTMLTextAreaElement>): void {
@@ -121,7 +137,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
 
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      submit();
+      void submit();
     }
   }
 
@@ -140,9 +156,9 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
             rows={1}
             maxLength={hasMention ? MAX_AI_PROMPT_LENGTH : MAX_CONTENT_LENGTH}
             placeholder={
-              placeholder ?? (hasMention ? "Ask GoPlanAI" : "Write a message")
+              placeholder ?? (hasMention ? "Hỏi GoPlanAI" : "Nhắn tin")
             }
-            disabled={disabled}
+            disabled={disabled || sending}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             className="min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
@@ -152,12 +168,12 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
         <button
           type="button"
           disabled={!canSubmit}
-          onClick={submit}
+          onClick={() => void submit()}
           className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground transition-all hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/40"
-          aria-label="Send message"
-          aria-busy={isSending}
+          aria-label="Gửi tin nhắn"
+          aria-busy={sending}
         >
-          {isSending ? (
+          {sending ? (
             <Loader2 className="size-4 animate-spin text-background" aria-hidden="true" />
           ) : (
             <ArrowUp className="size-4 stroke-[2.5] text-background" aria-hidden="true" />

@@ -361,8 +361,8 @@ class ToolHandlerTests(TestCase):
         self.assertEqual(
             result.draft.display["meta"],
             [
-                {"label": "From", "value": member.display_name},
-                {"label": "To", "value": self.user.display_name},
+                {"label": "Người chuyển", "value": member.display_name},
+                {"label": "Người nhận", "value": self.user.display_name},
             ],
         )
 

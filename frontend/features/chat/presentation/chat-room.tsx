@@ -38,7 +38,7 @@ function getChatWarning(errorCode: string | null): string | null {
     return "This trip is closed. Chat changes are disabled.";
   }
   if (errorCode === "AI_BUSY") {
-    return "GoPlanAI đang trả lời. Thử lại sau.";
+    return "GoPlanAI đang trả lời. Prompt của bạn vẫn ở ô nhập, hãy gửi lại sau.";
   }
   if (errorCode === "INVALID_AI_PROMPT") {
     return "Bạn muốn hỏi GoPlanAI điều gì?";
@@ -134,9 +134,7 @@ export function ChatRoom({
         <RichComposer
           disabled={false}
           isSending={chat.isSending}
-          onSend={(content) => {
-            void chat.sendMessage(content);
-          }}
+          onSend={(content) => chat.sendMessage(content)}
         />
       )}
     </div>

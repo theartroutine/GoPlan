@@ -13,6 +13,7 @@ import {
   TimeRangePicker,
   type TimeRangeValue,
 } from "@/shared/ui/time-range-picker";
+import { translateLegacyActionText } from "./display-normalization";
 
 type Props = {
   fields: AIActionDraftMissingField[];
@@ -53,14 +54,40 @@ function payloadFieldNames(field: AIActionDraftMissingField): string[] {
   return [field.name];
 }
 
+const PRESET_LABEL_TRANSLATIONS: Record<string, string> = {
+  Afternoon: "Buổi chiều",
+  Breakfast: "Bữa sáng",
+  Dinner: "Bữa tối",
+  Evening: "Buổi tối",
+  Late: "Khuya",
+  Lunch: "Bữa trưa",
+  Morning: "Buổi sáng",
+};
+
+function localizeField(field: AIActionDraftMissingField): AIActionDraftMissingField {
+  return {
+    ...field,
+    label: translateLegacyActionText(field.label) ?? field.label,
+    options: field.options?.map((option) => ({
+      ...option,
+      label: translateLegacyActionText(option.label) ?? option.label,
+    })),
+    presets: field.presets?.map((preset) => ({
+      ...preset,
+      label: PRESET_LABEL_TRANSLATIONS[preset.label] ?? preset.label,
+    })),
+  };
+}
+
 export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
+  const localizedFields = fields.map(localizeField);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const valuesRef = useRef<Record<string, unknown>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>(
     {},
   );
 
-  const editableFields = fields.filter((f) => f.type !== "target");
+  const editableFields = localizedFields.filter((f) => f.type !== "target");
   const allowedPayloadNames = new Set(editableFields.flatMap(payloadFieldNames));
   const editableFieldByPayloadName = new Map<string, AIActionDraftMissingField>();
   for (const field of editableFields) {
@@ -102,7 +129,7 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
         try {
           payload[k] = JSON.parse(v);
         } catch {
-          setError(k, "Enter valid JSON.");
+          setError(k, "Nhập JSON hợp lệ.");
           return;
         }
       } else {
@@ -110,19 +137,19 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
       }
     }
     if (Object.keys(payload).length === 0) {
-      toast.error("Fill in at least one field before saving.");
+      toast.error("Nhập ít nhất một trường trước khi lưu.");
       return;
     }
     try {
       await onSave(payload);
       setFieldErrors({});
-      toast.success("Draft updated");
+      toast.success("Đã cập nhật draft");
     } catch (err: unknown) {
       const fe = fieldErrorsFromError(err);
       if (fe) {
         for (const [k, v] of Object.entries(fe)) setError(k, v);
       } else {
-        toast.error("Could not save. Try again.");
+        toast.error("Không lưu được. Hãy thử lại.");
       }
     }
   }
@@ -133,7 +160,7 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
         <div key={field.name} className="block space-y-1 text-xs">
           <span className="font-medium text-muted-foreground">{field.label}</span>
           <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-muted-foreground">
-            Ask GoPlanAI to clarify the target.
+            Hãy nhờ GoPlanAI làm rõ đối tượng cần thao tác.
           </p>
         </div>
       );
@@ -186,7 +213,7 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
             onChange={(e) => setField(field.name, e.target.value)}
             className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <option value="">Select…</option>
+            <option value="">Chọn...</option>
             {field.options.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -247,7 +274,7 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
 
   return (
     <div className="mt-3 space-y-3 border-t border-border pt-3">
-      {fields.map((field) => renderField(field))}
+      {localizedFields.map((field) => renderField(field))}
       {editableFields.length > 0 ? (
         <div className="flex justify-end">
           <Button
@@ -256,7 +283,7 @@ export function FieldEditor({ fields, pending, tripTimezone, onSave }: Props) {
             onClick={handleSubmit}
             disabled={pending || hasInlineError}
           >
-            {pending ? "Saving…" : "Save info"}
+            {pending ? "Đang lưu..." : "Lưu thông tin"}
           </Button>
         </div>
       ) : null}

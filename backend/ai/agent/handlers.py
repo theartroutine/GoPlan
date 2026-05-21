@@ -175,7 +175,7 @@ def _transfer_snapshot(*, trip, transfer_id) -> dict:
         "currency_code": transfer.settlement.trip.currency_code,
         "from_name": from_name,
         "to_name": to_name,
-        "title": f"Transfer from {from_name} to {to_name}",
+        "title": f"{from_name} chuyển cho {to_name}",
     }
 
 

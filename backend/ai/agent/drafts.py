@@ -211,18 +211,51 @@ def can_confirm_action_draft(draft: AIActionDraft, *, viewer) -> bool:
     return _can_confirm_transfer(draft, viewer)
 
 
-def _choice_options(choices) -> list[dict]:
+STATIC_CHOICE_LABELS = {
+    "status": {
+        "UPCOMING": "Sắp diễn ra",
+        "IN_PROGRESS": "Đang thực hiện",
+        "DONE": "Hoàn tất",
+        "CANCELLED": "Đã hủy",
+    },
+    "time_mode": {
+        "ALL_DAY": "Cả ngày",
+        "FLEXIBLE": "Linh hoạt",
+        "AT_TIME": "Theo giờ",
+        "TIME_RANGE": "Khoảng thời gian",
+    },
+    "location_mode": {
+        "MANUAL": "Nhập thủ công",
+        "STRUCTURED": "Địa điểm có cấu trúc",
+    },
+    "system_type": {
+        "TRANSPORTATION": "Di chuyển",
+        "ACCOMMODATION": "Lưu trú",
+        "FOOD": "Ăn uống",
+        "SIGHTSEEING": "Tham quan",
+        "SHOPPING": "Mua sắm",
+        "CHECKIN_OUT": "Check-in / Check-out",
+        "FREE_TIME": "Thời gian tự do",
+        "OTHER": "Khác",
+    },
+}
+
+
+def _choice_options(field_name: str, choices) -> list[dict]:
     return [
-        {"value": value, "label": str(label)}
+        {
+            "value": value,
+            "label": STATIC_CHOICE_LABELS.get(field_name, {}).get(value, str(label)),
+        }
         for value, label in choices
     ]
 
 
 STATIC_FIELD_OPTIONS = {
-    "status": _choice_options(TimelineActivityStatus.choices),
-    "time_mode": _choice_options(TimelineActivityTimeMode.choices),
-    "location_mode": _choice_options(TimelineLocationMode.choices),
-    "system_type": _choice_options(TimelineSystemType.choices),
+    "status": _choice_options("status", TimelineActivityStatus.choices),
+    "time_mode": _choice_options("time_mode", TimelineActivityTimeMode.choices),
+    "location_mode": _choice_options("location_mode", TimelineLocationMode.choices),
+    "system_type": _choice_options("system_type", TimelineSystemType.choices),
 }
 
 
@@ -258,7 +291,7 @@ def _timeline_section_options(*, trip_id) -> list[dict]:
 
 def _transfer_label(transfer: SettlementTransfer) -> str:
     return (
-        f"{transfer.payer.display_name} -> "
+        f"{transfer.payer.display_name} chuyển cho "
         f"{transfer.recipient.display_name}: {transfer.amount}"
     )
 

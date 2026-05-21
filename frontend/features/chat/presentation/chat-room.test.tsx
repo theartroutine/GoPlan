@@ -155,7 +155,11 @@ describe("ChatRoom", () => {
       />,
     );
 
-    expect(screen.getByText("GoPlanAI đang trả lời. Thử lại sau.")).toBeDefined();
+    expect(
+      screen.getByText(
+        "GoPlanAI đang trả lời. Prompt của bạn vẫn ở ô nhập, hãy gửi lại sau.",
+      ),
+    ).toBeDefined();
     expect(screen.getByLabelText("Message")).toBeDefined();
   });
 

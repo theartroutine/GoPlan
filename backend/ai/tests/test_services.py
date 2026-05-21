@@ -12,6 +12,7 @@ from ai.services import (
     GENERIC_AI_ERROR_MESSAGE,
     ensure_ai_prompt_available,
     message_for_error_code,
+    recover_stale_ai_interactions,
 )
 from chat.models import ChatMessage
 from test_helpers import create_completed_user
@@ -75,6 +76,31 @@ class AIReservationServiceTests(TestCase):
         )
 
         ensure_ai_prompt_available(trip)
+
+    def test_recovery_preserves_retry_error_code_when_attempts_exhausted(self):
+        user = create_completed_user("ai-recovery@example.com", "airecovery", "AIR001")
+        trip = _make_trip(user)
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=user,
+            prompt_message=_make_prompt_message(trip=trip, user=user),
+            prompt="hello",
+            status=AIInteractionStatus.PENDING,
+            error_code=AIInteractionErrorCode.PROVIDER_UNAVAILABLE,
+            attempt_count=3,
+            lock_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        result = recover_stale_ai_interactions()
+
+        self.assertEqual(result, {"recovered": 0, "failed": 1, "skipped": 0})
+        interaction.refresh_from_db()
+        self.assertEqual(interaction.status, AIInteractionStatus.FAILED)
+        self.assertEqual(
+            interaction.error_code,
+            AIInteractionErrorCode.PROVIDER_UNAVAILABLE,
+        )
+        self.assertIn("gián đoạn", interaction.response_message.content)
 
 
 class MessageForErrorCodeTests(TestCase):

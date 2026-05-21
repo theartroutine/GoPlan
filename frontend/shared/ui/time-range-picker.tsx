@@ -23,7 +23,7 @@ type Props = {
 function formatDayLabel(dateIso: string, timezone: string): string {
   try {
     const dt = new Date(`${dateIso}T00:00:00`);
-    return new Intl.DateTimeFormat("en-US", {
+    return new Intl.DateTimeFormat("vi-VN", {
       weekday: "short",
       month: "short",
       day: "2-digit",
@@ -60,15 +60,15 @@ export function TimeRangePicker({
   }, [onError]);
 
   const dayLabel = useMemo(
-    () => `Day ${sectionIndex} · ${formatDayLabel(sectionDate, tripTimezone)}`,
+    () => `Ngày ${sectionIndex} · ${formatDayLabel(sectionDate, tripTimezone)}`,
     [sectionIndex, sectionDate, tripTimezone],
   );
 
   const error = useMemo(() => {
-    if (start && !end) return "End time is required.";
-    if (!start && end) return "Start time is required.";
+    if (start && !end) return "Cần nhập giờ kết thúc.";
+    if (!start && end) return "Cần nhập giờ bắt đầu.";
     if (!start && !end) return null;
-    if (start >= end) return "End time must be after start time.";
+    if (start >= end) return "Giờ kết thúc phải sau giờ bắt đầu.";
     return null;
   }, [start, end]);
 
@@ -103,7 +103,7 @@ export function TimeRangePicker({
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="block space-y-1 text-xs">
-          <span className="font-medium text-muted-foreground">Starts at</span>
+          <span className="font-medium text-muted-foreground">Bắt đầu</span>
           <Input
             type="time"
             value={start}
@@ -113,7 +113,7 @@ export function TimeRangePicker({
           />
         </label>
         <label className="block space-y-1 text-xs">
-          <span className="font-medium text-muted-foreground">Ends at</span>
+          <span className="font-medium text-muted-foreground">Kết thúc</span>
           <Input
             type="time"
             value={end}

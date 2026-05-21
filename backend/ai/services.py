@@ -189,7 +189,7 @@ def recover_stale_ai_interactions(*, limit: int = 50) -> dict[str, int]:
         if should_fail and interaction is not None:
             finish_interaction_failure(
                 interaction=interaction,
-                error_code=AIInteractionErrorCode.TASK_ERROR,
+                error_code=interaction.error_code or AIInteractionErrorCode.TASK_ERROR,
             )
             failed += 1
             continue

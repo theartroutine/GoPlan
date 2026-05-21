@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -123,7 +125,12 @@ def finish_interaction_success(*, interaction, message_text: str) -> ChatMessage
     return message
 
 
-def release_interaction_for_retry(*, interaction) -> None:
+def release_interaction_for_retry(
+    *,
+    interaction,
+    error_code: str,
+    retry_after_seconds: int,
+) -> None:
     now = timezone.now()
     with transaction.atomic():
         interaction = AIInteraction.objects.select_for_update().get(pk=interaction.pk)
@@ -135,10 +142,12 @@ def release_interaction_for_retry(*, interaction) -> None:
         ):
             return
         interaction.status = AIInteractionStatus.PENDING
-        interaction.lock_expires_at = now
+        interaction.error_code = error_code
+        interaction.lock_expires_at = now + timedelta(seconds=retry_after_seconds)
         interaction.save(
             update_fields=[
                 "status",
+                "error_code",
                 "lock_expires_at",
                 "updated_at",
             ]

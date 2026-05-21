@@ -6,27 +6,28 @@ from ai.action_types import AI_ACTION_TIMELINE_ACTIVITY_CREATE
 from ai.agent.presets import presets_for
 
 MISSING_FIELD_DEFINITIONS = {
-    "activity_id": {"label": "Activity"},
-    "amount": {"label": "Amount", "type": "money"},
-    "collector_id": {"label": "Collector", "type": "select"},
-    "contributions": {"label": "Contributions", "type": "json"},
-    "custom_type_id": {"label": "Custom activity type", "type": "select"},
-    "data": {"label": "Activity details", "type": "json"},
-    "end_time": {"label": "End time"},
-    "expense_id": {"label": "Expense"},
-    "location_mode": {"label": "Location mode", "type": "select"},
-    "member_contributions": {"label": "Member contributions", "type": "json"},
-    "place": {"label": "Place", "type": "json"},
-    "section_date": {"label": "Timeline date", "type": "date"},
-    "section_id": {"label": "Timeline day"},
-    "start_time": {"label": "Start time"},
-    "status": {"label": "Status", "type": "select"},
-    "system_type": {"label": "Activity type", "type": "select"},
-    "time_mode": {"label": "Time mode", "type": "select"},
-    "title": {"label": "Title"},
-    "total_amount": {"label": "Amount", "type": "money"},
-    "transfer_id": {"label": "Transfer"},
-    "user_id": {"label": "Member"},
+    "activity_id": {"label": "Hoạt động"},
+    "amount": {"label": "Số tiền", "type": "money"},
+    "collector_id": {"label": "Người thu", "type": "select"},
+    "contributions": {"label": "Đóng góp", "type": "json"},
+    "custom_type_id": {"label": "Loại hoạt động tùy chỉnh", "type": "select"},
+    "data": {"label": "Chi tiết hoạt động", "type": "json"},
+    "end_time": {"label": "Giờ kết thúc"},
+    "expense_id": {"label": "Chi phí"},
+    "location_mode": {"label": "Kiểu địa điểm", "type": "select"},
+    "member_contributions": {"label": "Đóng góp theo thành viên", "type": "json"},
+    "place": {"label": "Địa điểm", "type": "json"},
+    "section_date": {"label": "Ngày lịch trình", "type": "date"},
+    "section_id": {"label": "Ngày trong lịch trình"},
+    "start_time": {"label": "Giờ bắt đầu"},
+    "status": {"label": "Trạng thái", "type": "select"},
+    "system_type": {"label": "Loại hoạt động", "type": "select"},
+    "time_range": {"label": "Thời gian", "type": "time_range"},
+    "time_mode": {"label": "Kiểu thời gian", "type": "select"},
+    "title": {"label": "Tiêu đề"},
+    "total_amount": {"label": "Số tiền", "type": "money"},
+    "transfer_id": {"label": "Khoản chuyển"},
+    "user_id": {"label": "Thành viên"},
 }
 
 PRESERVED_MISSING_FIELD_KEYS = ("required", "constraints", "options", "presets")
@@ -66,6 +67,8 @@ def build_missing_field(name: str, *, source: dict | None = None) -> dict:
         raw_type = source.get("type")
         label = str(raw_label).strip() if raw_label else ""
         field_type = str(raw_type).strip() if raw_type else None
+    if definition.get("label"):
+        label = definition["label"]
     if not label:
         label = definition.get("label") or name.replace("_", " ").title()
     if field_type is None:
@@ -176,7 +179,7 @@ def build_missing_fields_for_create_activity(
         section_ctx = _resolve_section_context(section_id)
         fields.append({
             "name": "time_range",
-            "label": "Time",
+            "label": "Thời gian",
             "type": "time_range",
             "required": True,
             "constraints": {

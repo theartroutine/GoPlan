@@ -149,6 +149,8 @@ export function MessageBubble({
 
   const time = formatTime(message.created_at);
   const isDeletedForEveryone = message.is_deleted_for_everyone;
+  const isAIActionMessage =
+    message.sender_kind === "AI" && message.action_drafts.length > 0;
   const canReact =
     !isDeletedForEveryone && !isPending && !isFailed && onToggleReaction !== undefined;
   const canRemove = !isPending && !isFailed && onDeleteMessage !== undefined;
@@ -290,7 +292,7 @@ export function MessageBubble({
     ) : (
       <div
         {...bubbleSurfaceProps}
-        className={`min-w-0 rounded-2xl px-3 py-2 text-sm shadow-sm ${
+        className={`min-w-0 rounded-2xl px-3 py-2 text-sm shadow-sm ${isAIActionMessage ? "w-full" : ""} ${
           isOwn
             ? `bg-primary text-primary-foreground${isPending ? " opacity-70" : ""}`
             : "bg-muted text-foreground"
@@ -501,11 +503,21 @@ export function MessageBubble({
                 />
               )}
             </div>
-            <div className="flex min-w-0 max-w-[78%] sm:max-w-[60%]">
+            <div
+              data-ai-action-layout={isAIActionMessage ? "wide" : undefined}
+              className={
+                isAIActionMessage
+                  ? "flex min-w-0 max-w-[calc(100%-2.5rem)] flex-1 sm:max-w-[42rem]"
+                  : "flex min-w-0 max-w-[78%] sm:max-w-[60%]"
+              }
+            >
               {/* Hover icons (Emoji/Trash/Select) float in an absolute overlay
                   to the RIGHT of others' bubble so the bubble keeps its full
                   max width when icons appear on hover. */}
-              <div {...bubbleInteractionProps} className="relative flex items-center">
+              <div
+                {...bubbleInteractionProps}
+                className={`relative flex items-center ${isAIActionMessage ? "w-full" : ""}`}
+              >
                 {bubbleEl}
                 {hoverOverlayEl}
               </div>

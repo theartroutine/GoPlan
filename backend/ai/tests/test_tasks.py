@@ -356,7 +356,11 @@ class RetryPolicyTests(TestCase):
             run_goplan_ai_interaction(str(self.interaction.id))
         self.interaction.refresh_from_db()
         self.assertEqual(self.interaction.status, AIInteractionStatus.PENDING)
-        self.assertLessEqual(self.interaction.lock_expires_at, timezone.now())
+        self.assertGreater(self.interaction.lock_expires_at, timezone.now())
+        self.assertEqual(
+            self.interaction.error_code,
+            AIInteractionErrorCode.RATE_LIMIT,
+        )
         mock_finish.assert_not_called()
 
     @patch("ai.tasks.push_ai_typing_stopped")
@@ -372,6 +376,24 @@ class RetryPolicyTests(TestCase):
         with self.assertRaises(DeepSeekProviderError):
             run_goplan_ai_interaction(str(self.interaction.id))
         mock_finish.assert_not_called()
+
+    def test_retryable_failure_keeps_lock_until_scheduled_retry(self):
+        task = SimpleNamespace(
+            request=SimpleNamespace(retries=0),
+            retry=Mock(side_effect=DeepSeekProviderError(AIInteractionErrorCode.PROVIDER_UNAVAILABLE)),
+        )
+
+        with self.assertRaises(DeepSeekProviderError):
+            _handle_failure(
+                task,
+                interaction=self.interaction,
+                error_code=AIInteractionErrorCode.PROVIDER_UNAVAILABLE,
+            )
+
+        self.interaction.refresh_from_db()
+        self.assertEqual(self.interaction.status, AIInteractionStatus.PENDING)
+        self.assertGreater(self.interaction.lock_expires_at, timezone.now())
+        task.retry.assert_called_once()
 
     @patch("ai.tasks.push_ai_typing_stopped")
     @patch("ai.tasks.push_ai_typing_started")

@@ -51,7 +51,11 @@ def _handle_failure(task, *, interaction: AIInteraction, error_code: str) -> Non
             return
 
         countdown = _retry_countdown(schedule, task.request.retries)
-        release_interaction_for_retry(interaction=interaction)
+        release_interaction_for_retry(
+            interaction=interaction,
+            error_code=error_code,
+            retry_after_seconds=countdown,
+        )
         # task.retry() always raises; it never returns.
         task.retry(
             exc=DeepSeekProviderError(error_code),
