@@ -156,7 +156,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
             rows={1}
             maxLength={hasMention ? MAX_AI_PROMPT_LENGTH : MAX_CONTENT_LENGTH}
             placeholder={
-              placeholder ?? (hasMention ? "Hỏi GoPlanAI" : "Nhắn tin")
+              placeholder ?? (hasMention ? "Ask GoPlanAI" : "Write a message")
             }
             disabled={disabled || sending}
             onChange={handleChange}
@@ -170,7 +170,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
           disabled={!canSubmit}
           onClick={() => void submit()}
           className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground transition-all hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/40"
-          aria-label="Gửi tin nhắn"
+          aria-label="Send message"
           aria-busy={sending}
         >
           {sending ? (

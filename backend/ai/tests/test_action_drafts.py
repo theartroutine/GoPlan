@@ -366,7 +366,7 @@ class AIActionDraftAPITests(APITestCase, AIActionDraftModelTests):
         self.client.force_authenticate(self.user)
         display_value = {
             "icon": "activity",
-            "kicker": "Hoạt động · Tham quan",
+            "kicker": "Activity · Sightseeing",
             "title": "Museum Visit",
             "tone": "create",
         }
@@ -656,7 +656,7 @@ class AIActionDraftPatchTests(APITestCase, AIActionDraftModelTests):
         self.assertEqual(draft.status, AIActionDraftStatus.NEEDS_INFO)
         self.assertEqual(
             draft.missing_fields,
-            [{"name": "total_amount", "label": "Số tiền", "type": "money"}],
+            [{"name": "total_amount", "label": "Amount", "type": "money"}],
         )
 
     def test_patch_expired_needs_info_draft_marks_expired_and_returns_conflict(self):
@@ -937,7 +937,7 @@ class AIActionDraftPatchFieldValidationTests(APITestCase, AIActionDraftModelTest
             missing_fields=[
                 {
                     "name": "time_range",
-                    "label": "Thời gian",
+                    "label": "Time",
                     "type": "time_range",
                     "constraints": {"pair": ["start_time", "end_time"]},
                 },

@@ -38,13 +38,13 @@ function getChatWarning(errorCode: string | null): string | null {
     return "This trip is closed. Chat changes are disabled.";
   }
   if (errorCode === "AI_BUSY") {
-    return "GoPlanAI đang trả lời. Prompt của bạn vẫn ở ô nhập, hãy gửi lại sau.";
+    return "GoPlanAI is still replying. Your prompt is kept; try again shortly.";
   }
   if (errorCode === "INVALID_AI_PROMPT") {
-    return "Bạn muốn hỏi GoPlanAI điều gì?";
+    return "What would you like to ask GoPlanAI?";
   }
   if (errorCode === "THROTTLED") {
-    return "Bạn đang gửi GoPlanAI quá nhanh. Prompt vẫn ở ô nhập, hãy gửi lại sau.";
+    return "You are sending GoPlanAI too quickly. Your prompt is kept; try again shortly.";
   }
   if (
     errorCode === "REACTION_DUPLICATE" ||

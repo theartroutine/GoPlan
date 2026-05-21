@@ -19,12 +19,12 @@ describe("TimeRangePicker", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Kết thúc"), {
+    fireEvent.change(screen.getByLabelText("End"), {
       target: { value: "" },
     });
 
     expect(onChange).toHaveBeenLastCalledWith({ start: "08:30", end: null });
-    expect(screen.getByText("Cần nhập giờ kết thúc.")).toBeInTheDocument();
-    expect(onError).toHaveBeenLastCalledWith("Cần nhập giờ kết thúc.");
+    expect(screen.getByText("End time is required.")).toBeInTheDocument();
+    expect(onError).toHaveBeenLastCalledWith("End time is required.");
   });
 });

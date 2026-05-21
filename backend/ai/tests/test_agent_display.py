@@ -22,7 +22,7 @@ class DisplayBuilderTests(TestCase):
         )
         self.assertEqual(display["icon"], "activity")
         self.assertEqual(display["tone"], "create")
-        self.assertIn("Tham quan", display["kicker"])
+        self.assertIn("Sightseeing", display["kicker"])
         self.assertEqual(display["title"], "Hồ Xuân Hương")
         chip_labels = [c["label"] for c in display.get("chips", [])]
         self.assertTrue(any("Đà Lạt" in label for label in chip_labels))
@@ -58,15 +58,15 @@ class DisplayBuilderTests(TestCase):
         )
 
         self.assertEqual(display["title"], "Dinh I")
-        self.assertIn("Tham quan", display["kicker"])
+        self.assertIn("Sightseeing", display["kicker"])
         chip_labels = [c["label"] for c in display.get("chips", [])]
         self.assertIn("08:30 – 10:00", chip_labels)
         self.assertIn("Dinh I Palace", chip_labels)
-        self.assertIn("Cả nhóm", chip_labels)
+        self.assertIn("Whole group", chip_labels)
         meta = {item["label"]: item["value"] for item in display.get("meta", [])}
-        self.assertEqual(meta["Điểm hẹn"], "Hotel lobby")
-        self.assertEqual(meta["Ghi chú"], "Keep the visit relaxed.")
-        self.assertEqual(meta["Ghi chú địa điểm"], "Enter through the main gate")
+        self.assertEqual(meta["Meeting point"], "Hotel lobby")
+        self.assertEqual(meta["Note"], "Keep the visit relaxed.")
+        self.assertEqual(meta["Location note"], "Enter through the main gate")
         serialized = repr(display)
         self.assertNotIn("section_id", serialized)
         self.assertNotIn("custom_type_id", serialized)
@@ -115,7 +115,7 @@ class DisplayBuilderTests(TestCase):
             trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
         )
 
-        self.assertEqual(display["kicker"], "Xóa chi phí")
+        self.assertEqual(display["kicker"], "Delete expense")
         self.assertEqual(display["title"], "Hotel deposit")
         self.assertEqual(display["hero"]["value"], "1,000,000")
         self.assertEqual(display["hero"]["currency"], "VND")
@@ -131,11 +131,11 @@ class DisplayBuilderTests(TestCase):
             trip_context={"timezone": "Asia/Ho_Chi_Minh", "currency_code": "VND"},
         )
 
-        self.assertEqual(display["kicker"], "Cập nhật chi phí")
+        self.assertEqual(display["kicker"], "Update expense")
         self.assertEqual(display["title"], "Hotel deposit")
         self.assertNotIn("hero", display)
         self.assertIn(
-            {"label": "Mô tả", "value": "Refundable deposit paid by card."},
+            {"label": "Description", "value": "Refundable deposit paid by card."},
             display["meta"],
         )
 
@@ -150,7 +150,7 @@ class DisplayBuilderTests(TestCase):
         )
 
         self.assertEqual(display["icon"], "expense")
-        self.assertEqual(display["title"], "Ghi nhận mọi người đã đóng đủ")
+        self.assertEqual(display["title"], "Mark all participants paid")
         self.assertNotIn("hero", display)
 
     def test_transfer_display_uses_enriched_transfer_snapshot(self):
@@ -171,8 +171,8 @@ class DisplayBuilderTests(TestCase):
         self.assertEqual(
             display["meta"],
             [
-                {"label": "Người chuyển", "value": "E2E Binh"},
-                {"label": "Người nhận", "value": "Minh Duong"},
+                {"label": "From", "value": "E2E Binh"},
+                {"label": "To", "value": "Minh Duong"},
             ],
         )
 
@@ -200,7 +200,7 @@ class DisplayBuilderTests(TestCase):
         )
 
         self.assertEqual(display["title"], "Dragon Bridge photo walk")
-        self.assertIn({"label": "Trạng thái", "value": "Hoàn tất"}, display["meta"])
+        self.assertIn({"label": "Status", "value": "Done"}, display["meta"])
 
     def test_unknown_action_type_returns_generic_display(self):
         display = build_display(

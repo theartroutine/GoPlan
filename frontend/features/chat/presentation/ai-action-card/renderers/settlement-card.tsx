@@ -2,7 +2,6 @@
 
 import type { CardProps } from "../display-types";
 import { CardShell } from "../card-shell";
-import { normalizeActionDisplay } from "../display-normalization";
 
 export function SettlementCard({
   draft,
@@ -11,7 +10,7 @@ export function SettlementCard({
   helperOverride,
   errorOverride,
 }: CardProps) {
-  const display = normalizeActionDisplay(draft.display);
+  const display = draft.display;
   const meta = display.meta ?? [];
   return (
     <CardShell

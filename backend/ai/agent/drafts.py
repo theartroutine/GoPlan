@@ -213,30 +213,30 @@ def can_confirm_action_draft(draft: AIActionDraft, *, viewer) -> bool:
 
 STATIC_CHOICE_LABELS = {
     "status": {
-        "UPCOMING": "Sắp diễn ra",
-        "IN_PROGRESS": "Đang thực hiện",
-        "DONE": "Hoàn tất",
-        "CANCELLED": "Đã hủy",
+        "UPCOMING": "Upcoming",
+        "IN_PROGRESS": "In Progress",
+        "DONE": "Done",
+        "CANCELLED": "Cancelled",
     },
     "time_mode": {
-        "ALL_DAY": "Cả ngày",
-        "FLEXIBLE": "Linh hoạt",
-        "AT_TIME": "Theo giờ",
-        "TIME_RANGE": "Khoảng thời gian",
+        "ALL_DAY": "All day",
+        "FLEXIBLE": "Flexible",
+        "AT_TIME": "At time",
+        "TIME_RANGE": "Time range",
     },
     "location_mode": {
-        "MANUAL": "Nhập thủ công",
-        "STRUCTURED": "Địa điểm có cấu trúc",
+        "MANUAL": "Manual",
+        "STRUCTURED": "Structured place",
     },
     "system_type": {
-        "TRANSPORTATION": "Di chuyển",
-        "ACCOMMODATION": "Lưu trú",
-        "FOOD": "Ăn uống",
-        "SIGHTSEEING": "Tham quan",
-        "SHOPPING": "Mua sắm",
+        "TRANSPORTATION": "Transportation",
+        "ACCOMMODATION": "Accommodation",
+        "FOOD": "Food",
+        "SIGHTSEEING": "Sightseeing",
+        "SHOPPING": "Shopping",
         "CHECKIN_OUT": "Check-in / Check-out",
-        "FREE_TIME": "Thời gian tự do",
-        "OTHER": "Khác",
+        "FREE_TIME": "Free Time",
+        "OTHER": "Other",
     },
 }
 
@@ -291,7 +291,7 @@ def _timeline_section_options(*, trip_id) -> list[dict]:
 
 def _transfer_label(transfer: SettlementTransfer) -> str:
     return (
-        f"{transfer.payer.display_name} chuyển cho "
+        f"{transfer.payer.display_name} → "
         f"{transfer.recipient.display_name}: {transfer.amount}"
     )
 

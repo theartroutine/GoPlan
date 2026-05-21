@@ -13,29 +13,29 @@ class Preset:
 
 
 _DEFAULT = [
-    Preset("Buổi sáng", "08:00", "11:00"),
-    Preset("Buổi chiều", "14:00", "17:00"),
-    Preset("Buổi tối", "19:00", "22:00"),
+    Preset("Morning", "08:00", "11:00"),
+    Preset("Afternoon", "14:00", "17:00"),
+    Preset("Evening", "19:00", "22:00"),
 ]
 
 _BY_SYSTEM_TYPE: dict[str, list[Preset]] = {
     "SIGHTSEEING": [
-        Preset("Buổi sáng", "08:00", "11:00"),
-        Preset("Buổi chiều", "14:00", "17:00"),
+        Preset("Morning", "08:00", "11:00"),
+        Preset("Afternoon", "14:00", "17:00"),
     ],
     "FOOD": [
-        Preset("Bữa sáng", "07:00", "08:30"),
-        Preset("Bữa trưa", "11:30", "13:00"),
-        Preset("Bữa tối", "18:30", "20:30"),
+        Preset("Breakfast", "07:00", "08:30"),
+        Preset("Lunch", "11:30", "13:00"),
+        Preset("Dinner", "18:30", "20:30"),
     ],
     "DINING": [
-        Preset("Bữa sáng", "07:00", "08:30"),
-        Preset("Bữa trưa", "11:30", "13:00"),
-        Preset("Bữa tối", "18:30", "20:30"),
+        Preset("Breakfast", "07:00", "08:30"),
+        Preset("Lunch", "11:30", "13:00"),
+        Preset("Dinner", "18:30", "20:30"),
     ],
     "NIGHTLIFE": [
-        Preset("Buổi tối", "19:00", "22:00"),
-        Preset("Khuya", "22:00", "23:59"),
+        Preset("Evening", "19:00", "22:00"),
+        Preset("Late", "22:00", "23:59"),
     ],
 }
 

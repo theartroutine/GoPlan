@@ -154,7 +154,7 @@ class RunnerTests(TestCase):
         self.assertEqual(draft.payload, {"title": "Lunch"})
         self.assertEqual(
             draft.missing_fields,
-            [{"name": "total_amount", "label": "Số tiền", "type": "money"}],
+            [{"name": "total_amount", "label": "Amount", "type": "money"}],
         )
 
     @patch("ai.agent.runner.complete_with_tools")
@@ -180,7 +180,7 @@ class RunnerTests(TestCase):
         self.assertEqual(draft.payload, {"title": "Lunch QA"})
         self.assertEqual(
             draft.missing_fields,
-            [{"name": "total_amount", "label": "Số tiền", "type": "money"}],
+            [{"name": "total_amount", "label": "Amount", "type": "money"}],
         )
 
     @patch("ai.agent.runner.complete_with_tools")

@@ -9,31 +9,31 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 SYSTEM_TYPE_LABELS = {
-    "TRANSPORTATION": "Di chuyển",
-    "FOOD": "Ăn uống",
+    "TRANSPORTATION": "Transportation",
+    "FOOD": "Food",
     "CHECKIN_OUT": "Check-in / Check-out",
-    "FREE_TIME": "Thời gian tự do",
-    "SIGHTSEEING": "Tham quan",
-    "SHOPPING": "Mua sắm",
-    "ACCOMMODATION": "Lưu trú",
-    "OTHER": "Khác",
-    "DINING": "Ăn uống",
-    "NIGHTLIFE": "Giải trí đêm",
-    "TRANSPORT": "Di chuyển",
+    "FREE_TIME": "Free Time",
+    "SIGHTSEEING": "Sightseeing",
+    "SHOPPING": "Shopping",
+    "ACCOMMODATION": "Accommodation",
+    "OTHER": "Other",
+    "DINING": "Food",
+    "NIGHTLIFE": "Nightlife",
+    "TRANSPORT": "Transportation",
 }
 
 ASSIGNEE_LABELS = {
-    "GROUP": "Cả nhóm",
-    "EVERYONE": "Cả nhóm",
-    "USER": "Thành viên được giao",
-    "NONE": "Chưa phân công",
+    "GROUP": "Whole group",
+    "EVERYONE": "Whole group",
+    "USER": "Assigned member",
+    "NONE": "Unassigned",
 }
 
 STATUS_LABELS = {
-    "UPCOMING": "Sắp diễn ra",
-    "IN_PROGRESS": "Đang thực hiện",
-    "DONE": "Hoàn tất",
-    "CANCELLED": "Đã hủy",
+    "UPCOMING": "Upcoming",
+    "IN_PROGRESS": "In Progress",
+    "DONE": "Done",
+    "CANCELLED": "Cancelled",
 }
 
 
@@ -75,9 +75,9 @@ def _fmt_clock(value, tz: str) -> str | None:
 def _fmt_time_range(start, end, tz: str, time_mode: str | None = None) -> str | None:
     if not start:
         if time_mode == "ALL_DAY":
-            return "Cả ngày"
+            return "All day"
         if time_mode == "FLEXIBLE":
-            return "Linh hoạt"
+            return "Flexible"
         return None
     label = _fmt_clock(start, tz)
     if not label:
@@ -123,14 +123,14 @@ def _activity_meta(payload: dict) -> list[dict]:
     status = payload.get("status")
     if status:
         meta.append({
-            "label": "Trạng thái",
+            "label": "Status",
             "value": STATUS_LABELS.get(status, str(status)),
         })
 
     for label, field in (
-        ("Điểm hẹn", "meeting_point"),
-        ("Ghi chú địa điểm", "location_note"),
-        ("Ghi chú", "note"),
+        ("Meeting point", "meeting_point"),
+        ("Location note", "location_note"),
+        ("Note", "note"),
     ):
         value = _non_empty_string(payload, field)
         if value:
@@ -140,16 +140,16 @@ def _activity_meta(payload: dict) -> list[dict]:
     contact_phone = _non_empty_string(payload, "contact_phone")
     if contact_name and contact_phone:
         meta.append(
-            {"label": "Liên hệ", "value": f"{contact_name} · {contact_phone}"}
+            {"label": "Contact", "value": f"{contact_name} · {contact_phone}"}
         )
     elif contact_name:
-        meta.append({"label": "Liên hệ", "value": contact_name})
+        meta.append({"label": "Contact", "value": contact_name})
     elif contact_phone:
-        meta.append({"label": "Số điện thoại", "value": contact_phone})
+        meta.append({"label": "Contact phone", "value": contact_phone})
 
     for label, field in (
-        ("Mã đặt chỗ", "booking_reference"),
-        ("Liên kết", "external_link"),
+        ("Booking", "booking_reference"),
+        ("Link", "external_link"),
     ):
         value = _non_empty_string(payload, field)
         if value:
@@ -162,7 +162,7 @@ def _build_timeline_activity(*, payload: dict, trip_context: dict, tone: str) ->
     tz = trip_context.get("timezone", "UTC")
     system_label = SYSTEM_TYPE_LABELS.get(
         activity_payload.get("system_type", ""),
-        "Hoạt động",
+        "Activity",
     )
     chips = []
     time_label = _fmt_time_range(
@@ -178,13 +178,13 @@ def _build_timeline_activity(*, payload: dict, trip_context: dict, tone: str) ->
         chips.append({"icon": "map-pin", "label": location_label})
     assignee = ASSIGNEE_LABELS.get(
         activity_payload.get("assignee_scope", "GROUP"),
-        "Cả nhóm",
+        "Whole group",
     )
     chips.append({"icon": "users", "label": assignee})
     return {
         "icon": "activity",
         "tone": tone,
-        "kicker": f"Hoạt động · {system_label}",
+        "kicker": f"Activity · {system_label}",
         "title": activity_payload.get("title", ""),
         "chips": chips,
         "meta": _activity_meta(activity_payload),
@@ -211,8 +211,8 @@ def _build_timeline_delete(payload: dict, trip_context: dict) -> dict:
     return {
         "icon": "activity",
         "tone": "destroy",
-        "kicker": "Xóa hoạt động",
-        "title": payload.get("title", "Hoạt động"),
+        "kicker": "Delete activity",
+        "title": payload.get("title", "Activity"),
     }
 
 
@@ -221,14 +221,14 @@ def _build_expense_create(payload: dict, trip_context: dict) -> dict:
     meta = []
     collector_name = _non_empty_string(payload, "collector_name")
     if collector_name:
-        meta.append({"label": "Người thu", "value": collector_name})
+        meta.append({"label": "Collector", "value": collector_name})
     description = _non_empty_string(payload, "description")
     if description:
-        meta.append({"label": "Mô tả", "value": description})
+        meta.append({"label": "Description", "value": description})
     display = {
         "icon": "expense",
         "tone": "create",
-        "kicker": "Chi phí",
+        "kicker": "Expense",
         "title": payload.get("title", ""),
         "meta": meta,
     }
@@ -243,15 +243,15 @@ def _build_expense_update(payload: dict, trip_context: dict) -> dict:
     meta = []
     description = _non_empty_string(payload, "description")
     if description:
-        meta.append({"label": "Mô tả", "value": description})
+        meta.append({"label": "Description", "value": description})
     collector_name = _non_empty_string(payload, "collector_name")
     if collector_name:
-        meta.append({"label": "Người thu", "value": collector_name})
+        meta.append({"label": "Collector", "value": collector_name})
     out = {
         "icon": "expense",
         "tone": "update",
-        "kicker": "Cập nhật chi phí",
-        "title": payload.get("title") or payload.get("target_title") or "Chi phí",
+        "kicker": "Update expense",
+        "title": payload.get("title") or payload.get("target_title") or "Expense",
         "meta": meta,
     }
     if payload.get("total_amount") is not None:
@@ -267,18 +267,18 @@ def _build_expense_contribution(payload: dict, trip_context: dict) -> dict:
         "everyone_paid",
     }
     title = (
-        "Ghi nhận mọi người đã đóng đủ"
+        "Mark all participants paid"
         if is_all_paid
-        else "Cập nhật đóng góp chi phí"
+        else "Update expense contributions"
     )
     meta = []
     contributions = payload.get("contributions")
     if isinstance(contributions, list) and contributions:
-        meta.append({"label": "Đóng góp", "value": str(len(contributions))})
+        meta.append({"label": "Contributions", "value": str(len(contributions))})
     return {
         "icon": "expense",
         "tone": "update",
-        "kicker": "Đóng góp chi phí",
+        "kicker": "Expense contributions",
         "title": payload.get("title") or title,
         "meta": meta,
     }
@@ -289,8 +289,8 @@ def _build_expense_delete(payload: dict, trip_context: dict) -> dict:
     display = {
         "icon": "expense",
         "tone": "destroy",
-        "kicker": "Xóa chi phí",
-        "title": payload.get("title", "Chi phí"),
+        "kicker": "Delete expense",
+        "title": payload.get("title", "Expense"),
     }
     amount = payload.get("total_amount")
     if amount not in (None, ""):
@@ -302,8 +302,8 @@ def _build_settlement(payload: dict, trip_context: dict) -> dict:
     return {
         "icon": "settlement",
         "tone": "update",
-        "kicker": "Quyết toán",
-        "title": payload.get("title", "Quyết toán chuyến đi"),
+        "kicker": "Settlement",
+        "title": payload.get("title", "Trip settlement"),
     }
 
 
@@ -312,14 +312,14 @@ def _build_transfer(payload: dict, trip_context: dict) -> dict:
     display = {
         "icon": "transfer",
         "tone": "update",
-        "kicker": "Khoản chuyển",
-        "title": payload.get("title", "Chuyển tiền"),
+        "kicker": "Transfer",
+        "title": payload.get("title", "Money transfer"),
         "meta": [],
     }
     amount = payload.get("amount")
     if amount not in (None, ""):
         display["hero"] = _fmt_amount(amount, currency)
-    for label, field in (("Người chuyển", "from_name"), ("Người nhận", "to_name")):
+    for label, field in (("From", "from_name"), ("To", "to_name")):
         value = _non_empty_string(payload, field)
         if value:
             display["meta"].append({"label": label, "value": value})
@@ -330,7 +330,7 @@ def _build_generic(payload: dict, trip_context: dict) -> dict:
     return {
         "icon": "info",
         "tone": "neutral",
-        "kicker": "Thao tác AI",
+        "kicker": "AI action",
         "title": payload.get("title", ""),
     }
 

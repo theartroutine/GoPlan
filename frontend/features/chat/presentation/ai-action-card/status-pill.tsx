@@ -20,37 +20,37 @@ type StatusConfig = {
 
 const STATUS_CONFIG: Record<AIActionDraft["status"], StatusConfig> = {
   NEEDS_INFO: {
-    label: "Cần thêm thông tin",
+    label: "Needs info",
     Icon: CircleHelp,
     className: "bg-amber-50 text-amber-700 ring-amber-100",
   },
   READY: {
-    label: "Sẵn sàng",
+    label: "Ready",
     Icon: CheckCircle2,
     className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   },
   CONFIRMED: {
-    label: "Đã xác nhận",
+    label: "Confirmed",
     Icon: BadgeCheck,
     className: "bg-blue-50 text-blue-700 ring-blue-100",
   },
   EXECUTED: {
-    label: "Hoàn tất",
+    label: "Done",
     Icon: CheckCircle2,
     className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   },
   CANCELLED: {
-    label: "Đã hủy",
+    label: "Cancelled",
     Icon: CircleX,
     className: "bg-rose-50 text-rose-700 ring-rose-100",
   },
   EXPIRED: {
-    label: "Đã hết hạn",
+    label: "Expired",
     Icon: TimerOff,
     className: "bg-orange-50 text-orange-700 ring-orange-100",
   },
   FAILED: {
-    label: "Thất bại",
+    label: "Failed",
     Icon: TriangleAlert,
     className: "bg-red-50 text-red-700 ring-red-100",
   },

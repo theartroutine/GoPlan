@@ -55,8 +55,8 @@ class BuildMissingFieldsForCreateActivityTests(TestCase):
         self.assertEqual(constraints["pair"], ["start_time", "end_time"])
 
         preset_labels = [p["label"] for p in field["presets"]]
-        self.assertIn("Buổi sáng", preset_labels)
-        self.assertIn("Buổi chiều", preset_labels)
+        self.assertIn("Morning", preset_labels)
+        self.assertIn("Afternoon", preset_labels)
 
     def test_normalize_missing_fields_preserves_time_range_metadata(self):
         fields = normalize_missing_fields([
@@ -77,7 +77,7 @@ class BuildMissingFieldsForCreateActivityTests(TestCase):
         ])
 
         self.assertEqual(fields[0]["name"], "time_range")
-        self.assertEqual(fields[0]["label"], "Thời gian")
+        self.assertEqual(fields[0]["label"], "Time")
         self.assertTrue(fields[0]["required"])
         self.assertEqual(fields[0]["constraints"]["section_index"], 2)
         self.assertEqual(fields[0]["constraints"]["pair"], ["start_time", "end_time"])
@@ -104,7 +104,7 @@ class BuildMissingFieldsForCreateActivityTests(TestCase):
         )
 
         preset_labels = {p["label"] for p in fields[0]["presets"]}
-        self.assertEqual(preset_labels, {"Buổi sáng", "Buổi chiều", "Buổi tối"})
+        self.assertEqual(preset_labels, {"Morning", "Afternoon", "Evening"})
 
     def test_time_range_field_uses_default_presets_when_system_type_is_none(self):
         fields = build_missing_fields_for_create_activity(
@@ -115,7 +115,7 @@ class BuildMissingFieldsForCreateActivityTests(TestCase):
         )
 
         preset_labels = {p["label"] for p in fields[0]["presets"]}
-        self.assertEqual(preset_labels, {"Buổi sáng", "Buổi chiều", "Buổi tối"})
+        self.assertEqual(preset_labels, {"Morning", "Afternoon", "Evening"})
 
     # -------- Remaining fields pass through the single-field builder --------
 

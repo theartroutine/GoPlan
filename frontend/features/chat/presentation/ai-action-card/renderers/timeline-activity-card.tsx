@@ -5,30 +5,29 @@ import type { AIActionDisplay } from "@/features/chat/domain/ai-action-drafts";
 import type { CardProps } from "../display-types";
 import { CardShell } from "../card-shell";
 import { Chip } from "../chip";
-import { normalizeActionDisplay } from "../display-normalization";
 
 type ActivityChip = NonNullable<AIActionDisplay["chips"]>[number];
 type ActivityMeta = NonNullable<AIActionDisplay["meta"]>[number];
 
 const SYSTEM_TYPE_LABELS: Record<string, string> = {
-  TRANSPORTATION: "Di chuyển",
-  FOOD: "Ăn uống",
+  TRANSPORTATION: "Transportation",
+  FOOD: "Food",
   CHECKIN_OUT: "Check-in / Check-out",
-  FREE_TIME: "Thời gian tự do",
-  SIGHTSEEING: "Tham quan",
-  SHOPPING: "Mua sắm",
-  ACCOMMODATION: "Lưu trú",
-  OTHER: "Khác",
-  DINING: "Ăn uống",
-  NIGHTLIFE: "Giải trí đêm",
-  TRANSPORT: "Di chuyển",
+  FREE_TIME: "Free Time",
+  SIGHTSEEING: "Sightseeing",
+  SHOPPING: "Shopping",
+  ACCOMMODATION: "Accommodation",
+  OTHER: "Other",
+  DINING: "Food",
+  NIGHTLIFE: "Nightlife",
+  TRANSPORT: "Transportation",
 };
 
 const ASSIGNEE_LABELS: Record<string, string> = {
-  GROUP: "Cả nhóm",
-  EVERYONE: "Cả nhóm",
-  USER: "Thành viên được giao",
-  NONE: "Chưa phân công",
+  GROUP: "Whole group",
+  EVERYONE: "Whole group",
+  USER: "Assigned member",
+  NONE: "Unassigned",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,8 +60,8 @@ function timeLabel(preview: Record<string, unknown>): string | null {
     return end ? `${startLabel} – ${formatClock(end)}` : startLabel;
   }
   const timeMode = stringValue(preview, "time_mode");
-  if (timeMode === "ALL_DAY") return "Cả ngày";
-  if (timeMode === "FLEXIBLE") return "Linh hoạt";
+  if (timeMode === "ALL_DAY") return "All day";
+  if (timeMode === "FLEXIBLE") return "Flexible";
   return null;
 }
 
@@ -106,27 +105,27 @@ function buildPreviewChips(preview: Record<string, unknown>): ActivityChip[] {
 
 function buildPreviewMeta(preview: Record<string, unknown>): ActivityMeta[] {
   const meta: ActivityMeta[] = [];
-  appendMeta(meta, "Điểm hẹn", stringValue(preview, "meeting_point"));
-  appendMeta(meta, "Ghi chú địa điểm", stringValue(preview, "location_note"));
-  appendMeta(meta, "Ghi chú", stringValue(preview, "note"));
+  appendMeta(meta, "Meeting point", stringValue(preview, "meeting_point"));
+  appendMeta(meta, "Location note", stringValue(preview, "location_note"));
+  appendMeta(meta, "Note", stringValue(preview, "note"));
 
   const contactName = stringValue(preview, "contact_name");
   const contactPhone = stringValue(preview, "contact_phone");
   if (contactName && contactPhone) {
-    appendMeta(meta, "Liên hệ", `${contactName} · ${contactPhone}`);
+    appendMeta(meta, "Contact", `${contactName} · ${contactPhone}`);
   } else {
-    appendMeta(meta, "Liên hệ", contactName);
-    appendMeta(meta, "Số điện thoại", contactPhone);
+    appendMeta(meta, "Contact", contactName);
+    appendMeta(meta, "Contact phone", contactPhone);
   }
 
-  appendMeta(meta, "Mã đặt chỗ", stringValue(preview, "booking_reference"));
-  appendMeta(meta, "Liên kết", stringValue(preview, "external_link"));
+  appendMeta(meta, "Booking", stringValue(preview, "booking_reference"));
+  appendMeta(meta, "Link", stringValue(preview, "external_link"));
   return meta;
 }
 
 function activityDisplay(draft: CardProps["draft"]): AIActionDisplay {
   const preview = draft.preview;
-  const display = normalizeActionDisplay(draft.display);
+  const display = draft.display;
   const previewTitle = stringValue(preview, "title");
   const systemLabel = systemTypeLabel(preview);
   const chips = Array.isArray(display.chips) ? [...display.chips] : [];
@@ -139,19 +138,17 @@ function activityDisplay(draft: CardProps["draft"]): AIActionDisplay {
 
   const displayTitle = trimmedText(display.title);
   const displayKicker = trimmedText(display.kicker);
-  const isGenericActivityKicker =
-    displayKicker === "Activity · Activity" ||
-    displayKicker === "Hoạt động · Hoạt động";
+  const isGenericActivityKicker = displayKicker === "Activity · Activity";
 
   return {
     ...display,
     icon: display.icon ?? "activity",
     tone: display.tone ?? "neutral",
-    title: displayTitle || previewTitle || "Hoạt động",
+    title: displayTitle || previewTitle || "Activity",
     kicker:
       (!displayKicker || isGenericActivityKicker) && systemLabel
-        ? `Hoạt động · ${systemLabel}`
-        : displayKicker || "Hoạt động",
+        ? `Activity · ${systemLabel}`
+        : displayKicker || "Activity",
     chips: chips.length ? chips : undefined,
     meta: meta.length ? meta : undefined,
   };

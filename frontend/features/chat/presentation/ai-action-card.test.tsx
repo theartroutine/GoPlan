@@ -67,7 +67,7 @@ describe("AIActionCard", () => {
     vi.clearAllMocks();
   });
 
-  it("shows Vietnamese confirm and cancel actions for authorized ready drafts", () => {
+  it("shows confirm and cancel actions for authorized ready drafts", () => {
     render(
       <AIActionCard
         tripId="trip-1"
@@ -76,9 +76,9 @@ describe("AIActionCard", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Xác nhận" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Hủy" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Sẵn sàng" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Ready" })).toBeInTheDocument();
   });
 
   it("hides action buttons for unauthorized ready drafts", () => {
@@ -90,8 +90,8 @@ describe("AIActionCard", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Xác nhận" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Hủy" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 
   it("calls confirm handler and reports changed draft", async () => {
@@ -111,10 +111,10 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Xác nhận" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(
-      await screen.findByRole("img", { name: "Đã xác nhận" }),
+      await screen.findByRole("img", { name: "Confirmed" }),
     ).toBeInTheDocument();
     expect(onDraftChanged).toHaveBeenCalledWith(
       expect.objectContaining({ status: "CONFIRMED" }),
@@ -144,13 +144,13 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Xác nhận" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(
-      await screen.findByRole("img", { name: "Đã hết hạn" }),
+      await screen.findByRole("img", { name: "Expired" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Draft expired.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Xác nhận" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
     expect(onDraftChanged).toHaveBeenCalledWith(expiredDraft);
   });
 
@@ -191,16 +191,16 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Số tiền"), {
+    fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "500000" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
 
     expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
       total_amount: "500000",
     });
     expect(
-      await screen.findByRole("img", { name: "Sẵn sàng" }),
+      await screen.findByRole("img", { name: "Ready" }),
     ).toBeInTheDocument();
   });
 
@@ -237,11 +237,11 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Hủy" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(cancelAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1");
     expect(
-      await screen.findByRole("img", { name: "Đã hủy" }),
+      await screen.findByRole("img", { name: "Cancelled" }),
     ).toBeInTheDocument();
     expect(onDraftChanged).toHaveBeenCalledWith(
       expect.objectContaining({ status: "CANCELLED" }),
@@ -307,19 +307,19 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Bắt đầu"), {
+    fireEvent.change(screen.getByLabelText("Start"), {
       target: { value: "08:30" },
     });
-    fireEvent.change(screen.getByLabelText("Kết thúc"), {
+    fireEvent.change(screen.getByLabelText("End"), {
       target: { value: "10:00" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
 
     expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
       start_time: "08:30",
       end_time: "10:00",
     });
-    expect(await screen.findByRole("img", { name: "Sẵn sàng" })).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "Ready" })).toBeInTheDocument();
   });
 
   it("parses JSON missing fields before patching drafts", async () => {
@@ -343,10 +343,10 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Chi tiết hoạt động"), {
+    fireEvent.change(screen.getByLabelText("Activity details"), {
       target: { value: '{"title":"Museum"}' },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
 
     await waitFor(() => {
       expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
@@ -412,12 +412,12 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Tiêu đề"), {
+    fireEvent.change(screen.getByLabelText("Title"), {
       target: { value: "Lunch" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
 
-    await screen.findByLabelText("Số tiền");
+    await screen.findByLabelText("Amount");
     expect(patchAIActionDraft).toHaveBeenNthCalledWith(
       1,
       "trip-1",
@@ -425,10 +425,10 @@ describe("AIActionCard", () => {
       { title: "Lunch" },
     );
 
-    fireEvent.change(screen.getByLabelText("Số tiền"), {
+    fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "500000" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Lưu thông tin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
 
     await waitFor(() => {
       expect(patchAIActionDraft).toHaveBeenNthCalledWith(
@@ -474,8 +474,7 @@ describe("AIActionCard", () => {
 
     expect(screen.getByText("Dinh I")).toBeInTheDocument();
     expect(screen.queryByText("Activity · Sightseeing")).toBeNull();
-    expect(screen.queryByText("Whole group")).toBeNull();
-    expect(screen.getByText("Cả nhóm")).toBeInTheDocument();
+    expect(screen.getByText("Whole group")).toBeInTheDocument();
     expect(screen.getByText("08:30 – 10:00")).toBeInTheDocument();
     expect(screen.getByText("Dinh I Palace")).toBeInTheDocument();
     expect(screen.getByText("Hotel lobby")).toBeInTheDocument();

@@ -157,7 +157,7 @@ describe("ChatRoom", () => {
 
     expect(
       screen.getByText(
-        "GoPlanAI đang trả lời. Prompt của bạn vẫn ở ô nhập, hãy gửi lại sau.",
+        "GoPlanAI is still replying. Your prompt is kept; try again shortly.",
       ),
     ).toBeDefined();
     expect(screen.getByLabelText("Message")).toBeDefined();
@@ -176,7 +176,7 @@ describe("ChatRoom", () => {
 
     expect(
       screen.getByText(
-        "Bạn đang gửi GoPlanAI quá nhanh. Prompt vẫn ở ô nhập, hãy gửi lại sau.",
+        "You are sending GoPlanAI too quickly. Your prompt is kept; try again shortly.",
       ),
     ).toBeDefined();
     expect(screen.getByLabelText("Message")).toBeDefined();

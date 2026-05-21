@@ -23,7 +23,7 @@ export function MentionCommandMenu({ open, activeIndex, onSelect }: Props) {
         }}
       >
         <span className="font-medium text-primary">@GoPlanAI</span>
-        <span className="text-xs text-muted-foreground">Hỏi GoPlanAI</span>
+        <span className="text-xs text-muted-foreground">Ask GoPlanAI</span>
       </button>
     </div>
   );

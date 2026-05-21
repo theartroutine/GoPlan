@@ -86,7 +86,7 @@ export function AIActionCard(props: CardProps) {
     } catch (caught) {
       const next = draftFromError(caught);
       if (next) applyDraft(next);
-      setError(errorMessage(caught, "Không xác nhận được draft này."));
+      setError(errorMessage(caught, "Could not confirm this draft."));
     } finally {
       setPending(null);
     }
@@ -102,7 +102,7 @@ export function AIActionCard(props: CardProps) {
     } catch (caught) {
       const next = draftFromError(caught);
       if (next) applyDraft(next);
-      setError(errorMessage(caught, "Không hủy được draft này."));
+      setError(errorMessage(caught, "Could not cancel this draft."));
     } finally {
       setPending(null);
     }
