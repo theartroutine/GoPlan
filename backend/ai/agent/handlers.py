@@ -17,6 +17,7 @@ from expenses.models import (
     SettlementTransfer,
     TripSettlement,
 )
+from expenses.services import build_expense_dashboard
 from trips.models import TimelineActivity
 
 
@@ -366,6 +367,24 @@ def finalize_settlement(
             message=(
                 "Chuyến đi đã được quyết toán hoàn tất rồi. "
                 "Không cần tạo thêm hành động quyết toán mới."
+            ),
+        )
+
+    dashboard = build_expense_dashboard(trip_id=trip.id, actor=actor)
+    summary = dashboard["summary"]
+    if summary["total_amount"] <= 0:
+        return HandlerResult(
+            message=(
+                "Chưa thể chốt quyết toán vì chuyến đi chưa có chi phí nào."
+            ),
+        )
+
+    missing_amount = summary["missing_amount"]
+    if missing_amount > 0:
+        return HandlerResult(
+            message=(
+                "Chưa thể chốt quyết toán vì vẫn còn thiếu "
+                f"{missing_amount} {trip.currency_code} từ các khoản chi."
             ),
         )
 

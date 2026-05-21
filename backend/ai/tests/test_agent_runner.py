@@ -158,6 +158,32 @@ class RunnerTests(TestCase):
         )
 
     @patch("ai.agent.runner.complete_with_tools")
+    def test_text_only_expense_create_prompt_is_repaired_to_needs_info_draft(
+        self,
+        mock_complete,
+    ):
+        self.interaction.prompt = 'Tạo chi phí "Lunch QA".'
+        self.interaction.save(update_fields=["prompt"])
+        mock_complete.return_value = DeepSeekToolResult(
+            text='Bạn cho mình biết số tiền của chi phí "Lunch QA" nhé.',
+            tool_calls=[],
+            usage=DeepSeekUsage(1, 1, 2),
+            finish_reason="stop",
+        )
+
+        result = run_goplan_ai_agent(interaction=self.interaction)
+
+        self.assertIsNone(result.error_code)
+        draft = AIActionDraft.objects.get(interaction=self.interaction)
+        self.assertEqual(draft.action_type, "expense.create")
+        self.assertEqual(draft.status, AIActionDraftStatus.NEEDS_INFO)
+        self.assertEqual(draft.payload, {"title": "Lunch QA"})
+        self.assertEqual(
+            draft.missing_fields,
+            [{"name": "total_amount", "label": "Số tiền", "type": "money"}],
+        )
+
+    @patch("ai.agent.runner.complete_with_tools")
     def test_text_only_provider_response_is_recorded_as_respond_to_user_tool(
         self,
         mock_complete,
@@ -185,6 +211,22 @@ class RunnerTests(TestCase):
         self,
         mock_complete,
     ):
+        from expenses.services import set_contribution
+
+        expense = create_expense_service(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Hotel",
+            total_amount=Decimal("1000000"),
+            collector_id=self.captain.id,
+        )
+        set_contribution(
+            trip_id=self.trip.id,
+            expense_id=expense.id,
+            target_user_id=self.captain.id,
+            amount=Decimal("1000000"),
+            actor=self.captain,
+        )
         self.interaction.prompt = "Finalize settlement cho chuyến đi hiện tại từ tất cả expenses."
         self.interaction.save(update_fields=["prompt"])
         mock_complete.return_value = DeepSeekToolResult(

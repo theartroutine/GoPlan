@@ -11,6 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from ai.agent.context import build_agent_context_bundle
 from ai.agent.intent import (
+    expense_create_repair_arguments,
     prompt_requests_settlement_finalization,
     prompt_requests_timeline_activity_creation,
     timeline_activity_repair_arguments,
@@ -144,6 +145,22 @@ def _maybe_repair_provider_result(
                     ),
                 ],
             )
+
+    repair_arguments = expense_create_repair_arguments(
+        prompt=prompt,
+        context=context,
+    )
+    if repair_arguments is not None:
+        return _with_usage_from(
+            provider_result,
+            text=provider_result.text,
+            tool_calls=[
+                _synthesized_tool_call(
+                    "create_expense",
+                    repair_arguments,
+                ),
+            ],
+        )
 
     if provider_result.tool_calls:
         return provider_result

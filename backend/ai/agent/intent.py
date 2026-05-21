@@ -16,9 +16,21 @@ CREATE_ACTIVITY_RE = re.compile(
     re.IGNORECASE,
 )
 
+CREATE_EXPENSE_RE = re.compile(
+    r"\b(create|add|tạo|thêm)\b.{0,80}\b(expense|expenses|cost|chi phí|khoản chi)\b"
+    r"|\b(expense|expenses|cost|chi phí|khoản chi)\b.{0,80}\b(create|add|tạo|thêm)\b",
+    re.IGNORECASE,
+)
+
 ISO_DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 TRIP_DAY_RE = re.compile(r"(?:\bday|ngày)\s*(\d{1,2})\b", re.IGNORECASE)
 QUOTED_TITLE_RE = re.compile(r"['\"“”](.+?)['\"“”]")
+MONEY_AMOUNT_RE = re.compile(
+    r"(?:\bsố\s*tiền\b|\bamount\b|\bcost\b|\bgiá\b)?\s*"
+    r"(\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d{1,2})?)"
+    r"\s*(VND|USD|EUR)?\b",
+    re.IGNORECASE,
+)
 TIME_RANGE_RE = re.compile(
     r"(?:\bfrom|từ)\s*(\d{1,2}:\d{2})(?::\d{2})?"
     r".{0,20}?(?:\bto|đến|-)\s*(\d{1,2}:\d{2})(?::\d{2})?",
@@ -36,6 +48,10 @@ def prompt_requests_settlement_finalization(prompt: str) -> bool:
 
 def prompt_requests_timeline_activity_creation(prompt: str) -> bool:
     return bool(CREATE_ACTIVITY_RE.search(prompt))
+
+
+def prompt_requests_expense_creation(prompt: str) -> bool:
+    return bool(CREATE_EXPENSE_RE.search(prompt))
 
 
 def _parse_iso_date(prompt: str) -> date | None:
@@ -128,4 +144,50 @@ def timeline_activity_repair_arguments(*, prompt: str, context: dict) -> dict | 
         ),
         **_activity_title_arguments(prompt),
         **_activity_time_arguments(prompt),
+    }
+
+
+def _normalize_money_amount(text: str) -> str:
+    value = text.strip()
+    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", value):
+        return re.sub(r"[.,]", "", value)
+    return value.replace(",", ".")
+
+
+def _expense_amount_arguments(prompt: str, *, context: dict) -> dict:
+    match = MONEY_AMOUNT_RE.search(prompt)
+    if not match:
+        return {}
+    amount = _normalize_money_amount(match.group(1))
+    currency = match.group(2)
+    if not currency:
+        trip = context.get("trip")
+        if isinstance(trip, dict):
+            currency = trip.get("currency_code")
+    payload = {"total_amount": amount}
+    if currency:
+        payload["currency_code"] = str(currency).upper()
+    return payload
+
+
+def _expense_collector_arguments(*, prompt: str, context: dict) -> dict:
+    if not re.search(
+        r"(?:do\s+)?(?:tôi|mình)\s+thu\b|\bi\s+(?:collect|paid)\b",
+        prompt,
+        re.IGNORECASE,
+    ):
+        return {}
+    actor = context.get("actor")
+    if not isinstance(actor, dict) or not actor.get("id"):
+        return {}
+    return {"collector_id": actor["id"]}
+
+
+def expense_create_repair_arguments(*, prompt: str, context: dict) -> dict | None:
+    if not prompt_requests_expense_creation(prompt):
+        return None
+    return {
+        **_activity_title_arguments(prompt),
+        **_expense_amount_arguments(prompt, context=context),
+        **_expense_collector_arguments(prompt=prompt, context=context),
     }

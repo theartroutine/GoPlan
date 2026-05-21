@@ -405,6 +405,34 @@ class ToolHandlerTests(TestCase):
             AIActionDraft.objects.filter(action_type="settlement.finalize").exists()
         )
 
+    def test_finalize_settlement_skips_draft_when_expenses_are_underfunded(self):
+        from ai.agent import handlers, schemas
+        from ai.models import AIActionDraft
+        from expenses.services import create_expense
+
+        create_expense(
+            trip_id=self.trip.id,
+            actor=self.user,
+            title="Hotel",
+            description="",
+            total_amount=Decimal("1000000"),
+            collector_id=self.user.id,
+        )
+
+        result = handlers.finalize_settlement(
+            trip=self.trip,
+            interaction=self.interaction,
+            actor=self.user,
+            args=schemas.FinalizeSettlementArgs(),
+        )
+
+        self.assertIsNone(result.draft)
+        self.assertIn("Chưa thể chốt quyết toán", result.message)
+        self.assertIn("1000000.00 VND", result.message)
+        self.assertFalse(
+            AIActionDraft.objects.filter(action_type="settlement.finalize").exists()
+        )
+
     def test_delete_activity_handler_enriches_display_payload_from_target(self):
         from ai.agent import handlers, schemas
 
