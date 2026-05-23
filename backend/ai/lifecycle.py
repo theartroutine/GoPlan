@@ -2,19 +2,23 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from ai.models import AIActionDraft, AIActionDraftStatus, AIInteraction, AIInteractionStatus
+from ai.models import AIActionDraft, AIInteraction, AIInteractionStatus
 from ai.services import (
     AI_LOCK_TTL,
-    GENERIC_AI_ERROR_MESSAGE,
     has_active_ai_interaction,
+    message_for_error_code,
 )
 from chat.models import ChatMessage, ChatMessageAIStatus, ChatMessageSenderKind
 from chat.services import push_chat_message
 from trips.models import Trip
+
+
+def summarize_draft(*, action_type: str, payload: dict, status: str) -> str:
+    title = payload.get("title") or action_type
+    return f"[{status}] {action_type}: {title[:160]}"
 
 
 class InteractionAlreadyRunningError(Exception):
@@ -81,18 +85,15 @@ def claim_interaction_for_run(interaction_id):
     return interaction
 
 
-def finish_interaction_success(
-    *,
-    interaction,
-    content: str,
-    usage,
-    drafts=None,
-) -> ChatMessage:
+def finish_interaction_success(*, interaction, message_text: str) -> ChatMessage:
+    """Create the AI ChatMessage and attach drafts already persisted by tools."""
     now = timezone.now()
     with transaction.atomic():
         interaction = AIInteraction.objects.select_for_update().get(pk=interaction.pk)
         if interaction.response_message_id is not None:
             return interaction.response_message
+
+        content = (message_text or "").strip() or "GoPlanAI"
         message = ChatMessage.objects.create(
             trip=interaction.trip,
             sender=None,
@@ -102,44 +103,55 @@ def finish_interaction_success(
             content=content,
             ai_status=ChatMessageAIStatus.SUCCESS,
         )
-        draft_specs = drafts or []
-        expires_at = now + timedelta(
-            seconds=settings.GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS
-        )
-        AIActionDraft.objects.bulk_create(
-            [
-                AIActionDraft(
-                    trip=interaction.trip,
-                    interaction=interaction,
-                    response_message=message,
-                    requested_by=interaction.requested_by,
-                    action_type=draft.action_type,
-                    status=(
-                        draft.status
-                        if draft.status
-                        else AIActionDraftStatus.NEEDS_INFO
-                    ),
-                    payload=draft.payload,
-                    preview=draft.preview,
-                    missing_fields=draft.missing_fields,
-                    preconditions=draft.preconditions,
-                    required_confirmation=draft.required_confirmation,
-                    expires_at=expires_at,
-                )
-                for draft in draft_specs
-            ]
-        )
+        AIActionDraft.objects.filter(
+            interaction=interaction, response_message__isnull=True
+        ).update(response_message=message)
+
         interaction.response_message = message
         interaction.status = AIInteractionStatus.SUCCEEDED
         interaction.error_code = None
-        interaction.input_tokens = getattr(usage, "input_tokens", None)
-        interaction.output_tokens = getattr(usage, "output_tokens", None)
-        interaction.total_tokens = getattr(usage, "total_tokens", None)
         interaction.completed_at = now
         interaction.lock_expires_at = now
-        interaction.save()
+        interaction.save(
+            update_fields=[
+                "response_message",
+                "status",
+                "error_code",
+                "completed_at",
+                "lock_expires_at",
+            ]
+        )
         transaction.on_commit(lambda: push_chat_message(message))
     return message
+
+
+def release_interaction_for_retry(
+    *,
+    interaction,
+    error_code: str,
+    retry_after_seconds: int,
+) -> None:
+    now = timezone.now()
+    with transaction.atomic():
+        interaction = AIInteraction.objects.select_for_update().get(pk=interaction.pk)
+        if interaction.response_message_id is not None:
+            return
+        if interaction.status in (
+            AIInteractionStatus.SUCCEEDED,
+            AIInteractionStatus.FAILED,
+        ):
+            return
+        interaction.status = AIInteractionStatus.PENDING
+        interaction.error_code = error_code
+        interaction.lock_expires_at = now + timedelta(seconds=retry_after_seconds)
+        interaction.save(
+            update_fields=[
+                "status",
+                "error_code",
+                "lock_expires_at",
+                "updated_at",
+            ]
+        )
 
 
 def finish_interaction_failure(*, interaction, error_code: str) -> ChatMessage:
@@ -154,7 +166,7 @@ def finish_interaction_failure(*, interaction, error_code: str) -> ChatMessage:
             sender_kind=ChatMessageSenderKind.AI,
             sender_display_name_snapshot="GoPlanAI",
             sender_identify_tag_snapshot=None,
-            content=GENERIC_AI_ERROR_MESSAGE,
+            content=message_for_error_code(error_code),
             ai_status=ChatMessageAIStatus.ERROR,
         )
         interaction.response_message = message

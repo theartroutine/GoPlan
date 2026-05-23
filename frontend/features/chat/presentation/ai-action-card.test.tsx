@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AIActionDraft } from "@/features/chat/domain/ai-action-drafts";
 import {
+  cancelAIActionDraft,
   confirmAIActionDraft,
   patchAIActionDraft,
 } from "@/features/chat/infrastructure/ai-action-drafts-api";
@@ -12,6 +13,24 @@ vi.mock("@/features/chat/infrastructure/ai-action-drafts-api", () => ({
   cancelAIActionDraft: vi.fn(),
   confirmAIActionDraft: vi.fn(),
   patchAIActionDraft: vi.fn(),
+}));
+
+vi.mock("@/features/trips/presentation/trip-context", () => ({
+  useTripContext: () => ({
+    tripId: "trip-1",
+    data: { trip: { timezone: "UTC", currency_code: "VND" } },
+    loading: false,
+    error: null,
+    notFound: false,
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 function makeDraft(overrides: Partial<AIActionDraft> = {}): AIActionDraft {
@@ -24,6 +43,14 @@ function makeDraft(overrides: Partial<AIActionDraft> = {}): AIActionDraft {
     can_cancel: true,
     can_edit: false,
     preview: { title: "Dinner", amount: "1,200,000 VND" },
+    display: {
+      icon: "expense",
+      kicker: "Expense",
+      title: "Dinner",
+      tone: "create",
+      hero: { kind: "amount", value: "1,200,000", currency: "VND" },
+    },
+    summary: "[READY] expense.create: Dinner",
     missing_fields: [],
     result: {},
     error_code: "",
@@ -40,7 +67,7 @@ describe("AIActionCard", () => {
     vi.clearAllMocks();
   });
 
-  it("shows confirm and cancel for authorized ready drafts", () => {
+  it("shows confirm and cancel actions for authorized ready drafts", () => {
     render(
       <AIActionCard
         tripId="trip-1"
@@ -51,9 +78,10 @@ describe("AIActionCard", () => {
 
     expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Ready" })).toBeInTheDocument();
   });
 
-  it("shows waiting state for unauthorized ready drafts", () => {
+  it("hides action buttons for unauthorized ready drafts", () => {
     render(
       <AIActionCard
         tripId="trip-1"
@@ -62,9 +90,8 @@ describe("AIActionCard", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Waiting for the authorized member to confirm."),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 
   it("calls confirm handler and reports changed draft", async () => {
@@ -86,7 +113,11 @@ describe("AIActionCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
-    expect(await screen.findByText("CONFIRMED")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "Confirmed" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(onDraftChanged).toHaveBeenCalledWith(
       expect.objectContaining({ status: "CONFIRMED" }),
     );
@@ -117,7 +148,9 @@ describe("AIActionCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
-    expect(await screen.findByText("EXPIRED")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "Expired" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Draft expired.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
     expect(onDraftChanged).toHaveBeenCalledWith(expiredDraft);
@@ -129,6 +162,13 @@ describe("AIActionCard", () => {
         status: "READY",
         missing_fields: [],
         preview: { title: "Lunch", total_amount: "500000" },
+        display: {
+          icon: "expense",
+          kicker: "Expense",
+          title: "Lunch",
+          tone: "create",
+          hero: { kind: "amount", value: "500,000", currency: "VND" },
+        },
       }),
     });
     const onDraftChanged = vi.fn();
@@ -142,6 +182,12 @@ describe("AIActionCard", () => {
           can_edit: true,
           missing_fields: [{ name: "total_amount", label: "Amount" }],
           preview: { title: "Lunch" },
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Lunch",
+            tone: "create",
+          },
         })}
         onDraftChanged={onDraftChanged}
       />,
@@ -155,57 +201,23 @@ describe("AIActionCard", () => {
     expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
       total_amount: "500000",
     });
-    expect(await screen.findByText("READY")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "Ready" }),
+    ).toBeInTheDocument();
   });
 
-  it("edits missing fields when can_edit is true without cancel permission", async () => {
-    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
+  it("allows cancelling needs-info drafts without filling fields first", async () => {
+    vi.mocked(cancelAIActionDraft).mockResolvedValueOnce({
       draft: makeDraft({
-        status: "READY",
-        can_confirm: true,
+        status: "CANCELLED",
+        can_confirm: false,
         can_cancel: false,
         can_edit: false,
-        missing_fields: [],
-        preview: { title: "Museum", status: "IN_PROGRESS" },
+        missing_fields: [{ name: "total_amount", label: "Amount" }],
       }),
     });
-    render(
-      <AIActionCard
-        tripId="trip-1"
-        draft={makeDraft({
-          status: "NEEDS_INFO",
-          can_confirm: false,
-          can_cancel: false,
-          can_edit: true,
-          missing_fields: [
-            {
-              name: "status",
-              label: "Status",
-              type: "select",
-              options: [{ label: "In Progress", value: "IN_PROGRESS" }],
-            },
-          ],
-          preview: { title: "Museum" },
-        })}
-        onDraftChanged={vi.fn()}
-      />,
-    );
+    const onDraftChanged = vi.fn();
 
-    fireEvent.change(screen.getByLabelText("Status"), {
-      target: { value: "IN_PROGRESS" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
-
-    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
-      status: "IN_PROGRESS",
-    });
-    expect(await screen.findByText("READY")).toBeInTheDocument();
-  });
-
-  it("sends selected field option values when editing missing fields", async () => {
-    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
-      draft: makeDraft({ status: "READY", missing_fields: [] }),
-    });
     render(
       <AIActionCard
         tripId="trip-1"
@@ -214,14 +226,81 @@ describe("AIActionCard", () => {
           can_confirm: false,
           can_cancel: true,
           can_edit: true,
+          missing_fields: [{ name: "total_amount", label: "Amount" }],
+          preview: { title: "Lunch" },
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Lunch",
+            tone: "create",
+          },
+        })}
+        onDraftChanged={onDraftChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(cancelAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1");
+    expect(
+      await screen.findByRole("img", { name: "Cancelled" }),
+    ).toBeInTheDocument();
+    expect(onDraftChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "CANCELLED" }),
+    );
+  });
+
+  it("edits synthetic time range fields without losing entered values", async () => {
+    vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
+      draft: makeDraft({
+        action_type: "timeline.activity.create",
+        status: "READY",
+        can_confirm: true,
+        can_cancel: true,
+        can_edit: false,
+        missing_fields: [],
+        preview: {
+          title: "Dinh I",
+          start_time: "08:30",
+          end_time: "10:00",
+        },
+        display: {
+          icon: "activity",
+          kicker: "Activity · Sightseeing",
+          title: "Dinh I",
+          tone: "create",
+          chips: [{ icon: "clock", label: "08:30 – 10:00" }],
+        },
+      }),
+    });
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          action_type: "timeline.activity.create",
+          status: "NEEDS_INFO",
+          can_confirm: false,
+          can_cancel: true,
+          can_edit: true,
+          preview: { title: "Dinh I" },
+          display: {
+            icon: "activity",
+            kicker: "Activity · Sightseeing",
+            title: "Dinh I",
+            tone: "create",
+          },
           missing_fields: [
             {
-              name: "section_id",
-              label: "Timeline day",
-              type: "select",
-              options: [
-                { label: "Day 1", value: "section-1" },
-                { label: "Day 2", value: "section-2" },
+              name: "time_range",
+              label: "Time",
+              type: "time_range",
+              constraints: {
+                section_index: 1,
+                section_date: "2026-04-20",
+                pair: ["start_time", "end_time"],
+              },
+              presets: [
+                { label: "Morning", start: "08:30", end: "10:00" },
               ],
             },
           ],
@@ -230,17 +309,22 @@ describe("AIActionCard", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Timeline day"), {
-      target: { value: "section-2" },
+    fireEvent.change(screen.getByLabelText("Start"), {
+      target: { value: "08:30" },
+    });
+    fireEvent.change(screen.getByLabelText("End"), {
+      target: { value: "10:00" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save info" }));
 
     expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
-      section_id: "section-2",
+      start_time: "08:30",
+      end_time: "10:00",
     });
+    expect(await screen.findByRole("img", { name: "Ready" })).toBeInTheDocument();
   });
 
-  it("parses JSON field values before patching drafts", async () => {
+  it("parses JSON missing fields before patching drafts", async () => {
     vi.mocked(patchAIActionDraft).mockResolvedValueOnce({
       draft: makeDraft({ status: "READY", missing_fields: [] }),
     });
@@ -248,6 +332,7 @@ describe("AIActionCard", () => {
       <AIActionCard
         tripId="trip-1"
         draft={makeDraft({
+          action_type: "timeline.activity.update",
           status: "NEEDS_INFO",
           can_confirm: false,
           can_cancel: true,
@@ -265,33 +350,46 @@ describe("AIActionCard", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save info" }));
 
-    expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
-      data: { title: "Museum" },
+    await waitFor(() => {
+      expect(patchAIActionDraft).toHaveBeenCalledWith("trip-1", "draft-1", {
+        data: { title: "Museum" },
+      });
     });
   });
 
-  it("shows expired drafts without action buttons", () => {
-    render(
-      <AIActionCard
-        tripId="trip-1"
-        draft={makeDraft({
-          status: "EXPIRED",
+  it("does not resubmit fields that are no longer missing after a partial save", async () => {
+    vi.mocked(patchAIActionDraft)
+      .mockResolvedValueOnce({
+        draft: makeDraft({
+          status: "NEEDS_INFO",
           can_confirm: false,
-          can_cancel: false,
-        })}
-        onDraftChanged={vi.fn()}
-      />,
-    );
+          can_cancel: true,
+          can_edit: true,
+          missing_fields: [{ name: "total_amount", label: "Amount" }],
+          preview: { title: "Lunch" },
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Lunch",
+            tone: "create",
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        draft: makeDraft({
+          status: "READY",
+          missing_fields: [],
+          preview: { title: "Lunch", total_amount: "500000" },
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Lunch",
+            tone: "create",
+            hero: { kind: "amount", value: "500,000", currency: "VND" },
+          },
+        }),
+      });
 
-    expect(screen.getByText("EXPIRED")).toBeInTheDocument();
-    expect(
-      screen.getByText("This draft expired. Ask GoPlanAI to regenerate it."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
-  });
-
-  it("does not render editable controls for missing target identity fields", () => {
     render(
       <AIActionCard
         tripId="trip-1"
@@ -301,17 +399,110 @@ describe("AIActionCard", () => {
           can_cancel: true,
           can_edit: true,
           missing_fields: [
-            { name: "activity_id", label: "Activity", type: "target" },
+            { name: "title", label: "Title" },
+            { name: "total_amount", label: "Amount" },
           ],
+          preview: {},
+          display: {
+            icon: "expense",
+            kicker: "Expense",
+            title: "Expense",
+            tone: "create",
+          },
         })}
         onDraftChanged={vi.fn()}
       />,
     );
 
-    expect(
-      screen.getByText("Ask GoPlanAI to clarify the target."),
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Activity")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Save info" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Lunch" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    await screen.findByLabelText("Amount");
+    expect(patchAIActionDraft).toHaveBeenNthCalledWith(
+      1,
+      "trip-1",
+      "draft-1",
+      { title: "Lunch" },
+    );
+
+    fireEvent.change(screen.getByLabelText("Amount"), {
+      target: { value: "500000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save info" }));
+
+    await waitFor(() => {
+      expect(patchAIActionDraft).toHaveBeenNthCalledWith(
+        2,
+        "trip-1",
+        "draft-1",
+        { total_amount: "500000" },
+      );
+    });
+  });
+
+  it("renders timeline activity details from preview when display is sparse", () => {
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          action_type: "timeline.activity.create",
+          can_confirm: false,
+          can_cancel: false,
+          preview: {
+            title: "Dinh I",
+            system_type: "SIGHTSEEING",
+            time_mode: "TIME_RANGE",
+            start_time: "08:30:00",
+            end_time: "10:00:00",
+            location_label: "Dinh I Palace",
+            location_note: "Enter through the main gate",
+            assignee_scope: "EVERYONE",
+            note: "Keep the visit relaxed.",
+            meeting_point: "Hotel lobby",
+          },
+          display: {
+            icon: "activity",
+            kicker: "Activity · Activity",
+            title: "",
+            tone: "create",
+            chips: [{ icon: "users", label: "Whole group" }],
+          },
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Dinh I")).toBeInTheDocument();
+    expect(screen.queryByText("Activity · Sightseeing")).toBeNull();
+    expect(screen.getByText("Whole group")).toBeInTheDocument();
+    expect(screen.getByText("08:30 – 10:00")).toBeInTheDocument();
+    expect(screen.getByText("Dinh I Palace")).toBeInTheDocument();
+    expect(screen.getByText("Hotel lobby")).toBeInTheDocument();
+    expect(screen.getByText("Keep the visit relaxed.")).toBeInTheDocument();
+    expect(screen.getByText("Enter through the main gate")).toBeInTheDocument();
+  });
+
+  it("renders timeline activity from preview when display text fields are missing", () => {
+    render(
+      <AIActionCard
+        tripId="trip-1"
+        draft={makeDraft({
+          action_type: "timeline.activity.create",
+          can_confirm: false,
+          can_cancel: false,
+          preview: {
+            title: "Dinh I",
+            system_type: "SIGHTSEEING",
+          },
+          display: {} as AIActionDraft["display"],
+        })}
+        onDraftChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Dinh I")).toBeInTheDocument();
+    expect(screen.queryByText("Activity · Sightseeing")).toBeNull();
   });
 });

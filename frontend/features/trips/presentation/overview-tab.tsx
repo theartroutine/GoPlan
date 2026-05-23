@@ -1,124 +1,113 @@
 "use client";
 
-import { CalendarDays, Users, Wallet } from "lucide-react";
+import type { ReactNode } from "react";
 
-import {
-  formatDateOnly,
-  getInclusiveDateOnlySpan,
-} from "@/features/trips/domain/date-only";
-import { formatTripMoneyAmount } from "@/features/trips/domain/money";
+import { OverviewBudgetCard } from "@/features/trips/presentation/overview-budget-card";
+import { OverviewDatesCard } from "@/features/trips/presentation/overview-dates-card";
+import { OverviewDescriptionCard } from "@/features/trips/presentation/overview-description-card";
+import { OverviewMembersCard } from "@/features/trips/presentation/overview-members-card";
+import { getTodayDateOnly } from "@/features/trips/domain/trip-countdown";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
-import {
-  AvatarGroup,
-  AvatarGroupCount,
-} from "@/shared/ui/avatar";
-import { UserAvatar } from "@/shared/ui/user-avatar";
+import { useInView } from "@/shared/hooks/use-in-view";
 
-// ── Overview Tab ──────────────────────────────────────────────────────────
+type CardWrapperProps = {
+  index: number;
+  className?: string;
+  fullBleed?: boolean;
+  children: ReactNode;
+};
+
+function StaggerCard({ index, className, fullBleed, children }: CardWrapperProps) {
+  const { ref, inView } = useInView<HTMLDivElement>({
+    rootMargin: "-10% 0px",
+    once: true,
+  });
+  return (
+    <div
+      ref={ref}
+      data-in-view={inView}
+      style={{ transitionDelay: `${index * 80}ms` }}
+      className={[
+        "overflow-hidden rounded-xl border border-border/60 bg-card shadow-xs transition-all duration-300",
+        fullBleed ? "" : "p-4 sm:p-5",
+        "opacity-0 translate-y-3 ease-[cubic-bezier(0.16,1,0.3,1)]",
+        "data-[in-view=true]:opacity-100 data-[in-view=true]:translate-y-0",
+        "motion-reduce:opacity-100 motion-reduce:translate-y-0 motion-reduce:transition-none",
+        "hover:-translate-y-0.5 hover:shadow-md hover:border-border motion-reduce:hover:translate-y-0",
+        className ?? "",
+      ].join(" ")}
+    >
+      {children}
+    </div>
+  );
+}
 
 export function OverviewTab() {
-  const { data } = useTripContext();
-
+  const { tripId, data } = useTripContext();
   if (!data) return null;
 
   const { trip, members } = data;
+  const today = getTodayDateOnly();
+  const cards: {
+    key: string;
+    node: ReactNode;
+    fullBleed?: boolean;
+    className?: string;
+  }[] = [];
 
-  const days = getInclusiveDateOnlySpan(trip.start_date, trip.end_date);
+  cards.push({
+    key: "dates",
+    fullBleed: true,
+    className: "sm:col-start-1 sm:row-start-1",
+    node: (
+      <OverviewDatesCard
+        start={trip.start_date}
+        end={trip.end_date}
+        status={trip.status}
+        today={today}
+      />
+    ),
+  });
 
-  const dateRange = `${formatDateOnly(trip.start_date, {
-    month: "short",
-    day: "numeric",
-  })} – ${formatDateOnly(trip.end_date, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })}`;
+  cards.push({
+    key: "members",
+    fullBleed: true,
+    className: "h-full sm:col-start-2 sm:row-start-1 sm:row-span-3",
+    node: <OverviewMembersCard tripId={tripId} members={members} />,
+  });
 
-  const totalBudget = trip.budget_estimate
-    ? formatTripMoneyAmount(trip.budget_estimate, trip.currency_code)
-    : null;
+  cards.push({
+    key: "budget",
+    fullBleed: true,
+    className: "sm:col-start-1 sm:row-start-2",
+    node: (
+      <OverviewBudgetCard
+        tripId={tripId}
+        budgetEstimate={trip.budget_estimate}
+        currencyCode={trip.currency_code}
+        memberCount={members.length}
+      />
+    ),
+  });
 
-  const budgetPerPerson =
-    trip.budget_estimate && members.length > 0
-      ? formatTripMoneyAmount(parseFloat(trip.budget_estimate) / members.length, trip.currency_code)
-      : null;
-
-  const MAX_AVATARS = 5;
-  const visibleMembers = members.slice(0, MAX_AVATARS);
-  const extraCount = members.length - MAX_AVATARS;
+  cards.push({
+    key: "description",
+    className: "sm:col-start-1 sm:row-start-3",
+    node: <OverviewDescriptionCard tripId={tripId} description={trip.description} />,
+  });
 
   return (
-    <div className="divide-y divide-border/50">
-
-      {/* ── Key info ──────────────────────────────────────────────────────── */}
-      <div
-        className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both pb-6"
-        style={{ animationDuration: "0.5s", animationDelay: "0ms" }}
-      >
-        <div className="space-y-4">
-
-          {/* Dates */}
-          <div className="flex items-start gap-3">
-            <CalendarDays className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">{dateRange}</p>
-              <p className="text-xs text-muted-foreground">{days} days</p>
-            </div>
-          </div>
-
-          {/* Members */}
-          <div className="flex items-start gap-3">
-            <Users className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <div className="space-y-2">
-              <p className="text-sm font-medium">
-                {members.length} member{members.length !== 1 ? "s" : ""}
-              </p>
-              <AvatarGroup>
-                {visibleMembers.map((m) => (
-                  <UserAvatar key={m.membership_id} user={m.user} size="sm" />
-                ))}
-                {extraCount > 0 && (
-                  <AvatarGroupCount className="text-[10px]">
-                    +{extraCount}
-                  </AvatarGroupCount>
-                )}
-              </AvatarGroup>
-            </div>
-          </div>
-
-          {/* Budget */}
-          {totalBudget && (
-            <div className="flex items-start gap-3">
-              <Wallet className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">
-                  {totalBudget} {trip.currency_code}
-                </p>
-                {budgetPerPerson && (
-                  <p className="text-xs text-muted-foreground">
-                    ~{budgetPerPerson} {trip.currency_code} per person
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-        </div>
-      </div>
-
-      {/* ── Description ───────────────────────────────────────────────────── */}
-      {trip.description && (
-        <div
-          className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both py-6"
-          style={{ animationDuration: "0.5s", animationDelay: "140ms" }}
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch sm:gap-4">
+      {cards.map((c, i) => (
+        <StaggerCard
+          key={c.key}
+          index={i}
+          fullBleed={c.fullBleed}
+          className={c.className}
         >
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            About
-          </p>
-          <p className="text-sm leading-relaxed text-foreground/75">{trip.description}</p>
-        </div>
-      )}
-
+          {c.node}
+        </StaggerCard>
+      ))}
     </div>
   );
 }

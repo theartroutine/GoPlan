@@ -37,7 +37,7 @@ const ROOM_ACCESS_LOST_ERROR_CODES = new Set(["TRIP_NOT_FOUND", "FORBIDDEN"]);
 export type ChatRoomStatus = "loading" | "ready" | "error" | "kicked";
 type SendLockReason = "terminal";
 
-type SendOutcome = "ok" | "duplicate" | "failed";
+type SendOutcome = "ok" | "duplicate" | "failed" | "blocked";
 type UpdatedSyncCursor = { updatedAt: string; id: string };
 
 export type UseTripChatResult = {
@@ -665,10 +665,14 @@ export function useTripChat(
           dispatch({ type: "LOCK_SEND_TERMINAL", clientMessageId });
           return "failed";
         }
-        if (errorCode === "AI_BUSY" || errorCode === "INVALID_AI_PROMPT") {
+        if (
+          errorCode === "AI_BUSY" ||
+          errorCode === "INVALID_AI_PROMPT" ||
+          errorCode === "THROTTLED"
+        ) {
           dispatch({ type: "DROP_PENDING", clientMessageId });
           dispatch({ type: "WS_ERROR", errorCode });
-          return "failed";
+          return "blocked";
         }
         dispatch({ type: "FAIL_PENDING", clientMessageId });
         // Surface a coarse error code on the room, or close it if access is gone.

@@ -197,6 +197,7 @@ REST_FRAMEWORK = {
         'public_media': '600/hour',
         'trips_list_create': '60/hour',
         'trips_detail_update': '120/hour',
+        'trips_invitations_list': '240/hour',
         'trips_send_invitations': '10/hour',
         'trips_invitable_friends': '60/hour',
         'trips_accept_invitation': '30/hour',
@@ -284,8 +285,6 @@ DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.co
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 DEEPSEEK_TIMEOUT_SECONDS = int(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60"))
 DEEPSEEK_MAX_OUTPUT_TOKENS = int(os.environ.get("DEEPSEEK_MAX_OUTPUT_TOKENS", "4000"))
-GOPLAN_AI_THINKING_ENABLED = env_bool("GOPLAN_AI_THINKING_ENABLED", default=True)
-GOPLAN_AI_REASONING_EFFORT = os.environ.get("GOPLAN_AI_REASONING_EFFORT", "high")
 GOPLAN_AI_LOCK_TTL_SECONDS = int(os.environ.get("GOPLAN_AI_LOCK_TTL_SECONDS", "120"))
 GOPLAN_AI_MAX_ATTEMPTS = int(os.environ.get("GOPLAN_AI_MAX_ATTEMPTS", "3"))
 GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS = int(
@@ -299,15 +298,6 @@ GOPLAN_AI_CONTEXT_TIMELINE_ACTIVITY_LIMIT = int(
 )
 GOPLAN_AI_CONTEXT_EXPENSE_LIMIT = int(
     os.environ.get("GOPLAN_AI_CONTEXT_EXPENSE_LIMIT", "80")
-)
-GOPLAN_AI_SYSTEM_PROMPT = (
-    "You are GoPlanAI, a concise assistant inside a group trip planning chat. "
-    "Answer the user's prompt helpfully. Do not claim access to trip data, "
-    "chat history, expenses, itinerary, or members unless they are provided "
-    "in the prompt. "
-    "Format using Markdown: use **bold** for emphasis and section titles "
-    "(never use # ## ### headings), use bullet lists where helpful, "
-    "and use fenced code blocks with language tags for any code snippets."
 )
 
 # -------- Channels Configuration --------
@@ -332,4 +322,30 @@ WS_CLOSE_CODES = {
     'AUTH_FAILED': 4001,      # Token invalid/revoked — client should not retry
     'TOKEN_EXPIRED': 4002,    # Token expired — client should refresh then retry
     'SERVER_ERROR': 4500,
+}
+
+# -------- Logging Configuration --------
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "fmt": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
+    },
+    "handlers": {
+        "ai_agent_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+            "level": "INFO",
+        },
+    },
+    "loggers": {
+        "ai.agent": {
+            "handlers": ["ai_agent_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
 }

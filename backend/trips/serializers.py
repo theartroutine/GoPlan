@@ -9,6 +9,7 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from accounts.services import resolve_avatar_url
+from trips.constants import TRIP_DESCRIPTION_MAX_LENGTH
 from trips.models import (
     MemberStatus,
     TimelineActivity,
@@ -132,7 +133,12 @@ class CreateTripSerializer(serializers.Serializer):
     cover_image_url          = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
     start_date      = serializers.DateField()
     end_date        = serializers.DateField()
-    description     = serializers.CharField(required=False, allow_blank=True, default="")
+    description     = serializers.CharField(
+        max_length=TRIP_DESCRIPTION_MAX_LENGTH,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
     currency_code   = serializers.CharField(max_length=3, required=False, default="VND")
     timezone        = serializers.CharField(max_length=64, required=False, default="Asia/Ho_Chi_Minh")
     budget_estimate = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, allow_null=True)
@@ -240,7 +246,11 @@ class UpdateTripSerializer(serializers.Serializer):
     cover_image_url          = serializers.CharField(max_length=500, required=False, allow_blank=True)
     start_date      = serializers.DateField(required=False)
     end_date        = serializers.DateField(required=False)
-    description     = serializers.CharField(allow_blank=True, required=False)
+    description     = serializers.CharField(
+        max_length=TRIP_DESCRIPTION_MAX_LENGTH,
+        allow_blank=True,
+        required=False,
+    )
     currency_code   = serializers.CharField(max_length=3, required=False)
     timezone        = serializers.CharField(max_length=64, required=False)
     budget_estimate = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, allow_null=True)

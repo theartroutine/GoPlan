@@ -1106,6 +1106,26 @@ describe("useTripChat", () => {
     expect(result.current.errorCode).toBe("AI_BUSY");
   });
 
+  it("drops optimistic AI prompt when backend throttles GoPlanAI prompts", async () => {
+    chatApiMock.bffListChatHistory.mockResolvedValue({ results: [], next_cursor: null });
+    chatApiMock.bffSendChatMessage.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 429, data: { error_code: "THROTTLED" } },
+    });
+
+    const { result } = renderHook(() => useTripChat(TRIP_ID, ME));
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.sendMessage("@GoPlanAI hello");
+    });
+
+    expect(outcome).toBe("blocked");
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.errorCode).toBe("THROTTLED");
+  });
+
   it("tracks AI typing state from realtime events and only clears the active interaction", async () => {
     chatApiMock.bffListChatHistory.mockResolvedValue({ results: [], next_cursor: null });
 
@@ -1187,7 +1207,7 @@ describe("useTripChat", () => {
             },
             sender_kind: "AI",
             ai_status: aiStatus,
-            content: aiStatus === "SUCCESS" ? "AI answer" : "GoPlanAI hiện chưa trả lời được.",
+            content: aiStatus === "SUCCESS" ? "AI answer" : "GoPlanAI can't respond right now. Please try again later.",
           }),
         });
       });

@@ -6,8 +6,14 @@ from uuid import uuid4
 from django.test import TestCase
 from django.utils import timezone
 
-from ai.models import AIInteraction, AIInteractionStatus
-from ai.services import AIBusyError, ensure_ai_prompt_available
+from ai.models import AIInteraction, AIInteractionErrorCode, AIInteractionStatus
+from ai.services import (
+    AIBusyError,
+    GENERIC_AI_ERROR_MESSAGE,
+    ensure_ai_prompt_available,
+    message_for_error_code,
+    recover_stale_ai_interactions,
+)
 from chat.models import ChatMessage
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole
@@ -70,3 +76,41 @@ class AIReservationServiceTests(TestCase):
         )
 
         ensure_ai_prompt_available(trip)
+
+    def test_recovery_preserves_retry_error_code_when_attempts_exhausted(self):
+        user = create_completed_user("ai-recovery@example.com", "airecovery", "AIR001")
+        trip = _make_trip(user)
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=user,
+            prompt_message=_make_prompt_message(trip=trip, user=user),
+            prompt="hello",
+            status=AIInteractionStatus.PENDING,
+            error_code=AIInteractionErrorCode.PROVIDER_UNAVAILABLE,
+            attempt_count=3,
+            lock_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        result = recover_stale_ai_interactions()
+
+        self.assertEqual(result, {"recovered": 0, "failed": 1, "skipped": 0})
+        interaction.refresh_from_db()
+        self.assertEqual(interaction.status, AIInteractionStatus.FAILED)
+        self.assertEqual(
+            interaction.error_code,
+            AIInteractionErrorCode.PROVIDER_UNAVAILABLE,
+        )
+        self.assertIn("temporarily unavailable", interaction.response_message.content)
+
+
+class MessageForErrorCodeTests(TestCase):
+    def test_message_for_error_code_returns_specific_strings(self):
+        self.assertIn("temporarily unavailable", message_for_error_code(AIInteractionErrorCode.PROVIDER_UNAVAILABLE))
+        self.assertIn("30 seconds", message_for_error_code(AIInteractionErrorCode.RATE_LIMIT))
+        self.assertIn("format", message_for_error_code(AIInteractionErrorCode.TOOL_VALIDATION_FAILED))
+        self.assertIn("isn't supported", message_for_error_code(AIInteractionErrorCode.TOOL_UNKNOWN))
+        self.assertIn("temporarily unavailable", message_for_error_code(AIInteractionErrorCode.INSUFFICIENT_BALANCE))
+
+    def test_message_for_error_code_unknown_falls_back_to_generic(self):
+        self.assertEqual(message_for_error_code("not_a_real_code"), GENERIC_AI_ERROR_MESSAGE)
+        self.assertEqual(message_for_error_code(None), GENERIC_AI_ERROR_MESSAGE)

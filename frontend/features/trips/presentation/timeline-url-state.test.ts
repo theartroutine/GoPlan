@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildActivityHref,
   buildDayHref,
+  buildNowHref,
   buildOverviewHref,
   resolveTimelineUrlState,
 } from "@/features/trips/presentation/timeline-url-state";
@@ -12,20 +13,26 @@ const activitySectionIds = new Map([["activity-1", "day-2"]]);
 
 describe("timeline URL state", () => {
   it("builds a Day Detail href and removes legacy section params", () => {
-    expect(buildDayHref("/trips/trip-1/timeline", "foo=bar&activity=old&section=old&openSections=old", "day-2")).toBe(
+    expect(buildDayHref("/trips/trip-1/timeline", "foo=bar&activity=old&section=old&openSections=old&now=1", "day-2")).toBe(
       "/trips/trip-1/timeline?foo=bar&day=day-2",
     );
   });
 
   it("builds an Overview href and removes timeline view params", () => {
-    expect(buildOverviewHref("/trips/trip-1/timeline", "foo=bar&day=day-2&activity=old&section=old&openSections=old")).toBe(
+    expect(buildOverviewHref("/trips/trip-1/timeline", "foo=bar&day=day-2&activity=old&section=old&openSections=old&now=1")).toBe(
       "/trips/trip-1/timeline?foo=bar",
     );
   });
 
   it("builds an activity href and removes day-level state", () => {
-    expect(buildActivityHref("/trips/trip-1/timeline", "foo=bar&day=day-1&section=old", "activity-1")).toBe(
+    expect(buildActivityHref("/trips/trip-1/timeline", "foo=bar&day=day-1&section=old&now=1", "activity-1")).toBe(
       "/trips/trip-1/timeline?foo=bar&activity=activity-1",
+    );
+  });
+
+  it("builds a Now href that opens the day and requests current-time focus", () => {
+    expect(buildNowHref("/trips/trip-1/timeline", "foo=bar&activity=old&section=old&openSections=old", "day-2")).toBe(
+      "/trips/trip-1/timeline?foo=bar&day=day-2&now=1",
     );
   });
 

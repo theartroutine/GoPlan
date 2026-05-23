@@ -155,7 +155,30 @@ describe("ChatRoom", () => {
       />,
     );
 
-    expect(screen.getByText("GoPlanAI đang trả lời. Thử lại sau.")).toBeDefined();
+    expect(
+      screen.getByText(
+        "GoPlanAI is still replying. Your prompt is kept; try again shortly.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Message")).toBeDefined();
+  });
+
+  it("shows throttling warning while keeping the composer available", () => {
+    chatMock.state.errorCode = "THROTTLED";
+
+    render(
+      <ChatRoom
+        tripId="trip-1"
+        isTerminal={false}
+        currentUser={CURRENT_USER}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "You are sending GoPlanAI too quickly. Your prompt is kept; try again shortly.",
+      ),
+    ).toBeDefined();
     expect(screen.getByLabelText("Message")).toBeDefined();
   });
 

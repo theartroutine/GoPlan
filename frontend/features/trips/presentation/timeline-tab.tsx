@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -52,8 +52,11 @@ import {
 } from "@/features/trips/presentation/timeline-view-model";
 import {
   buildDayHref,
+  buildNowHref,
   buildOverviewHref,
   resolveTimelineUrlState,
+  TIMELINE_NOW_FOCUS_QUERY_PARAM,
+  TIMELINE_NOW_FOCUS_QUERY_VALUE,
 } from "@/features/trips/presentation/timeline-url-state";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import { cn } from "@/shared/lib/utils";
@@ -98,6 +101,7 @@ type DeleteDialogState =
   | { kind: "section"; section: TimelineSection };
 
 type NowMarkerPlacement = ReturnType<typeof getNowMarkerPlacement>;
+const TIMELINE_NOW_MARKER_ELEMENT_ID = "timeline-now-marker";
 const EMPTY_ACTIVE_IDS: ReadonlySet<string> = new Set();
 
 function TimelineSkeleton() {
@@ -209,8 +213,7 @@ function getTimelineFocusScrollBehavior(): ScrollBehavior {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
-function scrollTimelineActivityIntoView(activityId: string): boolean {
-  const element = document.getElementById(timelineActivityElementId(activityId));
+function scrollTimelineElementIntoView(element: HTMLElement | null): boolean {
   if (typeof element?.scrollIntoView !== "function") return false;
 
   window.requestAnimationFrame(() => {
@@ -220,6 +223,14 @@ function scrollTimelineActivityIntoView(activityId: string): boolean {
     });
   });
   return true;
+}
+
+function scrollTimelineActivityIntoView(activityId: string): boolean {
+  return scrollTimelineElementIntoView(document.getElementById(timelineActivityElementId(activityId)));
+}
+
+function scrollTimelineNowMarkerIntoView(): boolean {
+  return scrollTimelineElementIntoView(document.getElementById(TIMELINE_NOW_MARKER_ELEMENT_ID));
 }
 
 function isNowMarkerBefore(activity: TimelineActivity, placement: NowMarkerPlacement): boolean {
@@ -238,13 +249,8 @@ function isNowMarkerAfter(activity: TimelineActivity, placement: NowMarkerPlacem
 
 function NowMarkerItem({ displayTime }: { displayTime: string }) {
   return (
-    <li className="flex items-center gap-2 py-1 text-xs font-semibold text-primary">
-      <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
-      <span className="h-0.5 min-w-6 flex-1 bg-primary/50" />
-      <span className="whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5">
-        Now · {displayTime}
-      </span>
-      <span className="h-0.5 min-w-6 flex-1 bg-primary/50" />
+    <li id={TIMELINE_NOW_MARKER_ELEMENT_ID} className="scroll-mt-24">
+      <NowDivider displayTime={displayTime} />
     </li>
   );
 }
@@ -289,24 +295,35 @@ function NowDivider({
   displayTime,
   href,
 }: {
-  label: string;
+  label?: string;
   displayTime: string;
-  href: string;
+  href?: string;
 }) {
+  const text = label ? `Now · ${label} · ${displayTime}` : `Now · ${displayTime}`;
+  const pillClassName =
+    "mx-2 shrink-0 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground transition-colors";
+
   return (
     <div
       className="relative my-1 flex items-center pl-7"
       role="separator"
-      aria-label={`Current time: ${label} ${displayTime}`}
+      aria-label={label ? `Current time: ${label} ${displayTime}` : `Current time: ${displayTime}`}
     >
       <span className="absolute left-0 size-4 animate-pulse rounded-full bg-primary ring-2 ring-primary/20" />
       <span className="h-0.5 flex-1 bg-primary/70" />
-      <Link
-        href={href}
-        className="mx-2 shrink-0 whitespace-nowrap rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      >
-        Now · {label} · {displayTime}
-      </Link>
+      {href ? (
+        <Link
+          href={href}
+          className={cn(
+            pillClassName,
+            "hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          )}
+        >
+          {text}
+        </Link>
+      ) : (
+        <span className={pillClassName}>{text}</span>
+      )}
       <span className="h-0.5 flex-1 bg-primary/70" />
     </div>
   );
@@ -408,6 +425,16 @@ export function TimelineTab() {
     [pathname, searchParamString, sectionIds, activitySectionIds],
   );
   const targetActivityId = timelineUrlState.targetActivityId ?? null;
+  const shouldFocusNowMarker =
+    searchParams.get(TIMELINE_NOW_FOCUS_QUERY_PARAM) === TIMELINE_NOW_FOCUS_QUERY_VALUE;
+  const lastNowMarkerFocusKeyRef = useRef<string | null>(null);
+  const selectedSection = useMemo(
+    () =>
+      data && timelineUrlState.dayId
+        ? data.sections.find((section) => section.id === timelineUrlState.dayId) ?? null
+        : null,
+    [data, timelineUrlState.dayId],
+  );
 
   useEffect(() => {
     if (!data || timelineUrlState.replacementHref === null) {
@@ -444,6 +471,27 @@ export function TimelineTab() {
     [data, now.date],
   );
 
+  useEffect(() => {
+    if (!shouldFocusNowMarker || targetActivityId || !selectedSection) {
+      lastNowMarkerFocusKeyRef.current = null;
+      return;
+    }
+
+    if (selectedSection.section_date !== now.date) {
+      lastNowMarkerFocusKeyRef.current = null;
+      return;
+    }
+
+    const focusKey = `${selectedSection.id}:${searchParamString}`;
+    if (lastNowMarkerFocusKeyRef.current === focusKey) {
+      return;
+    }
+
+    if (scrollTimelineNowMarkerIntoView()) {
+      lastNowMarkerFocusKeyRef.current = focusKey;
+    }
+  }, [now.date, searchParamString, selectedSection, shouldFocusNowMarker, targetActivityId]);
+
   if (loading && !data) return <TimelineSkeleton />;
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!data) return null;
@@ -453,9 +501,6 @@ export function TimelineTab() {
   const canCreateSections = canEdit && timelineData.permissions.can_create_sections;
   const canManageCustomTypes = canEdit && timelineData.permissions.can_manage_custom_types;
   const unavailableSectionDates = timelineData.sections.map((section) => section.section_date);
-  const selectedSection = timelineUrlState.dayId
-    ? timelineData.sections.find((section) => section.id === timelineUrlState.dayId) ?? null
-    : null;
 
   function sectionDateExists(sectionDate: string, excludeSectionId?: string): boolean {
     return timelineData.sections.some(
@@ -700,9 +745,41 @@ export function TimelineTab() {
   }
 
   function timelineDotClass(datePosition: SectionDatePosition): string {
-    if (datePosition === "Today") return "border-primary bg-primary ring-2 ring-primary/20";
-    if (datePosition === "Upcoming") return "border-emerald-500 bg-background dark:border-emerald-400";
-    return "border-border bg-muted/40";
+    if (datePosition === "Today")
+      return "border-amber-500 bg-amber-500 ring-2 ring-amber-200/70 shadow-sm shadow-amber-300/40";
+    if (datePosition === "Upcoming")
+      return "border-sky-500 bg-sky-500 ring-2 ring-sky-100/70";
+    return "border-stone-300 bg-stone-200/70 dark:border-stone-600 dark:bg-stone-700/60";
+  }
+
+  function daySurfaceTone(datePosition: SectionDatePosition): string {
+    if (datePosition === "Today") return "from-amber-50 via-white to-orange-50/40";
+    if (datePosition === "Upcoming") return "from-white to-sky-50/50";
+    return "from-white to-stone-50/40";
+  }
+
+  function dayBorderTone(datePosition: SectionDatePosition): string {
+    if (datePosition === "Today") return "border-amber-200/80";
+    if (datePosition === "Upcoming") return "border-sky-200/70";
+    return "border-border/50";
+  }
+
+  function dayLabelTone(datePosition: SectionDatePosition): string {
+    if (datePosition === "Today") return "text-amber-700";
+    if (datePosition === "Upcoming") return "text-sky-700";
+    return "text-stone-500 dark:text-stone-400";
+  }
+
+  function dayHoverShadow(datePosition: SectionDatePosition): string {
+    if (datePosition === "Today") return "hover:shadow-lg hover:shadow-amber-200/50";
+    if (datePosition === "Upcoming") return "hover:shadow-lg hover:shadow-sky-200/40";
+    return "hover:shadow-md hover:shadow-stone-200/50";
+  }
+
+  function dayLabelText(datePosition: SectionDatePosition): string {
+    if (datePosition === "Today") return "Today";
+    if (datePosition === "Upcoming") return "Coming up";
+    return "Past";
   }
 
   function renderOverviewSectionActions(section: TimelineSection) {
@@ -744,7 +821,7 @@ export function TimelineTab() {
 
   function renderOverview() {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         {timelineData.sections.map((section, index) => {
           const datePosition = sectionPositionLabel(section.section_date, timelineData.trip_timezone);
           const formattedDate = formatSectionDate(section.section_date);
@@ -752,122 +829,126 @@ export function TimelineTab() {
           const hint = getOverviewHint(groups, datePosition);
           const inProgressCount = section.activities.filter((a) => a.status === "IN_PROGRESS").length;
           const isEmpty = section.activities.length === 0;
+          const dayHref = buildDayHref(pathname, searchParamString, section.id);
 
           return (
             <Fragment key={section.id}>
               <section
-                className={cn("relative pl-7", isEmpty && "opacity-60")}
+                className={cn(
+                  "relative pl-7",
+                  isEmpty && datePosition === "Past" && "opacity-70",
+                )}
               >
-                <div className="absolute bottom-[-1rem] left-[7px] top-5 w-px bg-border" />
+                <div
+                  aria-hidden="true"
+                  className="absolute bottom-[-0.75rem] left-[7px] top-5 w-px bg-gradient-to-b from-border via-border to-transparent"
+                />
                 <span
+                  aria-hidden="true"
                   className={cn(
-                    "absolute left-0 top-1 size-4 rounded-full border-2",
+                    "absolute left-0 top-4 size-4 rounded-full border-2",
                     timelineDotClass(datePosition),
                   )}
                 />
 
-                <div
+                <Link
+                  href={dayHref}
+                  aria-label="Open day"
                   className={cn(
-                    "overflow-hidden rounded-lg border shadow-sm",
-                    datePosition === "Today" ? "border-primary/30" : "border-border/70",
+                    "group relative block overflow-hidden rounded-2xl border bg-gradient-to-br p-4 transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    dayBorderTone(datePosition),
+                    daySurfaceTone(datePosition),
+                    dayHoverShadow(datePosition),
                   )}
                 >
-                  <div
-                    className={cn(
-                      "border-l-[3px]",
-                      datePosition === "Today"
-                        ? "border-l-primary"
-                        : datePosition === "Upcoming"
-                          ? "border-l-emerald-500 dark:border-l-emerald-400"
-                          : "border-l-border",
-                    )}
-                  >
-                    {/* Card body */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p
+                        className={cn(
+                          "text-[10px] font-bold uppercase tracking-[0.2em]",
+                          dayLabelTone(datePosition),
+                        )}
+                      >
+                        {dayLabelText(datePosition)}
+                      </p>
+                      <h3 className="mt-1 truncate text-base font-semibold leading-tight text-foreground">
+                        {section.label}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-foreground/60">{formattedDate}</p>
+                    </div>
+
                     <div
-                      className={cn(
-                        "px-3 pb-2.5 pt-3",
-                        datePosition === "Today" && "bg-primary/[0.02]",
-                      )}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                      className="shrink-0"
                     >
-                      {/* Row 1: title + actions */}
-                      <div className="mb-1.5 flex items-start justify-between gap-2">
-                        <h3 className="text-sm font-semibold leading-snug text-foreground">
-                          {section.label}
-                        </h3>
-                        {renderOverviewSectionActions(section)}
-                      </div>
+                      {renderOverviewSectionActions(section)}
+                    </div>
+                  </div>
 
-                      {/* Row 2: date + status pill */}
-                      <div className="mb-2.5 flex flex-wrap items-center gap-2">
-                        <span className="text-xs text-muted-foreground">{formattedDate}</span>
-                        <span
-                          className={cn(
-                            "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase",
-                            datePositionTone(datePosition),
-                          )}
-                        >
-                          {datePosition}
-                        </span>
-                      </div>
-
-                      {/* Row 3: activity chips */}
-                      <div className="flex flex-wrap gap-1.5">
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    {isEmpty ? (
+                      <span className="italic text-foreground/45">No activities yet</span>
+                    ) : (
+                      <>
                         {inProgressCount > 0 && (
-                          <span className="inline-flex min-h-5 items-center rounded-full border border-primary/20 bg-primary/10 px-2.5 text-[11px] font-medium text-primary">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-amber-700">
+                            <span
+                              aria-hidden="true"
+                              className="size-1.5 animate-pulse rounded-full bg-amber-500"
+                            />
                             {inProgressCount} in progress
                           </span>
                         )}
                         {groups.timeline.length > 0 && (
-                          <span className="inline-flex min-h-5 items-center rounded-full border border-border bg-muted px-2.5 text-[11px] font-medium text-foreground/80">
+                          <span className="text-foreground/70">
                             {groups.timeline.length} scheduled
                           </span>
                         )}
                         {groups.allDay.length > 0 && (
-                          <span className="inline-flex min-h-5 items-center rounded-full border border-border bg-muted px-2.5 text-[11px] font-medium text-foreground/80">
+                          <span className="text-foreground/70">
                             {groups.allDay.length} all-day
                           </span>
                         )}
                         {groups.flexible.length > 0 && (
-                          <span className="inline-flex min-h-5 items-center rounded-full border border-border bg-muted px-2.5 text-[11px] font-medium text-foreground/80">
+                          <span className="text-foreground/70">
                             {groups.flexible.length} flexible
                           </span>
                         )}
-                        {isEmpty && (
-                          <span className="inline-flex min-h-5 items-center rounded-full border border-dashed border-border px-2.5 text-[11px] text-muted-foreground">
-                            No activities yet
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Footer: hint + open day */}
-                    <div
-                      className={cn(
-                        "flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2",
-                        datePosition === "Today" ? "bg-primary/[0.03]" : "bg-muted/30",
-                      )}
-                    >
-                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                        {hint
-                          ? `${hint.prefix}: ${hint.time ? `${hint.time} – ` : ""}${hint.title}`
-                          : ""}
-                      </span>
-                      <Button asChild size="xs" variant="outline" className="shrink-0">
-                        <Link href={buildDayHref(pathname, searchParamString, section.id)}>
-                          Open day
-                          <ArrowRight className="size-3" />
-                        </Link>
-                      </Button>
-                    </div>
+                      </>
+                    )}
                   </div>
-                </div>
+
+                  <div className="mt-3 flex items-center gap-2 text-xs">
+                    <span className="min-w-0 flex-1 truncate text-foreground/75">
+                      {hint ? (
+                        <>
+                          <strong
+                            className={cn("font-semibold", dayLabelTone(datePosition))}
+                          >
+                            {hint.prefix}
+                          </strong>
+                          {` · ${hint.time ? `${hint.time} – ` : ""}${hint.title}`}
+                        </>
+                      ) : (
+                        <span aria-hidden="true" className="text-foreground/30">
+                          ·
+                        </span>
+                      )}
+                    </span>
+                    <ArrowRight
+                      aria-hidden="true"
+                      className="size-4 shrink-0 text-foreground/45 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-foreground/80"
+                    />
+                  </div>
+                </Link>
               </section>
 
               {index === nowDividerIndex && (
                 <NowDivider
                   label={section.label}
                   displayTime={now.displayTime}
-                  href={buildDayHref(pathname, searchParamString, section.id)}
+                  href={buildNowHref(pathname, searchParamString, section.id)}
                 />
               )}
             </Fragment>

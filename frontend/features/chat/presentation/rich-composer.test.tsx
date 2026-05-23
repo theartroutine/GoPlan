@@ -43,6 +43,17 @@ describe("RichComposer", () => {
     expect(onSend).toHaveBeenCalledWith("@GoPlanAI plan day 1");
   });
 
+  it("keeps the AI prompt in the composer when the send is blocked", async () => {
+    const onSend = vi.fn().mockResolvedValue("blocked");
+    render(<RichComposer disabled={false} isSending={false} onSend={onSend} />);
+
+    inputText("@GoPlanAI tạo lịch ngày 2");
+    fireEvent.keyDown(getEditor(), { key: "Enter" });
+
+    expect(await screen.findByText("@GoPlanAI")).toBeDefined();
+    expect(getEditor()).toHaveValue("tạo lịch ngày 2");
+  });
+
   it("empty AI prompt shows inline error and does not send", () => {
     const onSend = vi.fn();
     render(<RichComposer disabled={false} isSending={false} onSend={onSend} />);
@@ -50,7 +61,7 @@ describe("RichComposer", () => {
     inputText("@GoPlanAI");
     fireEvent.keyDown(getEditor(), { key: "Enter" });
 
-    expect(screen.getByText("Bạn muốn hỏi GoPlanAI điều gì?")).toBeDefined();
+    expect(screen.getByText("What would you like to ask GoPlanAI?")).toBeDefined();
     expect(onSend).not.toHaveBeenCalled();
   });
 

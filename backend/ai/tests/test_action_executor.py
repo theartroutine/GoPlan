@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
@@ -34,6 +34,7 @@ from trips.models import (
     MemberStatus,
     TimelineActivity,
     TimelineLocationMode,
+    TimelineSection,
     TimelineActivityTimeMode,
     TimelineSystemType,
     Trip,
@@ -290,6 +291,59 @@ class ActionExecutorTests(TestCase):
         self.assertEqual(contributions[self.captain.id], Decimal("600000"))
         self.assertEqual(contributions[member.id], Decimal("600000"))
         self.assertEqual(confirmed.result["updated_count"], 2)
+
+    def test_mark_all_participants_paid_uses_exact_odd_shares(self):
+        member = create_completed_user(
+            "exec-share-odd-member@example.com",
+            "execshareodd",
+            "EXE006",
+        )
+        TripMember.objects.create(
+            trip=self.trip,
+            user=member,
+            role=TripRole.MEMBER,
+            status=MemberStatus.ACTIVE,
+        )
+        expense = create_expense(
+            trip_id=self.trip.id,
+            actor=self.captain,
+            title="Odd Dinner",
+            total_amount=Decimal("100003"),
+            collector=self.captain,
+        )
+        shares = {
+            participant.user_id: participant.share_amount
+            for participant in expense.participants.all()
+        }
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="expense.contribution.set",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "expense_id": str(expense.id),
+                "scope": "all_participants_paid",
+            },
+            preview={"summary": "Everyone paid"},
+            missing_fields=[],
+            preconditions=self._expense_preconditions(expense),
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        confirm_action_draft(
+            draft_id=draft.id,
+            trip_id=self.trip.id,
+            actor=self.captain,
+        )
+
+        contributions = {
+            contribution.user_id: contribution.amount
+            for contribution in ExpenseContribution.objects.filter(expense=expense)
+        }
+        self.assertEqual(contributions, shares)
 
     def test_stale_expense_contribution_set_draft_is_rejected(self):
         expense = create_expense(
@@ -651,6 +705,112 @@ class ActionExecutorTests(TestCase):
         self.assertEqual(TimelineActivity.objects.count(), 1)
         self.assertEqual(confirmed.result["object_type"], "timeline_activity")
 
+    def test_confirm_timeline_activity_create_creates_missing_section_date(self):
+        trip = create_trip(
+            captain=self.captain,
+            name="Three Day Trip",
+            destination="Da Lat",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 3),
+        )
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=self.captain,
+            sender_display_name_snapshot=self.captain.display_name,
+            sender_identify_tag_snapshot=self.captain.identify_tag,
+            content="@GoPlanAI add day three activity",
+            client_message_id=uuid4(),
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=self.captain,
+            prompt_message=prompt,
+            prompt="add day three activity",
+            status=AIInteractionStatus.SUCCEEDED,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        draft = AIActionDraft.objects.create(
+            trip=trip,
+            interaction=interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "section_date": "2026-06-03",
+                "data": {
+                    "title": "Langfarm stop",
+                    "system_type": "SHOPPING",
+                    "time_mode": "FLEXIBLE",
+                },
+            },
+            preview={"title": "Langfarm stop"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        self.assertFalse(
+            TimelineSection.objects.filter(
+                trip=trip,
+                section_date=date(2026, 6, 3),
+            ).exists()
+        )
+
+        confirmed = confirm_action_draft(
+            draft_id=draft.id,
+            trip_id=trip.id,
+            actor=self.captain,
+        )
+
+        activity = TimelineActivity.objects.get(pk=confirmed.result["object_id"])
+        self.assertEqual(activity.title, "Langfarm stop")
+        self.assertEqual(activity.section.section_date, date(2026, 6, 3))
+
+    def test_confirm_timeline_activity_create_accepts_legacy_top_level_payload(self):
+        section = self.trip.timeline_sections.order_by("section_date").first()
+        draft = AIActionDraft.objects.create(
+            trip=self.trip,
+            interaction=self.interaction,
+            response_message=self.response,
+            requested_by=self.captain,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "section_id": str(section.id),
+                "title": "Legacy museum",
+                "time_mode": TimelineActivityTimeMode.TIME_RANGE,
+                "start_time": "2026-04-20T15:45:00+07:00",
+                "end_time": "2026-04-20T17:30:00+07:00",
+                "system_type": "DINING",
+                "assignee_scope": "GROUP",
+                "reminder_offsets_minutes": [],
+            },
+            preview={"title": "Legacy museum"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+
+        confirmed = confirm_action_draft(
+            draft_id=draft.id,
+            trip_id=self.trip.id,
+            actor=self.captain,
+        )
+
+        self.assertEqual(confirmed.status, AIActionDraftStatus.CONFIRMED)
+        self.assertEqual(
+            TimelineActivity.objects.get().title,
+            "Legacy museum",
+        )
+        self.assertNotIn("title", confirmed.payload)
+        self.assertEqual(confirmed.payload["data"]["title"], "Legacy museum")
+        self.assertEqual(confirmed.payload["data"]["start_time"], "15:45:00")
+        self.assertEqual(confirmed.payload["data"]["end_time"], "17:30:00")
+        self.assertEqual(confirmed.payload["data"]["system_type"], TimelineSystemType.FOOD)
+        self.assertEqual(confirmed.payload["data"]["assignee_scope"], "EVERYONE")
+
     def test_confirm_timeline_activity_create_accepts_structured_location_data(self):
         section = self.trip.timeline_sections.order_by("section_date").first()
         draft = AIActionDraft.objects.create(
@@ -874,6 +1034,95 @@ class ActionDraftConfirmAPITests(APITestCase):
 
     def _confirm_url(self, draft_id):
         return f"/api/trips/{self.trip.id}/ai/action-drafts/{draft_id}/confirm"
+
+    @patch("ai.views.push_chat_message")
+    def test_confirm_timeline_activity_create_returns_confirmed_draft(
+        self,
+        push_chat_message,
+    ):
+        self.client.force_authenticate(self.captain)
+        trip = create_trip(
+            captain=self.captain,
+            name="Confirm Timeline Trip",
+            destination="Da Lat",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 3),
+        )
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=self.captain,
+            sender_display_name_snapshot=self.captain.display_name,
+            sender_identify_tag_snapshot=self.captain.identify_tag,
+            content="@GoPlanAI add day three activity",
+            client_message_id=uuid4(),
+        )
+        ai_response = ChatMessage.objects.create(
+            trip=trip,
+            sender_kind=ChatMessageSenderKind.AI,
+            sender_display_name_snapshot="GoPlanAI",
+            content="I prepared a draft.",
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=self.captain,
+            prompt_message=prompt,
+            prompt="add day three activity",
+            status=AIInteractionStatus.SUCCEEDED,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        draft = AIActionDraft.objects.create(
+            trip=trip,
+            interaction=interaction,
+            response_message=ai_response,
+            requested_by=self.captain,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "section_date": "2026-06-03",
+                "data": {
+                    "title": "Langfarm stop",
+                    "system_type": "SHOPPING",
+                    "time_mode": "FLEXIBLE",
+                },
+            },
+            preview={"title": "Langfarm stop"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        self.assertFalse(
+            TimelineSection.objects.filter(
+                trip=trip,
+                section_date=date(2026, 6, 3),
+            ).exists()
+        )
+
+        response = self.client.post(
+            f"/api/trips/{trip.id}/ai/action-drafts/{draft.id}/confirm"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["draft"]["status"],
+            AIActionDraftStatus.CONFIRMED,
+        )
+        self.assertFalse(response.data["draft"]["can_confirm"])
+        self.assertFalse(response.data["draft"]["can_cancel"])
+        section = TimelineSection.objects.get(
+            trip=trip,
+            section_date=date(2026, 6, 3),
+        )
+        activity = TimelineActivity.objects.get(section=section)
+        self.assertEqual(activity.title, "Langfarm stop")
+        self.assertEqual(
+            response.data["draft"]["result"],
+            {
+                "object_type": "timeline_activity",
+                "object_id": str(activity.id),
+            },
+        )
+        push_chat_message.assert_called_once_with(ai_response)
 
     def test_stale_confirm_failure_is_persisted_on_draft(self):
         self.client.force_authenticate(self.captain)

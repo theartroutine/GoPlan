@@ -2,6 +2,7 @@ export type AIActionDraftStatus =
   | "NEEDS_INFO"
   | "READY"
   | "CONFIRMED"
+  | "EXECUTED"
   | "CANCELLED"
   | "EXPIRED"
   | "FAILED";
@@ -12,11 +13,44 @@ export type AIActionDraftConfirmation =
   | "TRANSFER_PAYER"
   | "TRANSFER_RECIPIENT";
 
+export type AIActionDisplay = {
+  kicker: string;
+  title: string;
+  icon: "activity" | "expense" | "settlement" | "transfer" | "info";
+  tone: "neutral" | "create" | "update" | "destroy";
+  chips?: Array<{ icon?: "clock" | "calendar" | "map-pin" | "users" | "user"; label: string }>;
+  hero?:
+    | { kind: "amount"; value: string; currency: string }
+    | { kind: "datetime"; start: string; end?: string };
+  meta?: Array<{ label: string; value: string }>;
+};
+
+export type AIActionDraftFieldType =
+  | "time"
+  | "time_range"
+  | "money"
+  | "date"
+  | "text"
+  | "json"
+  | "select"
+  | "target";
+
 export type AIActionDraftMissingField = {
   name: string;
   label: string;
-  type?: string;
+  type?: AIActionDraftFieldType | string;
+  required?: boolean;
+  constraints?: {
+    section_id?: string;
+    section_index?: number;
+    section_date?: string;
+    pair?: string[];
+    min?: number;
+    min_length?: number;
+    max_length?: number;
+  } & Record<string, unknown>;
   options?: Array<{ label: string; value: string }>;
+  presets?: Array<{ label: string; start: string; end: string }>;
 };
 
 export type AIActionDraft = {
@@ -27,6 +61,8 @@ export type AIActionDraft = {
   can_confirm: boolean;
   can_cancel: boolean;
   can_edit: boolean;
+  display: AIActionDisplay;
+  summary: string;
   preview: Record<string, unknown>;
   missing_fields: AIActionDraftMissingField[];
   result: Record<string, unknown>;

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, time
 from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime, parse_time
 
 from ai.action_types import (
     AI_ACTION_EXPENSE_CONTRIBUTION_SET,
@@ -21,7 +22,10 @@ from ai.action_types import (
     AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
 )
 from ai.agent.drafts import can_confirm_action_draft
-from ai.agent.payload_validation import missing_payload_field_names
+from ai.agent.payload_validation import (
+    TIMELINE_ACTIVITY_DATA_FIELDS,
+    missing_payload_field_names,
+)
 from ai.agent.preconditions import expected_precondition_target
 from ai.models import AIActionDraft, AIActionDraftStatus
 from expenses.models import Expense
@@ -35,9 +39,17 @@ from expenses.services import (
     set_contribution,
     update_expense,
 )
-from trips.models import MemberStatus, TimelineActivity, Trip, TripMember
+from trips.models import (
+    MemberStatus,
+    TimelineActivity,
+    TimelineSection,
+    Trip,
+    TripMember,
+)
 from trips.services import (
+    TimelineSectionDateConflictError,
     create_timeline_activity,
+    create_timeline_day,
     delete_timeline_activity,
     patch_timeline_activity,
     update_timeline_activity_status,
@@ -172,6 +184,93 @@ def _validate_action_payload_ready(draft: AIActionDraft) -> None:
         )
 
 
+LEGACY_TIMELINE_SYSTEM_TYPES = {
+    "DINING": "FOOD",
+    "TRANSPORT": "TRANSPORTATION",
+    "NIGHTLIFE": "OTHER",
+}
+
+LEGACY_TIMELINE_TIME_MODES = {
+    "ANCHOR": "AT_TIME",
+}
+
+LEGACY_TIMELINE_ASSIGNEE_SCOPES = {
+    "GROUP": "EVERYONE",
+}
+
+
+def _normalize_clock_time(value):
+    if value is None:
+        return value
+    if isinstance(value, datetime):
+        return value.time().replace(tzinfo=None, microsecond=0).isoformat()
+    if isinstance(value, time):
+        return value.replace(tzinfo=None, microsecond=0).isoformat()
+    if not isinstance(value, str):
+        return value
+
+    parsed_datetime = parse_datetime(value)
+    if parsed_datetime is not None:
+        return parsed_datetime.time().replace(tzinfo=None, microsecond=0).isoformat()
+
+    parsed_time = parse_time(value)
+    if parsed_time is not None:
+        return parsed_time.replace(tzinfo=None, microsecond=0).isoformat()
+
+    return value
+
+
+def _normalize_timeline_activity_data(data: dict) -> dict:
+    normalized = dict(data)
+    system_type = normalized.get("system_type")
+    if system_type in LEGACY_TIMELINE_SYSTEM_TYPES:
+        normalized["system_type"] = LEGACY_TIMELINE_SYSTEM_TYPES[system_type]
+
+    time_mode = normalized.get("time_mode")
+    if time_mode in LEGACY_TIMELINE_TIME_MODES:
+        normalized["time_mode"] = LEGACY_TIMELINE_TIME_MODES[time_mode]
+
+    assignee_scope = normalized.get("assignee_scope")
+    if assignee_scope in LEGACY_TIMELINE_ASSIGNEE_SCOPES:
+        normalized["assignee_scope"] = LEGACY_TIMELINE_ASSIGNEE_SCOPES[assignee_scope]
+
+    for field in ("start_time", "end_time"):
+        if field in normalized:
+            normalized[field] = _normalize_clock_time(normalized[field])
+
+    return normalized
+
+
+def _normalized_timeline_activity_payload(*, action_type: str, payload: dict) -> dict:
+    if action_type not in {
+        AI_ACTION_TIMELINE_ACTIVITY_CREATE,
+        AI_ACTION_TIMELINE_ACTIVITY_UPDATE,
+    }:
+        return payload
+    if isinstance(payload.get("data"), dict):
+        normalized_data = _normalize_timeline_activity_data(payload["data"])
+        if normalized_data == payload["data"]:
+            return payload
+        return {**payload, "data": normalized_data}
+
+    data = {
+        field: payload[field]
+        for field in TIMELINE_ACTIVITY_DATA_FIELDS
+        if field in payload
+    }
+    if not data:
+        return payload
+    data = _normalize_timeline_activity_data(data)
+
+    normalized = {
+        key: value
+        for key, value in payload.items()
+        if key not in TIMELINE_ACTIVITY_DATA_FIELDS
+    }
+    normalized["data"] = data
+    return normalized
+
+
 def _resolve_contribution_user_id(*, trip_id, payload: dict):
     target_id = (
         payload.get("user_id")
@@ -292,6 +391,61 @@ def _set_single_contribution(*, draft: AIActionDraft, actor, payload: dict):
     )
 
 
+def _parse_section_date(value):
+    if value is None:
+        return None
+    parsed = parse_date(str(value))
+    if parsed is None:
+        raise AIActionDraftNotReadyError("Timeline day date is required.")
+    return parsed
+
+
+def _timeline_section_label_for_date(*, trip: Trip, section_date) -> str:
+    if trip.start_date:
+        day_number = (section_date - trip.start_date).days + 1
+        return f"Day {day_number}"
+    return section_date.isoformat()
+
+
+def _resolve_timeline_activity_section_id(
+    *,
+    draft: AIActionDraft,
+    actor,
+    payload: dict,
+):
+    if payload.get("section_id"):
+        return payload["section_id"]
+
+    section_date = _parse_section_date(payload.get("section_date"))
+    if section_date is None:
+        raise AIActionDraftNotReadyError("Timeline day is required.")
+
+    section = TimelineSection.objects.filter(
+        trip_id=draft.trip_id,
+        section_date=section_date,
+    ).first()
+    if section is not None:
+        return section.id
+
+    label = _timeline_section_label_for_date(
+        trip=draft.trip,
+        section_date=section_date,
+    )
+    try:
+        _, section = create_timeline_day(
+            draft.trip_id,
+            actor=actor,
+            section_date=section_date,
+            label=label,
+        )
+    except TimelineSectionDateConflictError:
+        section = TimelineSection.objects.get(
+            trip_id=draft.trip_id,
+            section_date=section_date,
+        )
+    return section.id
+
+
 def _execute(draft: AIActionDraft, *, actor) -> dict:
     payload = draft.payload
     if draft.action_type == AI_ACTION_EXPENSE_CREATE:
@@ -368,9 +522,14 @@ def _execute(draft: AIActionDraft, *, actor) -> dict:
         }
 
     if draft.action_type == AI_ACTION_TIMELINE_ACTIVITY_CREATE:
+        section_id = _resolve_timeline_activity_section_id(
+            draft=draft,
+            actor=actor,
+            payload=payload,
+        )
         activity = create_timeline_activity(
             draft.trip_id,
-            payload["section_id"],
+            section_id,
             actor=actor,
             data=payload["data"],
         )
@@ -452,7 +611,7 @@ def mark_action_draft_failed(
         try:
             draft = (
                 AIActionDraft.objects
-                .select_for_update()
+                .select_for_update(of=("self",))
                 .select_related("response_message")
                 .get(pk=draft_id, trip_id=trip_id)
             )
@@ -471,8 +630,9 @@ def mark_action_draft_failed(
                 "updated_at",
             ]
         )
-        draft.response_message.updated_at = timezone.now()
-        draft.response_message.save(update_fields=["updated_at"])
+        if draft.response_message_id is not None:
+            draft.response_message.updated_at = timezone.now()
+            draft.response_message.save(update_fields=["updated_at"])
         return draft
 
 
@@ -481,8 +641,8 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
     with transaction.atomic():
         draft = (
             AIActionDraft.objects
-            .select_for_update()
-            .select_related("response_message")
+            .select_for_update(of=("self",))
+            .select_related("response_message", "trip")
             .get(pk=draft_id, trip_id=trip_id)
         )
         if draft.status == AIActionDraftStatus.CONFIRMED:
@@ -493,9 +653,17 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
             expired = True
             draft.status = AIActionDraftStatus.EXPIRED
             draft.save(update_fields=["status", "updated_at"])
-            draft.response_message.updated_at = timezone.now()
-            draft.response_message.save(update_fields=["updated_at"])
+            if draft.response_message_id is not None:
+                draft.response_message.updated_at = timezone.now()
+                draft.response_message.save(update_fields=["updated_at"])
         else:
+            normalized_payload = _normalized_timeline_activity_payload(
+                action_type=draft.action_type,
+                payload=draft.payload,
+            )
+            payload_normalized = normalized_payload != draft.payload
+            if payload_normalized:
+                draft.payload = normalized_payload
             _validate_action_payload_ready(draft)
             if not can_confirm_action_draft(draft, viewer=actor):
                 raise AIActionDraftForbiddenError("You cannot confirm this draft.")
@@ -507,17 +675,19 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
             draft.confirmed_by = actor
             draft.confirmed_at = timezone.now()
             draft.result = result
-            draft.save(
-                update_fields=[
-                    "status",
-                    "confirmed_by",
-                    "confirmed_at",
-                    "result",
-                    "updated_at",
-                ]
-            )
-            draft.response_message.updated_at = timezone.now()
-            draft.response_message.save(update_fields=["updated_at"])
+            update_fields = [
+                "status",
+                "confirmed_by",
+                "confirmed_at",
+                "result",
+                "updated_at",
+            ]
+            if payload_normalized:
+                update_fields.append("payload")
+            draft.save(update_fields=update_fields)
+            if draft.response_message_id is not None:
+                draft.response_message.updated_at = timezone.now()
+                draft.response_message.save(update_fields=["updated_at"])
     if expired:
         raise AIActionDraftExpiredError("Draft expired.")
     return draft

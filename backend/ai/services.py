@@ -13,8 +13,27 @@ from trips.models import Trip
 logger = logging.getLogger(__name__)
 
 AI_LOCK_TTL = timedelta(seconds=settings.GOPLAN_AI_LOCK_TTL_SECONDS)
-GENERIC_AI_ERROR_MESSAGE = "GoPlanAI hiện chưa trả lời được. Thử lại sau."
+GENERIC_AI_ERROR_MESSAGE = "GoPlanAI can't respond right now. Please try again later."
 ACTIVE_AI_STATUSES = (AIInteractionStatus.PENDING, AIInteractionStatus.RUNNING)
+
+_ERROR_MESSAGES = {
+    "PROVIDER_UNAVAILABLE": "The AI service is temporarily unavailable. Please try again in a few minutes.",
+    "RATE_LIMIT": "Too many requests right now. Please try again in 30 seconds.",
+    "TIMEOUT": "I took too long to respond. Could you ask again?",
+    "PROVIDER_BAD_RESPONSE": "I couldn't produce a suitable answer. Could you rephrase your request?",
+    "INSUFFICIENT_BALANCE": "The AI service is temporarily unavailable. The team has been notified.",
+    "TOOL_VALIDATION_FAILED": "I misunderstood the format of your request. Could you be more specific?",
+    "TOOL_UNKNOWN": "That action isn't supported yet. Please try a different approach.",
+    "CONFIG_MISSING": "AI features aren't configured yet. Please contact the admin.",
+    "INTERNAL_ERROR": "An unexpected error occurred. The team has been notified.",
+    "TASK_ERROR": "An unexpected error occurred. The team has been notified.",
+}
+
+
+def message_for_error_code(error_code: str | None) -> str:
+    if not error_code:
+        return GENERIC_AI_ERROR_MESSAGE
+    return _ERROR_MESSAGES.get(error_code, GENERIC_AI_ERROR_MESSAGE)
 
 
 class AIServiceError(Exception):
@@ -170,7 +189,7 @@ def recover_stale_ai_interactions(*, limit: int = 50) -> dict[str, int]:
         if should_fail and interaction is not None:
             finish_interaction_failure(
                 interaction=interaction,
-                error_code=AIInteractionErrorCode.TASK_ERROR,
+                error_code=interaction.error_code or AIInteractionErrorCode.TASK_ERROR,
             )
             failed += 1
             continue

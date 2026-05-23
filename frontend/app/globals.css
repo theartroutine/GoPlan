@@ -151,3 +151,46 @@ body {
     }
   }
 }
+
+/* ─── Hero animations ───────────────────────────────────────────────── */
+
+@keyframes ken-burns {
+  0%   { transform: scale(1) translate(0, 0); }
+  100% { transform: scale(var(--kb-max, 1.12)) translate(-3%, -2%); }
+}
+
+@keyframes particle-drift {
+  0%   { transform: translate(0, 0); }
+  100% { transform: translate(20px, -30px); }
+}
+
+@keyframes scroll-cue-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(4px); }
+}
+
+.animate-ken-burns {
+  animation: ken-burns 18s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.animate-particle-drift {
+  animation: particle-drift 12s linear infinite;
+  will-change: transform;
+}
+
+.animate-scroll-cue {
+  animation: scroll-cue-bounce 1.8s ease-in-out infinite;
+}
+
+@media (max-width: 639px) {
+  .animate-ken-burns { --kb-max: 1.08; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ken-burns,
+  .animate-particle-drift,
+  .animate-scroll-cue {
+    animation: none !important;
+  }
+}

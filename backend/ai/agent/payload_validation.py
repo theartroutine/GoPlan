@@ -305,7 +305,7 @@ def _timeline_create_missing_names(
     provider_missing_names: list[str],
 ) -> list[str]:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    required_fields = ["section_id", "title", "time_mode"]
+    required_fields = ["title", "time_mode"]
     time_mode = data.get("time_mode")
     system_type = data.get("system_type")
     custom_type_id = data.get("custom_type_id")
@@ -320,12 +320,19 @@ def _timeline_create_missing_names(
 
     names = _with_provider_missing(
         provider_missing_names,
-        allowed_names=set(required_fields),
+        allowed_names={*required_fields, "section_id", "section_date"},
         payload=payload,
         data=data,
     )
+    if (
+        is_blank(payload.get("section_id"))
+        and is_blank(payload.get("section_date"))
+        and "section_id" not in names
+        and "section_date" not in names
+    ):
+        names.append("section_id")
     for field in required_fields:
-        value = payload.get(field) if field == "section_id" else data.get(field)
+        value = data.get(field)
         if is_blank(value) and field not in names:
             names.append(field)
     if time_mode and time_mode not in TimelineActivityTimeMode.values:
@@ -412,6 +419,7 @@ def missing_payload_field_names(
                 "amount",
                 "contributions",
                 "member_contributions",
+                "scope",
             },
             payload=payload,
         )

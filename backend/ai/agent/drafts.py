@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
@@ -9,8 +12,17 @@ from ai.action_types import (
     AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS,
     AI_CONFIRMATION_TRANSFER_PAYER,
     AI_CONFIRMATION_TRANSFER_RECIPIENT,
+    CAPTAIN_MANAGED_ACTIONS,
+    TIMELINE_ACTIVITY_STATUS_ACTIONS,
+    TRANSFER_PAYER_ACTIONS,
+    TRANSFER_RECIPIENT_ACTIONS,
 )
-from ai.agent.draft_fields import normalize_missing_fields
+from ai.agent.display import build_display
+from ai.agent.draft_fields import (
+    build_missing_fields_for_action,
+    normalize_missing_fields,
+)
+from ai.agent.payload_validation import missing_payload_field_names
 from ai.models import AIActionDraft, AIActionDraftStatus
 from expenses.models import SettlementStatus, SettlementTransfer
 from trips.models import (
@@ -35,6 +47,90 @@ FINAL_DRAFT_STATUSES = {
     AIActionDraftStatus.EXPIRED,
     AIActionDraftStatus.FAILED,
 }
+
+
+def required_confirmation_for_action_type(action_type: str) -> str:
+    if action_type in CAPTAIN_MANAGED_ACTIONS:
+        return AI_CONFIRMATION_CAPTAIN
+    if action_type in TIMELINE_ACTIVITY_STATUS_ACTIONS:
+        return AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS
+    if action_type in TRANSFER_PAYER_ACTIONS:
+        return AI_CONFIRMATION_TRANSFER_PAYER
+    if action_type in TRANSFER_RECIPIENT_ACTIONS:
+        return AI_CONFIRMATION_TRANSFER_RECIPIENT
+    return ""
+
+
+def _effective_required_confirmation(draft: AIActionDraft) -> str:
+    return draft.required_confirmation or required_confirmation_for_action_type(
+        draft.action_type,
+    )
+
+
+def create_action_draft(
+    *,
+    trip,
+    interaction,
+    response_message=None,
+    action_type: str,
+    payload: dict,
+    missing_fields: list | None = None,
+    preconditions: dict | None = None,
+    required_confirmation: str | None = None,
+    status: str | None = None,
+) -> AIActionDraft:
+    """Persist a single AIActionDraft row from a tool handler."""
+    from ai.lifecycle import summarize_draft  # avoid circular import at module level
+
+    if missing_fields is None:
+        missing_names = missing_payload_field_names(
+            action_type=action_type,
+            payload=payload,
+        )
+        missing = build_missing_fields_for_action(
+            action_type=action_type,
+            payload=payload,
+            missing=missing_names,
+        )
+    else:
+        missing = missing_fields
+    effective_status = status or (
+        AIActionDraftStatus.NEEDS_INFO if missing else AIActionDraftStatus.READY
+    )
+    expires_at = timezone.now() + timedelta(
+        seconds=settings.GOPLAN_AI_ACTION_DRAFT_TTL_SECONDS
+    )
+    trip_context = {
+        "timezone": trip.timezone,
+        "currency_code": trip.currency_code,
+    }
+    return AIActionDraft.objects.create(
+        trip=trip,
+        interaction=interaction,
+        response_message=response_message,
+        requested_by=interaction.requested_by,
+        action_type=action_type,
+        status=effective_status,
+        payload=payload,
+        preview=payload,
+        display=build_display(
+            action_type=action_type,
+            payload=payload,
+            trip_context=trip_context,
+        ),
+        summary=summarize_draft(
+            action_type=action_type,
+            payload=payload,
+            status=effective_status,
+        ),
+        missing_fields=missing,
+        preconditions=preconditions or {},
+        required_confirmation=(
+            required_confirmation
+            or required_confirmation_for_action_type(action_type)
+        ),
+        expires_at=expires_at,
+    )
 
 
 def _effective_draft_status(draft: AIActionDraft) -> str:
@@ -85,9 +181,10 @@ def _can_confirm_transfer(draft: AIActionDraft, viewer) -> bool:
             "payer_id": str(transfer_obj.payer_id),
             "recipient_id": str(transfer_obj.recipient_id),
         }
-    if draft.required_confirmation == AI_CONFIRMATION_TRANSFER_PAYER:
+    required_confirmation = _effective_required_confirmation(draft)
+    if required_confirmation == AI_CONFIRMATION_TRANSFER_PAYER:
         return str(transfer.get("payer_id")) == str(viewer.id)
-    if draft.required_confirmation == AI_CONFIRMATION_TRANSFER_RECIPIENT:
+    if required_confirmation == AI_CONFIRMATION_TRANSFER_RECIPIENT:
         if (
             draft.action_type == AI_ACTION_SETTLEMENT_TRANSFER_CONFIRM_RECEIVED
             and transfer_obj is not None
@@ -101,9 +198,10 @@ def _can_confirm_transfer(draft: AIActionDraft, viewer) -> bool:
 def can_confirm_action_draft(draft: AIActionDraft, *, viewer) -> bool:
     if _effective_draft_status(draft) != AIActionDraftStatus.READY:
         return False
-    if draft.required_confirmation == AI_CONFIRMATION_CAPTAIN:
+    required_confirmation = _effective_required_confirmation(draft)
+    if required_confirmation == AI_CONFIRMATION_CAPTAIN:
         return _is_active_captain(trip_id=draft.trip_id, user=viewer)
-    if draft.required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
+    if required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
         return can_update_timeline_activity_status(
             trip_id=draft.trip_id,
             activity_id=draft.payload.get("activity_id"),
@@ -113,18 +211,51 @@ def can_confirm_action_draft(draft: AIActionDraft, *, viewer) -> bool:
     return _can_confirm_transfer(draft, viewer)
 
 
-def _choice_options(choices) -> list[dict]:
+STATIC_CHOICE_LABELS = {
+    "status": {
+        "UPCOMING": "Upcoming",
+        "IN_PROGRESS": "In Progress",
+        "DONE": "Done",
+        "CANCELLED": "Cancelled",
+    },
+    "time_mode": {
+        "ALL_DAY": "All day",
+        "FLEXIBLE": "Flexible",
+        "AT_TIME": "At time",
+        "TIME_RANGE": "Time range",
+    },
+    "location_mode": {
+        "MANUAL": "Manual",
+        "STRUCTURED": "Structured place",
+    },
+    "system_type": {
+        "TRANSPORTATION": "Transportation",
+        "ACCOMMODATION": "Accommodation",
+        "FOOD": "Food",
+        "SIGHTSEEING": "Sightseeing",
+        "SHOPPING": "Shopping",
+        "CHECKIN_OUT": "Check-in / Check-out",
+        "FREE_TIME": "Free Time",
+        "OTHER": "Other",
+    },
+}
+
+
+def _choice_options(field_name: str, choices) -> list[dict]:
     return [
-        {"value": value, "label": str(label)}
+        {
+            "value": value,
+            "label": STATIC_CHOICE_LABELS.get(field_name, {}).get(value, str(label)),
+        }
         for value, label in choices
     ]
 
 
 STATIC_FIELD_OPTIONS = {
-    "status": _choice_options(TimelineActivityStatus.choices),
-    "time_mode": _choice_options(TimelineActivityTimeMode.choices),
-    "location_mode": _choice_options(TimelineLocationMode.choices),
-    "system_type": _choice_options(TimelineSystemType.choices),
+    "status": _choice_options("status", TimelineActivityStatus.choices),
+    "time_mode": _choice_options("time_mode", TimelineActivityTimeMode.choices),
+    "location_mode": _choice_options("location_mode", TimelineLocationMode.choices),
+    "system_type": _choice_options("system_type", TimelineSystemType.choices),
 }
 
 
@@ -160,7 +291,7 @@ def _timeline_section_options(*, trip_id) -> list[dict]:
 
 def _transfer_label(transfer: SettlementTransfer) -> str:
     return (
-        f"{transfer.payer.display_name} -> "
+        f"{transfer.payer.display_name} → "
         f"{transfer.recipient.display_name}: {transfer.amount}"
     )
 
@@ -228,7 +359,8 @@ def can_cancel_action_draft(draft: AIActionDraft, *, viewer) -> bool:
         return False
     if str(draft.requested_by_id) == str(viewer.id):
         return True
-    if draft.required_confirmation == AI_CONFIRMATION_CAPTAIN:
+    required_confirmation = _effective_required_confirmation(draft)
+    if required_confirmation == AI_CONFIRMATION_CAPTAIN:
         return _is_active_captain(trip_id=draft.trip_id, user=viewer)
     return can_confirm_action_draft(draft, viewer=viewer)
 
@@ -275,9 +407,10 @@ def can_edit_action_draft(draft: AIActionDraft, *, viewer) -> bool:
         return False
     if str(draft.requested_by_id) == str(viewer.id):
         return True
-    if draft.required_confirmation == AI_CONFIRMATION_CAPTAIN:
+    required_confirmation = _effective_required_confirmation(draft)
+    if required_confirmation == AI_CONFIRMATION_CAPTAIN:
         return _is_active_captain(trip_id=draft.trip_id, user=viewer)
-    if draft.required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
+    if required_confirmation == AI_CONFIRMATION_TIMELINE_ACTIVITY_STATUS:
         return _can_edit_timeline_status_draft(draft, viewer)
     return _can_confirm_transfer(draft, viewer)
 
@@ -292,10 +425,12 @@ def build_action_draft_payload(draft: AIActionDraft, *, viewer) -> dict:
         "id": str(draft.id),
         "action_type": draft.action_type,
         "status": status,
-        "required_confirmation": draft.required_confirmation,
+        "required_confirmation": _effective_required_confirmation(draft),
         "can_confirm": can_confirm_action_draft(draft, viewer=viewer),
         "can_cancel": can_cancel_action_draft(draft, viewer=viewer),
         "can_edit": can_edit_action_draft(draft, viewer=viewer),
+        "display": draft.display,
+        "summary": draft.summary,
         "preview": draft.preview,
         "missing_fields": missing_fields,
         "result": draft.result,

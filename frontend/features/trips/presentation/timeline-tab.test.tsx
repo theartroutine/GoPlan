@@ -280,7 +280,7 @@ describe("TimelineTab", () => {
     });
 
     const nowLink = screen.getByRole("link", { name: "Now · Day 1 · 10:30" });
-    expect(nowLink.getAttribute("href")).toBe("/trips/trip-1/timeline?filter=mine&day=today");
+    expect(nowLink.getAttribute("href")).toBe("/trips/trip-1/timeline?filter=mine&day=today&now=1");
   });
 
   it("renders day detail when the day query references a valid section", async () => {
@@ -567,9 +567,80 @@ describe("TimelineTab", () => {
       await Promise.resolve();
     });
 
+    expect(screen.getByRole("separator", { name: "Current time: 10:30" })).not.toBeNull();
     expect(screen.getByText("Now · 10:30")).not.toBeNull();
     expect(screen.queryByText("Now · Day 1 · 10:30")).toBeNull();
     expect(screen.getByText("Museum").closest("[data-current='true']")).toBeTruthy();
+  });
+
+  it("scrolls to the activity-level Now marker when opened from the overview Now link", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-01T03:30:00.000Z") });
+    mockUseSearchParams("day=today&now=1");
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    };
+
+    try {
+      tripsApiMock.bffGetTimeline.mockResolvedValueOnce(
+        buildTimelineResponse({
+          trip_timezone: "Asia/Ho_Chi_Minh",
+          sections: [
+            buildTimelineSection({
+              id: "today",
+              label: "Day 1",
+              section_date: "2026-06-01",
+              activities: [
+                buildTimelineActivity({
+                  id: "breakfast",
+                  title: "Breakfast",
+                  time_mode: "AT_TIME",
+                  start_time: "08:00:00",
+                  position: 0,
+                }),
+                buildTimelineActivity({
+                  id: "museum",
+                  title: "Museum",
+                  time_mode: "TIME_RANGE",
+                  start_time: "10:00:00",
+                  end_time: "12:00:00",
+                  position: 1,
+                }),
+              ],
+            }),
+          ],
+        }),
+      );
+
+      render(<TimelineTab />);
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.getByRole("separator", { name: "Current time: 10:30" })).not.toBeNull();
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "center",
+      });
+    } finally {
+      if (originalScrollIntoView) {
+        Object.defineProperty(Element.prototype, "scrollIntoView", {
+          configurable: true,
+          value: originalScrollIntoView,
+        });
+      } else {
+        delete (Element.prototype as { scrollIntoView?: Element["scrollIntoView"] }).scrollIntoView;
+      }
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+    }
   });
 
   it("preserves unrelated query params when linking back to timeline", async () => {

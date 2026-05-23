@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.db import transaction
 from django.utils import timezone
+from pydantic import ValidationError as PydanticValidationError
 from rest_framework import permissions, status
 from rest_framework import serializers as drf_serializers
 from rest_framework.response import Response
@@ -12,6 +13,20 @@ from ai.agent.draft_mutations import (
     AIActionDraftPatchFieldNotAllowedError,
     AIActionDraftTargetNotFoundError,
     patch_action_draft,
+)
+from ai.agent.schemas import (
+    ConfirmTransferReceivedArgs,
+    CreateExpenseArgs,
+    CreateTimelineActivityArgs,
+    DeleteExpenseArgs,
+    DeleteTimelineActivityArgs,
+    FinalizeSettlementArgs,
+    MarkTransferSentArgs,
+    ReopenSettlementArgs,
+    SetExpenseContributionArgs,
+    UpdateExpenseArgs,
+    UpdateTimelineActivityArgs,
+    UpdateTimelineActivityStatusArgs,
 )
 from ai.agent.executor import (
     AIActionDraftExpiredError,
@@ -53,6 +68,66 @@ from trips.services import (
 )
 
 AI_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
+
+_SCHEMA_BY_ACTION = {
+    "timeline.activity.create":             CreateTimelineActivityArgs,
+    "timeline.activity.update":             UpdateTimelineActivityArgs,
+    "timeline.activity.delete":             DeleteTimelineActivityArgs,
+    "timeline.activity.status.update":      UpdateTimelineActivityStatusArgs,
+    "expense.create":                       CreateExpenseArgs,
+    "expense.update":                       UpdateExpenseArgs,
+    "expense.delete":                       DeleteExpenseArgs,
+    "expense.contribution.set":             SetExpenseContributionArgs,
+    "settlement.finalize":                  FinalizeSettlementArgs,
+    "settlement.reopen":                    ReopenSettlementArgs,
+    "settlement.transfer.mark_sent":        MarkTransferSentArgs,
+    "settlement.transfer.confirm_received": ConfirmTransferReceivedArgs,
+}
+
+
+def _field_errors_from_pydantic(
+    exc: PydanticValidationError,
+    *,
+    relevant_fields: set[str] | None = None,
+) -> dict[str, str]:
+    """
+    Extract field errors from a PydanticValidationError.
+
+    When ``relevant_fields`` is provided, only errors relevant to those fields
+    are returned, which prevents errors about unrelated missing required fields
+    (expected during NEEDS_INFO status) from blocking the patch.
+
+    Field-level errors: included when their top-level loc key is in
+    ``relevant_fields``.
+
+    Model-level errors (empty loc, from model_validator): included when any
+    of the ``relevant_fields`` appears in the error message, and attributed
+    to the matching field(s).
+    """
+    errors = {}
+    for e in exc.errors(include_url=False):
+        loc = e["loc"]
+        msg = e["msg"]
+        if loc:
+            path = ".".join(str(p) for p in loc)
+            top_key = str(loc[0])
+            if relevant_fields is not None and top_key not in relevant_fields:
+                continue
+            errors[path] = msg
+        elif relevant_fields is not None:
+            # Model-level validator error (cross-field); attribute to any
+            # patch field mentioned in the error message.
+            for field in relevant_fields:
+                if field in msg:
+                    errors[field] = msg
+    return errors
+
+
+def _try_resolve_draft_for_validation(*, trip_id, draft_id) -> AIActionDraft | None:
+    try:
+        return AIActionDraft.objects.get(pk=draft_id, trip_id=trip_id)
+    except AIActionDraft.DoesNotExist:
+        return None
 
 
 def _error(
@@ -110,6 +185,44 @@ class AIActionDraftDetailAPIView(APIView):
             )
 
         patch_payload = serializer.validated_data.get("payload", {})
+
+        # v2-aware payload validation: catch obviously-broken patches (e.g. end < start)
+        # before they reach the domain mutation. Surface structured field_errors.
+        # Only errors for fields present in patch_payload are surfaced — errors
+        # about unrelated missing required fields are expected during NEEDS_INFO.
+        draft_for_validation = _try_resolve_draft_for_validation(
+            trip_id=trip_id, draft_id=draft_id,
+        )
+        if draft_for_validation is not None:
+            schema = _SCHEMA_BY_ACTION.get(draft_for_validation.action_type)
+            if schema is not None and patch_payload:
+                # Exclude blank values from the merged payload: blank means
+                # "still missing" and is handled downstream by patch_action_draft.
+                non_blank_patch = {
+                    k: v for k, v in patch_payload.items()
+                    if v not in (None, "") and not (isinstance(v, str) and not v.strip())
+                }
+                if non_blank_patch:
+                    merged = {**(draft_for_validation.payload or {}), **non_blank_patch}
+                    try:
+                        schema.model_validate(merged)
+                    except PydanticValidationError as exc:
+                        field_errors = _field_errors_from_pydantic(
+                            exc, relevant_fields=set(non_blank_patch.keys()),
+                        )
+                        if field_errors:
+                            return Response(
+                                {
+                                    "detail": "Field validation failed.",
+                                    "error_code": "FIELD_VALIDATION_FAILED",
+                                    "field_errors": field_errors,
+                                    "draft": build_action_draft_payload(
+                                        draft_for_validation, viewer=request.user,
+                                    ),
+                                },
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+
         try:
             draft = patch_action_draft(
                 draft_id=draft_id,
@@ -125,7 +238,8 @@ class AIActionDraftDetailAPIView(APIView):
             )
         except AIActionDraftExpiredError as exc:
             expired_draft = _get_draft_or_404(trip_id=trip_id, draft_id=draft_id)
-            push_chat_message(expired_draft.response_message)
+            if expired_draft.response_message_id is not None:
+                push_chat_message(expired_draft.response_message)
             return _error(
                 str(exc),
                 exc.error_code,
@@ -142,7 +256,8 @@ class AIActionDraftDetailAPIView(APIView):
         except AIActionDraftTargetNotFoundError as exc:
             return _error(str(exc), exc.error_code, status.HTTP_400_BAD_REQUEST)
 
-        push_chat_message(draft.response_message)
+        if draft.response_message_id is not None:
+            push_chat_message(draft.response_message)
         return Response({"draft": build_action_draft_payload(draft, viewer=request.user)})
 
 
@@ -165,7 +280,7 @@ class AIActionDraftCancelAPIView(APIView):
             try:
                 draft = (
                     AIActionDraft.objects
-                    .select_for_update()
+                    .select_for_update(of=("self",))
                     .select_related("response_message")
                     .get(pk=draft_id, trip_id=trip_id)
                 )
@@ -182,8 +297,9 @@ class AIActionDraftCancelAPIView(APIView):
             ):
                 draft.status = AIActionDraftStatus.EXPIRED
                 draft.save(update_fields=["status", "updated_at"])
-                draft.response_message.updated_at = timezone.now()
-                draft.response_message.save(update_fields=["updated_at"])
+                if draft.response_message_id is not None:
+                    draft.response_message.updated_at = timezone.now()
+                    draft.response_message.save(update_fields=["updated_at"])
                 expired_draft = draft
             elif draft.status in {
                 AIActionDraftStatus.CONFIRMED,
@@ -212,12 +328,14 @@ class AIActionDraftCancelAPIView(APIView):
                         "updated_at",
                     ]
                 )
-                draft.response_message.updated_at = timezone.now()
-                draft.response_message.save(update_fields=["updated_at"])
-                transaction.on_commit(lambda: push_chat_message(draft.response_message))
+                if draft.response_message_id is not None:
+                    draft.response_message.updated_at = timezone.now()
+                    draft.response_message.save(update_fields=["updated_at"])
+                    transaction.on_commit(lambda: push_chat_message(draft.response_message))
 
         if expired_draft is not None:
-            push_chat_message(expired_draft.response_message)
+            if expired_draft.response_message_id is not None:
+                push_chat_message(expired_draft.response_message)
             return _error(
                 "Draft expired.",
                 "AI_DRAFT_EXPIRED",
@@ -406,7 +524,8 @@ class AIActionDraftConfirmAPIView(APIView):
                         "AI_DRAFT_NOT_FOUND",
                         status.HTTP_404_NOT_FOUND,
                     )
-                push_chat_message(expired_draft.response_message)
+                if expired_draft.response_message_id is not None:
+                    push_chat_message(expired_draft.response_message)
                 return _error(
                     str(exc),
                     exc.error_code,
@@ -422,6 +541,7 @@ class AIActionDraftConfirmAPIView(APIView):
             if (
                 failed_draft is not None
                 and failed_draft.status == AIActionDraftStatus.FAILED
+                and failed_draft.response_message_id is not None
             ):
                 push_chat_message(failed_draft.response_message)
             error_draft = (
@@ -445,5 +565,6 @@ class AIActionDraftConfirmAPIView(APIView):
                 viewer=request.user,
             )
 
-        push_chat_message(draft.response_message)
+        if draft.response_message_id is not None:
+            push_chat_message(draft.response_message)
         return Response({"draft": build_action_draft_payload(draft, viewer=request.user)})

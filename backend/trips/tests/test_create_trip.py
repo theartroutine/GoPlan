@@ -101,6 +101,18 @@ class CreateTripTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("budget_estimate", response.data)
 
+    def test_create_trip_rejects_description_overview_limit(self):
+        payload = {
+            "name": "Long Description",
+            "destination": "Nha Trang",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-03",
+            "description": "x" * 181,
+        }
+        response = self.client.post(CREATE_URL, payload, format="json", **_auth(self.user))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("description", response.data)
+
     def test_create_trip_end_before_start_400(self):
         payload = {
             "name": "Bad Dates",

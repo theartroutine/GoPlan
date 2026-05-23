@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
+from django.core.cache import cache as throttle_cache
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
@@ -137,6 +141,26 @@ class SendInvitationTests(APITestCase):
         )
         self.assertEqual(res.status_code, 400)
         self.assertNotIn("One or more users not found", str(res.data))
+
+    def test_listing_invitations_does_not_consume_send_invitation_quota(self):
+        throttle_cache.clear()
+        rates = {
+            **ScopedRateThrottle.THROTTLE_RATES,
+            "trips_send_invitations": "1/hour",
+            "trips_invitations_list": "120/hour",
+        }
+
+        with patch.object(ScopedRateThrottle, "THROTTLE_RATES", rates):
+            post_response = self.client.post(
+                _invite_url(self.trip.id),
+                {"invitee_ids": [str(self.friend1.id)]},
+                format="json",
+                **_auth(self.captain),
+            )
+            self.assertEqual(post_response.status_code, 201)
+
+            get_response = self.client.get(_invite_url(self.trip.id), **_auth(self.captain))
+            self.assertEqual(get_response.status_code, 200)
 
 
 class InvitableFriendsTests(APITestCase):

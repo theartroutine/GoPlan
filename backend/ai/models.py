@@ -21,6 +21,9 @@ class AIInteractionErrorCode(models.TextChoices):
     PROVIDER_BAD_RESPONSE = "PROVIDER_BAD_RESPONSE", "Provider bad response"
     CONFIG_MISSING = "CONFIG_MISSING", "Config missing"
     TASK_ERROR = "TASK_ERROR", "Task error"
+    INTERNAL_ERROR = "INTERNAL_ERROR", "Internal error"
+    TOOL_UNKNOWN = "TOOL_UNKNOWN", "Tool unknown"
+    TOOL_VALIDATION_FAILED = "TOOL_VALIDATION_FAILED", "Tool validation failed"
 
 
 class AIInteraction(models.Model):
@@ -66,6 +69,8 @@ class AIInteraction(models.Model):
     input_tokens = models.PositiveIntegerField(null=True, blank=True)
     output_tokens = models.PositiveIntegerField(null=True, blank=True)
     total_tokens = models.PositiveIntegerField(null=True, blank=True)
+    latency_ms = models.PositiveIntegerField(null=True, blank=True)
+    tool_calls_count = models.PositiveIntegerField(default=0)
     celery_task_id = models.CharField(max_length=255, blank=True, default="")
     attempt_count = models.PositiveSmallIntegerField(default=0)
     lock_expires_at = models.DateTimeField(db_index=True)
@@ -110,6 +115,8 @@ class AIActionDraft(models.Model):
     )
     response_message = models.ForeignKey(
         "chat.ChatMessage",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="ai_action_drafts",
     )
@@ -128,6 +135,8 @@ class AIActionDraft(models.Model):
     )
     payload = models.JSONField(default=dict)
     preview = models.JSONField(default=dict)
+    display = models.JSONField(default=dict, blank=True)
+    summary = models.TextField(default="", blank=True, max_length=200)
     missing_fields = models.JSONField(default=list)
     preconditions = models.JSONField(default=dict)
     required_confirmation = models.CharField(max_length=32)
