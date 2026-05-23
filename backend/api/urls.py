@@ -8,6 +8,7 @@ urlpatterns = [
     path("friends/", include("friends.urls")),
     path("trips/", include("trips.urls")),
     path("trips/", include("expenses.urls")),
+    path("trips/", include("memories.urls")),
     path("trips/<uuid:trip_id>/chat/", include("chat.urls")),
     path("trips/<uuid:trip_id>/ai/", include("ai.urls")),
     path("invitations/", include("trips.invitation_urls")),

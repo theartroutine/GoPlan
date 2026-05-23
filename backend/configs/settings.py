@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'ai.apps.AIConfig',
     'chat',
     'media',
+    'memories',
 
 ]
 
@@ -134,6 +135,12 @@ STORAGES = {
 UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
 FILE_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
+TRIP_PHOTO_MAX_FILES_PER_UPLOAD = 20
+TRIP_PHOTO_MAX_BYTES = 10 * 1024 * 1024
+TRIP_PHOTO_MAX_SOURCE_PIXELS = 45_000_000
+TRIP_PHOTO_THUMBNAIL_MAX_EDGE = 480
+TRIP_PHOTO_MEDIUM_MAX_EDGE = 1600
+TRIP_PHOTO_WEBP_QUALITY = 84
 
 # -------- Cross-Origin Settings --------
 CORS_ALLOWED_ORIGINS = os.environ['CORS_ALLOWED_ORIGINS'].split(',')
@@ -195,6 +202,10 @@ REST_FRAMEWORK = {
         'friends_search': '60/hour',
         'media_upload': '30/hour',
         'public_media': '600/hour',
+        'trip_photos_list': '120/hour',
+        'trip_photos_upload': '30/hour',
+        'trip_photos_detail': '120/hour',
+        'trip_photo_assets': '600/hour',
         'trips_list_create': '60/hour',
         'trips_detail_update': '120/hour',
         'trips_invitations_list': '240/hour',
