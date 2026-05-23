@@ -642,7 +642,7 @@ def confirm_action_draft(*, draft_id, trip_id, actor) -> AIActionDraft:
         draft = (
             AIActionDraft.objects
             .select_for_update(of=("self",))
-            .select_related("response_message")
+            .select_related("response_message", "trip")
             .get(pk=draft_id, trip_id=trip_id)
         )
         if draft.status == AIActionDraftStatus.CONFIRMED:

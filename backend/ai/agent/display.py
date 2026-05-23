@@ -254,8 +254,9 @@ def _build_expense_update(payload: dict, trip_context: dict) -> dict:
         "title": payload.get("title") or payload.get("target_title") or "Expense",
         "meta": meta,
     }
-    if payload.get("total_amount") is not None:
-        out["hero"] = _fmt_amount(payload.get("total_amount"), currency)
+    amount = payload.get("total_amount")
+    if _has_positive_amount(amount):
+        out["hero"] = _fmt_amount(amount, currency)
     return out
 
 
@@ -293,7 +294,7 @@ def _build_expense_delete(payload: dict, trip_context: dict) -> dict:
         "title": payload.get("title", "Expense"),
     }
     amount = payload.get("total_amount")
-    if amount not in (None, ""):
+    if _has_positive_amount(amount):
         display["hero"] = _fmt_amount(amount, currency)
     return display
 
@@ -317,7 +318,7 @@ def _build_transfer(payload: dict, trip_context: dict) -> dict:
         "meta": [],
     }
     amount = payload.get("amount")
-    if amount not in (None, ""):
+    if _has_positive_amount(amount):
         display["hero"] = _fmt_amount(amount, currency)
     for label, field in (("From", "from_name"), ("To", "to_name")):
         value = _non_empty_string(payload, field)

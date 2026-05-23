@@ -13,20 +13,20 @@ from trips.models import Trip
 logger = logging.getLogger(__name__)
 
 AI_LOCK_TTL = timedelta(seconds=settings.GOPLAN_AI_LOCK_TTL_SECONDS)
-GENERIC_AI_ERROR_MESSAGE = "GoPlanAI hiện chưa trả lời được. Thử lại sau."
+GENERIC_AI_ERROR_MESSAGE = "GoPlanAI can't respond right now. Please try again later."
 ACTIVE_AI_STATUSES = (AIInteractionStatus.PENDING, AIInteractionStatus.RUNNING)
 
 _ERROR_MESSAGES = {
-    "PROVIDER_UNAVAILABLE": "Dịch vụ AI tạm thời gián đoạn. Bạn thử lại sau ít phút giúp mình nhé.",
-    "RATE_LIMIT": "Mình đang xử lý quá nhiều yêu cầu. Bạn thử lại sau 30 giây nhé.",
-    "TIMEOUT": "Mình mất quá nhiều thời gian trả lời. Bạn nhắc lại giúp mình nhé.",
-    "PROVIDER_BAD_RESPONSE": "Mình chưa đưa ra được câu trả lời phù hợp. Bạn diễn đạt lại giúp mình nhé.",
-    "INSUFFICIENT_BALANCE": "Dịch vụ AI tạm thời chưa khả dụng. Đội ngũ đã được thông báo.",
-    "TOOL_VALIDATION_FAILED": "Mình hiểu sai định dạng yêu cầu của bạn. Bạn nói cụ thể hơn được không?",
-    "TOOL_UNKNOWN": "Mình chưa hỗ trợ thao tác đó. Bạn thử cách khác giúp mình nhé.",
-    "CONFIG_MISSING": "Tính năng AI chưa được cấu hình. Báo admin giúp mình nhé.",
-    "INTERNAL_ERROR": "Có lỗi không mong muốn. Đội ngũ đã được thông báo.",
-    "TASK_ERROR": "Có lỗi không mong muốn. Đội ngũ đã được thông báo.",
+    "PROVIDER_UNAVAILABLE": "The AI service is temporarily unavailable. Please try again in a few minutes.",
+    "RATE_LIMIT": "Too many requests right now. Please try again in 30 seconds.",
+    "TIMEOUT": "I took too long to respond. Could you ask again?",
+    "PROVIDER_BAD_RESPONSE": "I couldn't produce a suitable answer. Could you rephrase your request?",
+    "INSUFFICIENT_BALANCE": "The AI service is temporarily unavailable. The team has been notified.",
+    "TOOL_VALIDATION_FAILED": "I misunderstood the format of your request. Could you be more specific?",
+    "TOOL_UNKNOWN": "That action isn't supported yet. Please try a different approach.",
+    "CONFIG_MISSING": "AI features aren't configured yet. Please contact the admin.",
+    "INTERNAL_ERROR": "An unexpected error occurred. The team has been notified.",
+    "TASK_ERROR": "An unexpected error occurred. The team has been notified.",
 }
 
 

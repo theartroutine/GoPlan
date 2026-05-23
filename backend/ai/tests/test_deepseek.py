@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase, override_settings
 
-from ai.deepseek import complete_with_tools
+from ai.deepseek import DeepSeekProviderError, complete_with_tools
+from ai.models import AIInteractionErrorCode
 
 
 @override_settings(
@@ -77,3 +78,33 @@ class ToolCallingTests(SimpleTestCase):
         self.assertEqual(result.usage.input_tokens, 10)
         self.assertEqual(result.usage.output_tokens, 5)
         self.assertEqual(result.finish_reason, "tool_calls")
+
+    @patch("ai.deepseek.OpenAI")
+    def test_complete_with_tools_raises_on_content_filter(self, openai_cls):
+        mock_client = openai_cls.return_value
+        mock_response = mock_client.chat.completions.create.return_value
+        mock_response.choices = [
+            type(
+                "C",
+                (),
+                {
+                    "message": type(
+                        "M",
+                        (),
+                        {"content": None, "tool_calls": None},
+                    )(),
+                    "finish_reason": "content_filter",
+                },
+            )()
+        ]
+        mock_response.usage = None
+
+        with self.assertRaises(DeepSeekProviderError) as cm:
+            complete_with_tools(
+                messages=[{"role": "user", "content": "say hi"}],
+                tools=[],
+            )
+        self.assertEqual(
+            cm.exception.error_code,
+            AIInteractionErrorCode.PROVIDER_BAD_RESPONSE,
+        )

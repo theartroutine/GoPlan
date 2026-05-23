@@ -1207,7 +1207,7 @@ describe("useTripChat", () => {
             },
             sender_kind: "AI",
             ai_status: aiStatus,
-            content: aiStatus === "SUCCESS" ? "AI answer" : "GoPlanAI hiện chưa trả lời được.",
+            content: aiStatus === "SUCCESS" ? "AI answer" : "GoPlanAI can't respond right now. Please try again later.",
           }),
         });
       });

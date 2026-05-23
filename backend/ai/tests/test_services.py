@@ -100,16 +100,16 @@ class AIReservationServiceTests(TestCase):
             interaction.error_code,
             AIInteractionErrorCode.PROVIDER_UNAVAILABLE,
         )
-        self.assertIn("gián đoạn", interaction.response_message.content)
+        self.assertIn("temporarily unavailable", interaction.response_message.content)
 
 
 class MessageForErrorCodeTests(TestCase):
     def test_message_for_error_code_returns_specific_strings(self):
-        self.assertIn("gián đoạn", message_for_error_code(AIInteractionErrorCode.PROVIDER_UNAVAILABLE))
-        self.assertIn("30 giây", message_for_error_code(AIInteractionErrorCode.RATE_LIMIT))
-        self.assertIn("định dạng", message_for_error_code(AIInteractionErrorCode.TOOL_VALIDATION_FAILED))
-        self.assertIn("hỗ trợ thao tác", message_for_error_code(AIInteractionErrorCode.TOOL_UNKNOWN))
-        self.assertIn("chưa khả dụng", message_for_error_code(AIInteractionErrorCode.INSUFFICIENT_BALANCE))
+        self.assertIn("temporarily unavailable", message_for_error_code(AIInteractionErrorCode.PROVIDER_UNAVAILABLE))
+        self.assertIn("30 seconds", message_for_error_code(AIInteractionErrorCode.RATE_LIMIT))
+        self.assertIn("format", message_for_error_code(AIInteractionErrorCode.TOOL_VALIDATION_FAILED))
+        self.assertIn("isn't supported", message_for_error_code(AIInteractionErrorCode.TOOL_UNKNOWN))
+        self.assertIn("temporarily unavailable", message_for_error_code(AIInteractionErrorCode.INSUFFICIENT_BALANCE))
 
     def test_message_for_error_code_unknown_falls_back_to_generic(self):
         self.assertEqual(message_for_error_code("not_a_real_code"), GENERIC_AI_ERROR_MESSAGE)

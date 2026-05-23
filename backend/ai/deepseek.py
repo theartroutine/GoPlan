@@ -78,6 +78,8 @@ def complete_with_tools(
     choice = response.choices[0] if response.choices else None
     if choice is None:
         raise DeepSeekProviderError(AIInteractionErrorCode.PROVIDER_BAD_RESPONSE)
+    if choice.finish_reason in {"content_filter", "insufficient_system_resource"}:
+        raise DeepSeekProviderError(AIInteractionErrorCode.PROVIDER_BAD_RESPONSE)
     msg = choice.message
     tool_calls = []
     for tc in msg.tool_calls or []:

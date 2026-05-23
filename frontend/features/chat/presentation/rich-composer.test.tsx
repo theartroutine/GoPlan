@@ -61,7 +61,7 @@ describe("RichComposer", () => {
     inputText("@GoPlanAI");
     fireEvent.keyDown(getEditor(), { key: "Enter" });
 
-    expect(screen.getByText("Bạn muốn hỏi GoPlanAI điều gì?")).toBeDefined();
+    expect(screen.getByText("What would you like to ask GoPlanAI?")).toBeDefined();
     expect(onSend).not.toHaveBeenCalled();
   });
 

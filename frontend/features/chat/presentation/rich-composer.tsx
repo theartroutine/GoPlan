@@ -14,7 +14,7 @@ import { Textarea } from "@/shared/ui/textarea";
 const MAX_CONTENT_LENGTH = 2000;
 const AI_MESSAGE_PREFIX = `${GOPLAN_AI_MENTION} `;
 const MAX_AI_PROMPT_LENGTH = MAX_CONTENT_LENGTH - AI_MESSAGE_PREFIX.length;
-const EMPTY_AI_PROMPT_MESSAGE = "Bạn muốn hỏi GoPlanAI điều gì?";
+const EMPTY_AI_PROMPT_MESSAGE = "What would you like to ask GoPlanAI?";
 
 type ComposerSendResult = void | "ok" | "duplicate" | "failed" | "blocked";
 
