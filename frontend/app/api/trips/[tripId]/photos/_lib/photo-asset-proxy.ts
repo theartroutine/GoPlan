@@ -13,6 +13,8 @@ import { API_BASE_URL } from "@/shared/http/config";
 
 type PhotoVariant = "thumbnail" | "medium";
 
+const PHOTO_ASSET_CACHE_CONTROL = "private, no-store";
+
 type ProxyTripPhotoAssetOptions = {
   request: Pick<NextRequest, "headers">;
   tripId: string;
@@ -92,6 +94,12 @@ async function jsonErrorResponse(
   return response;
 }
 
+function setPhotoAssetNoStoreHeaders(response: NextResponse): NextResponse {
+  setNoStoreHeaders(response);
+  response.headers.set("Cache-Control", PHOTO_ASSET_CACHE_CONTROL);
+  return response;
+}
+
 async function finalizeAssetResponse(
   upstream: Response,
   refreshedAccessToken: string | null,
@@ -100,7 +108,7 @@ async function finalizeAssetResponse(
     const errorResponse = await jsonErrorResponse(upstream, "Photo asset request failed.");
     if (refreshedAccessToken) {
       errorResponse.headers.set("X-Access-Token", refreshedAccessToken);
-      setNoStoreHeaders(errorResponse);
+      setPhotoAssetNoStoreHeaders(errorResponse);
     }
     return errorResponse;
   }
@@ -119,13 +127,13 @@ async function finalizeAssetResponse(
   const response = new NextResponse(await upstream.arrayBuffer(), {
     status: upstream.status,
     headers: {
-      "Cache-Control": "private, no-store",
+      "Cache-Control": PHOTO_ASSET_CACHE_CONTROL,
       "Content-Type": contentType,
     },
   });
   if (refreshedAccessToken) {
     response.headers.set("X-Access-Token", refreshedAccessToken);
-    setNoStoreHeaders(response);
+    setPhotoAssetNoStoreHeaders(response);
   }
   return response;
 }
