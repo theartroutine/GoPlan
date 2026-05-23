@@ -470,7 +470,7 @@ class AIActionDraftAPITests(APITestCase, AIActionDraftModelTests):
 
 
 class AIActionDraftTransferRefreshTests(AIActionDraftModelTests):
-    @patch("chat.services.push_chat_message")
+    @patch("ai.agent.draft_notifications.push_chat_message")
     def test_manual_mark_transfer_sent_refreshes_ai_transfer_drafts(self, push_chat_message):
         member = create_completed_user(
             "agent-transfer-member@example.com",

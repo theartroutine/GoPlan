@@ -116,6 +116,8 @@ describe("AIActionCard", () => {
     expect(
       await screen.findByRole("img", { name: "Confirmed" }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(onDraftChanged).toHaveBeenCalledWith(
       expect.objectContaining({ status: "CONFIRMED" }),
     );

@@ -1,10 +1,22 @@
+import type { ImgHTMLAttributes } from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+type MockNextImageProps = ImgHTMLAttributes<HTMLImageElement> & {
+  fill?: boolean;
+  unoptimized?: boolean;
+  priority?: boolean;
+};
+
 vi.mock("next/image", () => ({
-  default: (props: Record<string, unknown>) => {
+  default: (props: MockNextImageProps) => {
+    const imgProps = { ...props };
+    delete imgProps.fill;
+    delete imgProps.unoptimized;
+    delete imgProps.priority;
+
     // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
-    return <img {...(props as Record<string, string>)} />;
+    return <img {...imgProps} />;
   },
 }));
 

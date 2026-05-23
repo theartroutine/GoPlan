@@ -1035,6 +1035,95 @@ class ActionDraftConfirmAPITests(APITestCase):
     def _confirm_url(self, draft_id):
         return f"/api/trips/{self.trip.id}/ai/action-drafts/{draft_id}/confirm"
 
+    @patch("ai.views.push_chat_message")
+    def test_confirm_timeline_activity_create_returns_confirmed_draft(
+        self,
+        push_chat_message,
+    ):
+        self.client.force_authenticate(self.captain)
+        trip = create_trip(
+            captain=self.captain,
+            name="Confirm Timeline Trip",
+            destination="Da Lat",
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 3),
+        )
+        prompt = ChatMessage.objects.create(
+            trip=trip,
+            sender=self.captain,
+            sender_display_name_snapshot=self.captain.display_name,
+            sender_identify_tag_snapshot=self.captain.identify_tag,
+            content="@GoPlanAI add day three activity",
+            client_message_id=uuid4(),
+        )
+        ai_response = ChatMessage.objects.create(
+            trip=trip,
+            sender_kind=ChatMessageSenderKind.AI,
+            sender_display_name_snapshot="GoPlanAI",
+            content="I prepared a draft.",
+        )
+        interaction = AIInteraction.objects.create(
+            trip=trip,
+            requested_by=self.captain,
+            prompt_message=prompt,
+            prompt="add day three activity",
+            status=AIInteractionStatus.SUCCEEDED,
+            lock_expires_at=timezone.now() + timedelta(minutes=2),
+        )
+        draft = AIActionDraft.objects.create(
+            trip=trip,
+            interaction=interaction,
+            response_message=ai_response,
+            requested_by=self.captain,
+            action_type="timeline.activity.create",
+            status=AIActionDraftStatus.READY,
+            required_confirmation=AI_CONFIRMATION_CAPTAIN,
+            payload={
+                "section_date": "2026-06-03",
+                "data": {
+                    "title": "Langfarm stop",
+                    "system_type": "SHOPPING",
+                    "time_mode": "FLEXIBLE",
+                },
+            },
+            preview={"title": "Langfarm stop"},
+            missing_fields=[],
+            preconditions={},
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        self.assertFalse(
+            TimelineSection.objects.filter(
+                trip=trip,
+                section_date=date(2026, 6, 3),
+            ).exists()
+        )
+
+        response = self.client.post(
+            f"/api/trips/{trip.id}/ai/action-drafts/{draft.id}/confirm"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["draft"]["status"],
+            AIActionDraftStatus.CONFIRMED,
+        )
+        self.assertFalse(response.data["draft"]["can_confirm"])
+        self.assertFalse(response.data["draft"]["can_cancel"])
+        section = TimelineSection.objects.get(
+            trip=trip,
+            section_date=date(2026, 6, 3),
+        )
+        activity = TimelineActivity.objects.get(section=section)
+        self.assertEqual(activity.title, "Langfarm stop")
+        self.assertEqual(
+            response.data["draft"]["result"],
+            {
+                "object_type": "timeline_activity",
+                "object_id": str(activity.id),
+            },
+        )
+        push_chat_message.assert_called_once_with(ai_response)
+
     def test_stale_confirm_failure_is_persisted_on_draft(self):
         self.client.force_authenticate(self.captain)
         expense = create_expense(
