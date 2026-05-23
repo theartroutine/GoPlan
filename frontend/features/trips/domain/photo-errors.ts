@@ -13,6 +13,7 @@ const MAX_FILES = 20;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HEIC_TYPES = new Set(["image/heic", "image/heif"]);
+const GENERIC_BINARY_TYPES = new Set(["application/octet-stream", "binary/octet-stream"]);
 
 const ERROR_MESSAGES: Record<string, string> = {
   HEIC_UNSUPPORTED:
@@ -53,6 +54,18 @@ function isHeicFile(file: File): boolean {
   );
 }
 
+function isSvgFile(file: File): boolean {
+  return file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+}
+
+function hasKnownUnsupportedMime(file: File): boolean {
+  return (
+    file.type !== "" &&
+    !GENERIC_BINARY_TYPES.has(file.type) &&
+    !ALLOWED_TYPES.has(file.type)
+  );
+}
+
 export function getTripPhotoErrorMessage(error: unknown, fallback: string): string {
   const code = getErrorCode(error);
   if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
@@ -76,7 +89,7 @@ export function validateTripPhotoFiles(files: File[]): PhotoValidationResult {
     if (isHeicFile(file)) {
       return { ok: false, message: ERROR_MESSAGES.HEIC_UNSUPPORTED };
     }
-    if (!ALLOWED_TYPES.has(file.type)) {
+    if (isSvgFile(file) || hasKnownUnsupportedMime(file)) {
       return { ok: false, message: ERROR_MESSAGES.UNSUPPORTED_IMAGE_TYPE };
     }
   }

@@ -185,8 +185,6 @@ def _validate_image_file(image_file) -> str:
         )
 
     expected_format = _detect_source_format(image_file)
-    previous_max_pixels = Image.MAX_IMAGE_PIXELS
-    Image.MAX_IMAGE_PIXELS = _max_source_pixels()
     try:
         image_file.seek(0)
         with Image.open(image_file) as probe:
@@ -214,7 +212,6 @@ def _validate_image_file(image_file) -> str:
             "Photo could not be parsed safely.",
         ) from exc
     finally:
-        Image.MAX_IMAGE_PIXELS = previous_max_pixels
         image_file.seek(0)
     return expected_format
 
@@ -243,8 +240,6 @@ def _encode_webp(image: Image.Image) -> ContentFile:
 
 def _render_trip_photo_variants(image_file) -> PreparedTripPhoto:
     _validate_image_file(image_file)
-    previous_max_pixels = Image.MAX_IMAGE_PIXELS
-    Image.MAX_IMAGE_PIXELS = _max_source_pixels()
     try:
         image_file.seek(0)
         with Image.open(image_file) as source:
@@ -272,7 +267,6 @@ def _render_trip_photo_variants(image_file) -> PreparedTripPhoto:
             "Photo could not be parsed safely.",
         ) from exc
     finally:
-        Image.MAX_IMAGE_PIXELS = previous_max_pixels
         image_file.seek(0)
 
 

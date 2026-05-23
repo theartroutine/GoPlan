@@ -1,16 +1,13 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TripPhoto } from "@/features/trips/domain/photo-types";
 
 const photosApiMock = vi.hoisted(() => ({
   bffDeleteTripPhoto: vi.fn(),
+  bffFetchTripPhotoAssetBlob: vi.fn(),
   bffListTripPhotos: vi.fn(),
   bffUploadTripPhotos: vi.fn(),
-  getTripPhotoAssetUrl: vi.fn(
-    (tripId: string, photoId: string, variant: "thumbnail" | "medium") =>
-      `/api/trips/${tripId}/photos/${photoId}/${variant}`,
-  ),
 }));
 
 vi.mock("@/features/trips/infrastructure/photos-api", () => photosApiMock);
@@ -47,10 +44,25 @@ const PHOTO: TripPhoto = {
 describe("PhotosTab", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    photosApiMock.getTripPhotoAssetUrl.mockImplementation(
-      (tripId: string, photoId: string, variant: "thumbnail" | "medium") =>
-        `/api/trips/${tripId}/photos/${photoId}/${variant}`,
+    let objectUrlIndex = 0;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => {
+        objectUrlIndex += 1;
+        return `blob:trip-photo-${objectUrlIndex}`;
+      }),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    photosApiMock.bffFetchTripPhotoAssetBlob.mockResolvedValue(
+      new Blob(["image"], { type: "image/webp" }),
     );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("shows an empty state when the trip has no photos", async () => {
@@ -83,9 +95,17 @@ describe("PhotosTab", () => {
 
     expect(await screen.findByRole("button", { name: /Open photo uploaded by Minh/i }))
       .toBeInTheDocument();
-    expect(screen.getByAltText("Photo uploaded by Minh")).toHaveAttribute(
-      "src",
-      "/api/trips/trip_1/photos/photo_1/thumbnail",
+    await waitFor(() => {
+      expect(screen.getByAltText("Photo uploaded by Minh")).toHaveAttribute(
+        "src",
+        "blob:trip-photo-1",
+      );
+    });
+    expect(photosApiMock.bffFetchTripPhotoAssetBlob).toHaveBeenCalledWith(
+      "trip_1",
+      "photo_1",
+      "thumbnail",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Load more photos" }));
@@ -100,10 +120,12 @@ describe("PhotosTab", () => {
     await waitFor(() => {
       expect(screen.getAllByAltText("Photo uploaded by Minh")).toHaveLength(2);
     });
-    expect(screen.getAllByAltText("Photo uploaded by Minh")[1]).toHaveAttribute(
-      "src",
-      "/api/trips/trip_1/photos/photo_2/thumbnail",
-    );
+    await waitFor(() => {
+      expect(screen.getAllByAltText("Photo uploaded by Minh")[1]).toHaveAttribute(
+        "src",
+        "blob:trip-photo-2",
+      );
+    });
   });
 
   it("opens a medium-image lightbox from the thumbnail gallery", async () => {
@@ -118,9 +140,17 @@ describe("PhotosTab", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Open photo uploaded by Minh/i }));
 
     const dialog = await screen.findByRole("dialog", { name: "Photo detail" });
-    expect(within(dialog).getByAltText("Selected photo uploaded by Minh")).toHaveAttribute(
-      "src",
-      "/api/trips/trip_1/photos/photo_1/medium",
+    await waitFor(() => {
+      expect(within(dialog).getByAltText("Selected photo uploaded by Minh")).toHaveAttribute(
+        "src",
+        "blob:trip-photo-2",
+      );
+    });
+    expect(photosApiMock.bffFetchTripPhotoAssetBlob).toHaveBeenCalledWith(
+      "trip_1",
+      "photo_1",
+      "medium",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -172,5 +202,30 @@ describe("PhotosTab", () => {
     await waitFor(() => {
       expect(screen.queryByAltText("Photo uploaded by Minh")).not.toBeInTheDocument();
     });
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:trip-photo-1");
+  });
+
+  it("revokes thumbnail and medium object URLs on cleanup", async () => {
+    photosApiMock.bffListTripPhotos.mockResolvedValueOnce({
+      results: [PHOTO],
+      nextCursor: null,
+      previousCursor: null,
+    });
+
+    const { unmount } = render(<PhotosTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Open photo uploaded by Minh/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Photo detail" });
+    await waitFor(() => {
+      expect(within(dialog).getByAltText("Selected photo uploaded by Minh")).toHaveAttribute(
+        "src",
+        "blob:trip-photo-2",
+      );
+    });
+
+    unmount();
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:trip-photo-1");
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:trip-photo-2");
   });
 });

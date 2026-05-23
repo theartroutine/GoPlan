@@ -5,7 +5,9 @@ from pathlib import Path
 
 from PIL import Image as _PILImage
 
-_PILImage.MAX_IMAGE_PIXELS = 4_000_000  # 4MP — decompression-bomb guard for avatar uploads
+# Process-wide hard guard for extreme decompression bombs. Individual upload
+# endpoints enforce their own lower source-pixel limits before storing files.
+_PILImage.MAX_IMAGE_PIXELS = 50_000_000
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -133,6 +135,7 @@ STORAGES = {
     },
 }
 UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+UPLOAD_MAX_SOURCE_PIXELS = 4_000_000
 DATA_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
 FILE_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
 TRIP_PHOTO_MAX_FILES_PER_UPLOAD = 20

@@ -68,7 +68,27 @@ describe("proxyTripPhotoAsset", () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("image/webp");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("returns JSON 401 without fetching upstream when no bearer or refresh cookie exists", async () => {
+    const { proxyTripPhotoAsset } = await import(
+      "@/app/api/trips/[tripId]/photos/_lib/photo-asset-proxy"
+    );
+    jar.get.mockReturnValue(undefined);
+
+    const response = await proxyTripPhotoAsset({
+      request: { headers: new Headers() } as never,
+      tripId: TRIP_ID,
+      photoId: PHOTO_ID,
+      variant: "thumbnail",
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Content-Type")).toContain("application/json");
+    await expect(response.json()).resolves.toEqual({ detail: "Not authenticated." });
   });
 
   it("retries once with a refreshed token after upstream 401", async () => {

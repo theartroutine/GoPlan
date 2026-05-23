@@ -12,8 +12,20 @@ type ListTripPhotosOptions = {
   signal?: AbortSignal;
 };
 
+type FetchTripPhotoAssetBlobOptions = {
+  signal?: AbortSignal;
+};
+
 function tripPhotosPath(tripId: string): string {
   return `/api/trips/${encodeURIComponent(tripId)}/photos`;
+}
+
+function tripPhotoAssetPath(
+  tripId: string,
+  photoId: string,
+  variant: TripPhotoVariant,
+): string {
+  return `${tripPhotosPath(tripId)}/${encodeURIComponent(photoId)}/${variant}`;
 }
 
 function extractCursor(url: string | null): string | null {
@@ -24,14 +36,6 @@ function extractCursor(url: string | null): string | null {
   } catch {
     return null;
   }
-}
-
-export function getTripPhotoAssetUrl(
-  tripId: string,
-  photoId: string,
-  variant: TripPhotoVariant,
-): string {
-  return `${tripPhotosPath(tripId)}/${encodeURIComponent(photoId)}/${variant}`;
 }
 
 export async function bffListTripPhotos(
@@ -66,4 +70,17 @@ export async function bffDeleteTripPhoto(
   photoId: string,
 ): Promise<void> {
   await bff.delete(`${tripPhotosPath(tripId)}/${encodeURIComponent(photoId)}`);
+}
+
+export async function bffFetchTripPhotoAssetBlob(
+  tripId: string,
+  photoId: string,
+  variant: TripPhotoVariant,
+  options: FetchTripPhotoAssetBlobOptions = {},
+): Promise<Blob> {
+  const res = await bff.get<Blob>(tripPhotoAssetPath(tripId, photoId, variant), {
+    responseType: "blob",
+    signal: options.signal,
+  });
+  return res.data;
 }

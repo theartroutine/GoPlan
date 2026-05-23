@@ -50,6 +50,13 @@ function buildPostRequest(formData: FormData) {
   };
 }
 
+function buildPostRequestWithHeaders(headers: Headers, formData = new FormData()) {
+  return {
+    headers,
+    formData: vi.fn().mockResolvedValue(formData),
+  };
+}
+
 describe("BFF /api/trips/[tripId]/photos", () => {
   const jar = { get: vi.fn() };
 
@@ -115,6 +122,28 @@ describe("BFF /api/trips/[tripId]/photos", () => {
     );
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual({ photos: [{ id: "photo-1" }] });
+  });
+
+  it("rejects oversized multipart bodies from Content-Length before parsing form data", async () => {
+    const { POST } = await import("@/app/api/trips/[tripId]/photos/route");
+    const request = buildPostRequestWithHeaders(
+      new Headers({
+        Authorization: "Bearer access-token",
+        "Content-Length": String(202 * 1024 * 1024),
+      }),
+    );
+
+    const response = await POST(request as never, {
+      params: Promise.resolve({ tripId: TRIP_ID }),
+    });
+
+    expect(request.formData).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      detail: "Upload body is too large. Upload at most 20 photos of 10 MiB each.",
+      error_code: "UPLOAD_TOO_LARGE",
+    });
   });
 
   it("rejects no-file uploads before forwarding", async () => {
@@ -186,5 +215,28 @@ describe("BFF /api/trips/[tripId]/photos", () => {
       detail: "HEIC images are not supported yet. Convert to JPEG, PNG, or WebP.",
       error_code: "HEIC_UNSUPPORTED",
     });
+  });
+
+  it("allows empty or generic file MIME types so backend magic-byte validation remains authoritative", async () => {
+    const { POST } = await import("@/app/api/trips/[tripId]/photos/route");
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ photos: [{ id: "photo-1" }] }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const formData = new FormData();
+    formData.append("files", new File(["jpeg-bytes"], "photo.jpg", { type: "" }));
+    formData.append(
+      "files",
+      new File(["webp-bytes"], "photo.webp", { type: "application/octet-stream" }),
+    );
+
+    const response = await POST(buildPostRequest(formData) as never, {
+      params: Promise.resolve({ tripId: TRIP_ID }),
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(201);
   });
 });

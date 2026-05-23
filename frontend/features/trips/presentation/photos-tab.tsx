@@ -1,6 +1,6 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- Protected BFF image endpoints rely on browser auth cookies. */
+/* eslint-disable @next/next/no-img-element -- Blob object URLs cannot be optimized by next/image. */
 
 import {
   ImageIcon,
@@ -18,9 +18,9 @@ import {
 } from "@/features/trips/domain/photo-errors";
 import {
   bffDeleteTripPhoto,
+  bffFetchTripPhotoAssetBlob,
   bffListTripPhotos,
   bffUploadTripPhotos,
-  getTripPhotoAssetUrl,
 } from "@/features/trips/infrastructure/photos-api";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import {
@@ -56,13 +56,13 @@ function photoDescription(photo: TripPhoto): string {
 }
 
 function PhotoTile({
-  tripId,
   photo,
+  thumbnailUrl,
   onOpen,
   onDelete,
 }: {
-  tripId: string;
   photo: TripPhoto;
+  thumbnailUrl?: string;
   onOpen: (photo: TripPhoto) => void;
   onDelete: (photo: TripPhoto) => void;
 }) {
@@ -74,14 +74,20 @@ function PhotoTile({
         onClick={() => onOpen(photo)}
         className="block aspect-[4/3] w-full overflow-hidden bg-muted text-left outline-none transition-opacity hover:opacity-95 focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
-        <img
-          alt={photoAlt(photo)}
-          src={getTripPhotoAssetUrl(tripId, photo.id, "thumbnail")}
-          width={photo.thumbnail_width}
-          height={photo.thumbnail_height}
-          className="h-full w-full object-cover"
-          loading="lazy"
-        />
+        {thumbnailUrl ? (
+          <img
+            alt={photoAlt(photo)}
+            src={thumbnailUrl}
+            width={photo.thumbnail_width}
+            height={photo.thumbnail_height}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+            <Spinner />
+          </div>
+        )}
       </button>
       <div className="flex min-h-12 items-center justify-between gap-2 px-3 py-2">
         <div className="min-w-0">
@@ -123,6 +129,26 @@ export function PhotosTab() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<TripPhoto | null>(null);
   const [photoPendingDelete, setPhotoPendingDelete] = useState<TripPhoto | null>(null);
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
+  const [mediumUrl, setMediumUrl] = useState<string | null>(null);
+  const [mediumLoading, setMediumLoading] = useState(false);
+  const [mediumError, setMediumError] = useState<string | null>(null);
+  const thumbnailUrlsRef = useRef<Map<string, string>>(new Map());
+  const thumbnailRequestsRef = useRef<Map<string, AbortController>>(new Map());
+  const visiblePhotoIdsRef = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(false);
+  const mediumUrlRef = useRef<string | null>(null);
+
+  const syncThumbnailUrls = useCallback(() => {
+    setThumbnailUrls(Object.fromEntries(thumbnailUrlsRef.current.entries()));
+  }, []);
+
+  const revokeMediumUrl = useCallback(() => {
+    if (mediumUrlRef.current) {
+      URL.revokeObjectURL(mediumUrlRef.current);
+      mediumUrlRef.current = null;
+    }
+  }, []);
 
   const loadFirstPage = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -151,6 +177,140 @@ export function PhotosTab() {
       controller.abort();
     };
   }, [loadFirstPage]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const thumbnailRequests = thumbnailRequestsRef.current;
+    const thumbnailObjectUrls = thumbnailUrlsRef.current;
+
+    return () => {
+      mountedRef.current = false;
+      for (const controller of thumbnailRequests.values()) {
+        controller.abort();
+      }
+      thumbnailRequests.clear();
+      for (const url of thumbnailObjectUrls.values()) {
+        URL.revokeObjectURL(url);
+      }
+      thumbnailObjectUrls.clear();
+      revokeMediumUrl();
+    };
+  }, [revokeMediumUrl]);
+
+  useEffect(() => {
+    for (const controller of thumbnailRequestsRef.current.values()) {
+      controller.abort();
+    }
+    thumbnailRequestsRef.current.clear();
+    for (const url of thumbnailUrlsRef.current.values()) {
+      URL.revokeObjectURL(url);
+    }
+    thumbnailUrlsRef.current.clear();
+    visiblePhotoIdsRef.current = new Set();
+    setThumbnailUrls({});
+    revokeMediumUrl();
+    setMediumUrl(null);
+    setMediumLoading(false);
+    setMediumError(null);
+  }, [revokeMediumUrl, tripId]);
+
+  useEffect(() => {
+    const visibleIds = new Set(photos.map((photo) => photo.id));
+    visiblePhotoIdsRef.current = visibleIds;
+
+    let didChange = false;
+    for (const [photoId, url] of thumbnailUrlsRef.current.entries()) {
+      if (!visibleIds.has(photoId)) {
+        URL.revokeObjectURL(url);
+        thumbnailUrlsRef.current.delete(photoId);
+        didChange = true;
+      }
+    }
+    for (const [photoId, controller] of thumbnailRequestsRef.current.entries()) {
+      if (!visibleIds.has(photoId)) {
+        controller.abort();
+        thumbnailRequestsRef.current.delete(photoId);
+      }
+    }
+    if (didChange) syncThumbnailUrls();
+
+    for (const photo of photos) {
+      if (
+        thumbnailUrlsRef.current.has(photo.id) ||
+        thumbnailRequestsRef.current.has(photo.id)
+      ) {
+        continue;
+      }
+
+      const controller = new AbortController();
+      thumbnailRequestsRef.current.set(photo.id, controller);
+      void bffFetchTripPhotoAssetBlob(tripId, photo.id, "thumbnail", {
+        signal: controller.signal,
+      })
+        .then((blob) => {
+          if (
+            controller.signal.aborted ||
+            !mountedRef.current ||
+            !visiblePhotoIdsRef.current.has(photo.id)
+          ) {
+            return;
+          }
+
+          const objectUrl = URL.createObjectURL(blob);
+          const previousUrl = thumbnailUrlsRef.current.get(photo.id);
+          if (previousUrl) URL.revokeObjectURL(previousUrl);
+          thumbnailUrlsRef.current.set(photo.id, objectUrl);
+          syncThumbnailUrls();
+        })
+        .catch((err) => {
+          if (!controller.signal.aborted) {
+            setError(getTripPhotoErrorMessage(err, LOAD_ERROR));
+          }
+        })
+        .finally(() => {
+          thumbnailRequestsRef.current.delete(photo.id);
+        });
+    }
+  }, [photos, syncThumbnailUrls, tripId]);
+
+  useEffect(() => {
+    if (!selectedPhoto) {
+      revokeMediumUrl();
+      setMediumUrl(null);
+      setMediumLoading(false);
+      setMediumError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    revokeMediumUrl();
+    setMediumUrl(null);
+    setMediumLoading(true);
+    setMediumError(null);
+
+    void bffFetchTripPhotoAssetBlob(tripId, selectedPhoto.id, "medium", {
+      signal: controller.signal,
+    })
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        const objectUrl = URL.createObjectURL(blob);
+        mediumUrlRef.current = objectUrl;
+        setMediumUrl(objectUrl);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          setMediumError(getTripPhotoErrorMessage(err, LOAD_ERROR));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setMediumLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+      revokeMediumUrl();
+    };
+  }, [revokeMediumUrl, selectedPhoto, tripId]);
 
   async function handleLoadMore() {
     if (!nextCursor || loadingMore) return;
@@ -288,8 +448,8 @@ export function PhotosTab() {
           {photos.map((photo) => (
             <PhotoTile
               key={photo.id}
-              tripId={tripId}
               photo={photo}
+              thumbnailUrl={thumbnailUrls[photo.id]}
               onOpen={setSelectedPhoto}
               onDelete={setPhotoPendingDelete}
             />
@@ -319,13 +479,25 @@ export function PhotosTab() {
           </DialogHeader>
           {selectedPhoto ? (
             <div className="flex max-h-[calc(100dvh-6rem)] items-center justify-center overflow-hidden rounded-md bg-black">
-              <img
-                alt={`Selected ${photoDescription(selectedPhoto)}`}
-                src={getTripPhotoAssetUrl(tripId, selectedPhoto.id, "medium")}
-                width={selectedPhoto.medium_width}
-                height={selectedPhoto.medium_height}
-                className="max-h-[calc(100dvh-6rem)] w-auto max-w-full object-contain"
-              />
+              {mediumLoading ? (
+                <div className="flex min-h-72 w-full items-center justify-center text-white">
+                  <Spinner />
+                </div>
+              ) : null}
+              {mediumError ? (
+                <div className="flex min-h-72 w-full items-center justify-center px-6 text-center text-sm text-white">
+                  {mediumError}
+                </div>
+              ) : null}
+              {mediumUrl ? (
+                <img
+                  alt={`Selected ${photoDescription(selectedPhoto)}`}
+                  src={mediumUrl}
+                  width={selectedPhoto.medium_width}
+                  height={selectedPhoto.medium_height}
+                  className="max-h-[calc(100dvh-6rem)] w-auto max-w-full object-contain"
+                />
+              ) : null}
             </div>
           ) : null}
         </DialogContent>

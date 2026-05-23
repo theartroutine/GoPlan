@@ -17,6 +17,7 @@ from media.services import (
 )
 
 MAX_SIZE_BYTES = settings.UPLOAD_MAX_BYTES
+MAX_SOURCE_PIXELS = settings.UPLOAD_MAX_SOURCE_PIXELS
 EXTENSION_MAP = {
     "image/jpeg": ".jpg",
     "image/png":  ".png",
@@ -56,8 +57,7 @@ def _validate_image_payload(image_file, expected_content_type: str) -> bool:
             actual_content_type = PIL_FORMAT_MIME_TYPES.get(image.format or "")
             if actual_content_type != expected_content_type:
                 return False
-            max_pixels = Image.MAX_IMAGE_PIXELS
-            if max_pixels is not None and image.width * image.height > max_pixels:
+            if image.width * image.height > MAX_SOURCE_PIXELS:
                 return False
             image.verify()
     except IMAGE_PARSE_ERRORS:

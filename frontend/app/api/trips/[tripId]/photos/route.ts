@@ -19,8 +19,11 @@ type RouteContext = { params: Promise<{ tripId: string }> };
 
 const MAX_FILES = 20;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+const MAX_TOTAL_UPLOAD_BYTES = MAX_FILES * MAX_FILE_BYTES + MAX_MULTIPART_OVERHEAD_BYTES;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const HEIC_TYPES = new Set(["image/heic", "image/heif"]);
+const GENERIC_BINARY_TYPES = new Set(["application/octet-stream", "binary/octet-stream"]);
 
 function buildQuery(searchParams: URLSearchParams): string | undefined {
   const cursor = searchParams.get("cursor");
@@ -38,6 +41,38 @@ function isHeicFile(file: File): boolean {
     lowerName.endsWith(".heic") ||
     lowerName.endsWith(".heif")
   );
+}
+
+function isSvgFile(file: File): boolean {
+  return file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+}
+
+function hasKnownUnsupportedMime(file: File): boolean {
+  return (
+    file.type !== "" &&
+    !GENERIC_BINARY_TYPES.has(file.type) &&
+    !ALLOWED_TYPES.has(file.type)
+  );
+}
+
+function validateContentLength(headers: Headers): NextResponse | null {
+  const raw = headers.get("Content-Length");
+  if (!raw) return null;
+
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
+
+  if (parsed > MAX_TOTAL_UPLOAD_BYTES) {
+    return NextResponse.json(
+      {
+        detail: `Upload body is too large. Upload at most ${MAX_FILES} photos of 10 MiB each.`,
+        error_code: "UPLOAD_TOO_LARGE",
+      },
+      { status: 413 },
+    );
+  }
+
+  return null;
 }
 
 function validateFiles(files: File[]): NextResponse | null {
@@ -78,7 +113,7 @@ function validateFiles(files: File[]): NextResponse | null {
         { status: 415 },
       );
     }
-    if (!ALLOWED_TYPES.has(file.type)) {
+    if (isSvgFile(file) || hasKnownUnsupportedMime(file)) {
       return NextResponse.json(
         {
           detail: "Unsupported image format. Use JPEG, PNG, or WebP.",
@@ -193,6 +228,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { tripId } = await context.params;
+  const bodyTooLargeResponse = validateContentLength(request.headers);
+  if (bodyTooLargeResponse) return bodyTooLargeResponse;
+
   const jar = await cookies();
   const incomingAuth = request.headers.get("Authorization");
   const auth = await resolveBearer(jar, incomingAuth);

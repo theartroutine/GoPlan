@@ -119,7 +119,7 @@ async function finalizeAssetResponse(
   const response = new NextResponse(await upstream.arrayBuffer(), {
     status: upstream.status,
     headers: {
-      "Cache-Control": "private, max-age=3600",
+      "Cache-Control": "private, no-store",
       "Content-Type": contentType,
     },
   });

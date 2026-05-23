@@ -152,5 +152,5 @@ class TripPhotoAssetAPIView(APIView):
             return response
 
         response = FileResponse(field.storage.open(field.name, "rb"), content_type="image/webp")
-        response.headers["Cache-Control"] = "private, max-age=3600"
+        response.headers["Cache-Control"] = "private, no-store"
         return response

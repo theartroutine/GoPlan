@@ -244,9 +244,11 @@ class TripPhotosAPITests(APITestCase):
 
         self.assertEqual(thumbnail.status_code, 200)
         self.assertEqual(thumbnail["Content-Type"], "image/webp")
+        self.assertEqual(thumbnail["Cache-Control"], "private, no-store")
         self.assertGreater(len(b"".join(thumbnail.streaming_content)), 0)
         self.assertEqual(medium.status_code, 200)
         self.assertEqual(medium["Content-Type"], "image/webp")
+        self.assertEqual(medium["Cache-Control"], "private, no-store")
 
     def test_non_member_cannot_fetch_photo_asset(self):
         upload_response = self.client.post(
@@ -264,6 +266,24 @@ class TripPhotosAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.data["error_code"], "TRIP_NOT_FOUND")
+
+    def test_member_of_another_trip_cannot_fetch_photo_with_wrong_trip_id(self):
+        upload_response = self.client.post(
+            _photos_url(self.trip.id),
+            {"files": [_make_upload()]},
+            format="multipart",
+            **_auth(self.member),
+        )
+        photo_id = upload_response.data["photos"][0]["id"]
+        other_trip = _make_trip(self.other)
+
+        response = self.client.get(
+            _photo_asset_url(other_trip.id, photo_id, "thumbnail"),
+            **_auth(self.other),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "PHOTO_NOT_FOUND")
 
     def test_completed_trip_allows_photo_upload(self):
         self.trip.status = TripStatus.COMPLETED

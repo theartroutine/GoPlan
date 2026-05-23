@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import inspect
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,6 +12,7 @@ from django.test import TestCase, override_settings
 from PIL import Image as PILImage
 
 from memories.models import TripPhoto
+import memories.services as trip_photo_services
 from memories.services import (
     TripPhotoStorageError,
     TripPhotoValidationError,
@@ -284,3 +286,8 @@ class TripPhotoServiceTests(TestCase):
 
         self.assertEqual(TripPhoto.objects.count(), 0)
         self.assertEqual(self._media_files(), [])
+
+    def test_service_does_not_mutate_pillow_global_max_image_pixels(self):
+        source = inspect.getsource(trip_photo_services)
+
+        self.assertNotRegex(source, r"Image\.MAX_IMAGE_PIXELS\s*=")

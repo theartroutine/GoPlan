@@ -47,5 +47,12 @@ describe("photo-errors", () => {
       ok: false,
       message: "Use JPEG, PNG, or WebP photos. SVG and other formats are not supported.",
     });
+
+    expect(
+      validateTripPhotoFiles([
+        new File(["jpeg"], "memory.jpg", { type: "" }),
+        new File(["webp"], "memory.webp", { type: "application/octet-stream" }),
+      ]),
+    ).toEqual({ ok: true });
   });
 });

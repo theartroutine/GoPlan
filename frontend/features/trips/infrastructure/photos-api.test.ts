@@ -12,9 +12,9 @@ vi.mock("@/shared/http/bff-client", () => ({
 
 import {
   bffDeleteTripPhoto,
+  bffFetchTripPhotoAssetBlob,
   bffListTripPhotos,
   bffUploadTripPhotos,
-  getTripPhotoAssetUrl,
 } from "@/features/trips/infrastructure/photos-api";
 import type { TripPhoto } from "@/features/trips/domain/photo-types";
 
@@ -88,12 +88,21 @@ describe("photos-api", () => {
     expect(bffMock.delete).toHaveBeenCalledWith("/api/trips/trip_1/photos/photo_1");
   });
 
-  it("builds protected BFF asset URLs for thumbnails and medium images", () => {
-    expect(getTripPhotoAssetUrl("trip_1", "photo_1", "thumbnail")).toBe(
-      "/api/trips/trip_1/photos/photo_1/thumbnail",
-    );
-    expect(getTripPhotoAssetUrl("trip 1", "photo/1", "medium")).toBe(
-      "/api/trips/trip%201/photos/photo%2F1/medium",
+  it("fetches protected photo asset blobs through the authenticated BFF client", async () => {
+    const blob = new Blob(["image"], { type: "image/webp" });
+    const signal = new AbortController().signal;
+    bffMock.get.mockResolvedValue({ data: blob });
+
+    await expect(
+      bffFetchTripPhotoAssetBlob("trip 1", "photo/1", "thumbnail", { signal }),
+    ).resolves.toBe(blob);
+
+    expect(bffMock.get).toHaveBeenCalledWith(
+      "/api/trips/trip%201/photos/photo%2F1/thumbnail",
+      {
+        responseType: "blob",
+        signal,
+      },
     );
   });
 });
