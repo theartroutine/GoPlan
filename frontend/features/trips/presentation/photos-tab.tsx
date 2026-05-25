@@ -384,7 +384,6 @@ export function PhotosTab() {
           photos={photos}
           thumbnailUrls={thumbnailUrls}
           onOpen={setSelectedPhoto}
-          onDelete={setPhotoPendingDelete}
         />
       ) : null}
 

@@ -193,7 +193,9 @@ describe("PhotosTab", () => {
 
     render(<PhotosTab />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete photo uploaded by Minh" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Open photo uploaded by Minh/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Photo detail" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete photo uploaded by Minh" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete photo" }));
 
     await waitFor(() => {
