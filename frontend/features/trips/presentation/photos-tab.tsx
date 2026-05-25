@@ -283,11 +283,15 @@ export function PhotosTab() {
   }
 
   function handleStageRemove(index: number) {
-    setStagedFiles((current) => {
-      if (!current) return current;
-      const next = current.filter((_, i) => i !== index);
-      return next.length === 0 ? null : next;
-    });
+    const current = stagedFiles;
+    if (!current) return;
+    const next = current.filter((_, i) => i !== index);
+    if (next.length === 0) {
+      setStagedFiles(null);
+      setUploadError(null);
+      return;
+    }
+    setStagedFiles(next);
   }
 
   function handleStageCancel() {
@@ -332,7 +336,7 @@ export function PhotosTab() {
 
   return (
     <div className="space-y-4">
-      {uploadError ? (
+      {uploadError && stagedFiles === null ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {uploadError}
         </div>
