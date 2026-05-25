@@ -71,8 +71,10 @@ export function PhotoLightbox({
   useEffect(() => {
     if (!photo) {
       clearHideTimer();
+      setControlsVisible(true); // eslint-disable-line react-hooks/set-state-in-effect
       return;
     }
+    setControlsVisible(true);
     scheduleHide();
     return () => {
       clearHideTimer();

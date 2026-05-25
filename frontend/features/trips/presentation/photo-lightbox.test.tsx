@@ -104,4 +104,45 @@ describe("PhotoLightbox", () => {
     });
     expect(overlay).toHaveAttribute("data-visible", "true");
   });
+
+  it("re-shows the overlay when a new photo is opened after the previous controls auto-hid", () => {
+    const { rerender } = renderLightbox();
+
+    const overlay = screen
+      .getByRole("button", { name: "Close photo viewer" })
+      .closest("[data-photo-lightbox-controls]");
+    expect(overlay).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    expect(overlay).toHaveAttribute("data-visible", "false");
+
+    rerender(
+      <PhotoLightbox
+        photo={null}
+        mediumUrl={null}
+        loading={false}
+        error={null}
+        onClose={vi.fn()}
+        onRequestDelete={vi.fn()}
+      />,
+    );
+
+    rerender(
+      <PhotoLightbox
+        photo={{ ...PHOTO, id: "photo_2" }}
+        mediumUrl="blob:photo-medium-2"
+        loading={false}
+        error={null}
+        onClose={vi.fn()}
+        onRequestDelete={vi.fn()}
+      />,
+    );
+
+    const reopenedOverlay = screen
+      .getByRole("button", { name: "Close photo viewer" })
+      .closest("[data-photo-lightbox-controls]");
+    expect(reopenedOverlay).toHaveAttribute("data-visible", "true");
+  });
 });
