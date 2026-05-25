@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- Blob object URLs cannot be optimized by next/image. */
-
 import {
   ImageIcon,
   Loader2,
@@ -22,6 +20,7 @@ import {
   bffUploadTripPhotos,
 } from "@/features/trips/infrastructure/photos-api";
 import { PhotoGrid } from "@/features/trips/presentation/photo-grid";
+import { PhotoLightbox } from "@/features/trips/presentation/photo-lightbox";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import {
   AlertDialog,
@@ -34,22 +33,11 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog";
 import { Spinner } from "@/shared/ui/spinner";
 
 const LOAD_ERROR = "Could not load trip photos.";
 const UPLOAD_ERROR = "Could not upload photos.";
 const DELETE_ERROR = "Could not delete this photo.";
-
-function photoDescription(photo: TripPhoto): string {
-  return `photo uploaded by ${photo.uploaded_by.display_name}`;
-}
 
 export function PhotosTab() {
   const { tripId } = useTripContext();
@@ -401,37 +389,14 @@ export function PhotosTab() {
         </div>
       ) : null}
 
-      <Dialog open={selectedPhoto !== null} onOpenChange={(open) => !open && setSelectedPhoto(null)}>
-        <DialogContent className="max-w-5xl p-3 sm:p-4">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Photo detail</DialogTitle>
-            <DialogDescription>Optimized trip photo preview.</DialogDescription>
-          </DialogHeader>
-          {selectedPhoto ? (
-            <div className="flex max-h-[calc(100dvh-6rem)] items-center justify-center overflow-hidden rounded-md bg-black">
-              {mediumLoading ? (
-                <div className="flex min-h-72 w-full items-center justify-center text-white">
-                  <Spinner />
-                </div>
-              ) : null}
-              {mediumError ? (
-                <div className="flex min-h-72 w-full items-center justify-center px-6 text-center text-sm text-white">
-                  {mediumError}
-                </div>
-              ) : null}
-              {mediumUrl ? (
-                <img
-                  alt={`Selected ${photoDescription(selectedPhoto)}`}
-                  src={mediumUrl}
-                  width={selectedPhoto.medium_width}
-                  height={selectedPhoto.medium_height}
-                  className="max-h-[calc(100dvh-6rem)] w-auto max-w-full object-contain"
-                />
-              ) : null}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <PhotoLightbox
+        photo={selectedPhoto}
+        mediumUrl={mediumUrl}
+        loading={mediumLoading}
+        error={mediumError}
+        onClose={() => setSelectedPhoto(null)}
+        onRequestDelete={setPhotoPendingDelete}
+      />
 
       <AlertDialog
         open={photoPendingDelete !== null}
