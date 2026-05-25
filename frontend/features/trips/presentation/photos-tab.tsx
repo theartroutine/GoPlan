@@ -22,6 +22,7 @@ import {
 import { PhotoGrid } from "@/features/trips/presentation/photo-grid";
 import { PhotoLightbox } from "@/features/trips/presentation/photo-lightbox";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
+import { UploadFab } from "@/features/trips/presentation/upload-fab";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,7 +42,7 @@ const DELETE_ERROR = "Could not delete this photo.";
 
 export function PhotosTab() {
   const { tripId } = useTripContext();
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const emptyStateInputRef = useRef<HTMLInputElement | null>(null);
   const [photos, setPhotos] = useState<TripPhoto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -270,7 +271,6 @@ export function PhotosTab() {
       setUploadError(getTripPhotoErrorMessage(err, UPLOAD_ERROR));
     } finally {
       setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
     }
   }
 
@@ -294,36 +294,6 @@ export function PhotosTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Share JPEG, PNG, or WebP photos with trip members.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            className="sr-only"
-            onChange={(event) => {
-              const files = Array.from(event.currentTarget.files ?? []);
-              void handleFilesSelected(files);
-            }}
-          />
-          <Button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            disabled={uploading}
-            size="sm"
-          >
-            {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
-            Upload photos
-          </Button>
-        </div>
-      </div>
-
       {uploadError ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {uploadError}
@@ -364,6 +334,27 @@ export function PhotosTab() {
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
             Upload the first photos from this trip.
           </p>
+          <Button
+            type="button"
+            className="mt-4"
+            onClick={() => emptyStateInputRef.current?.click()}
+            disabled={uploading}
+          >
+            <Upload />
+            Upload photos
+          </Button>
+          <input
+            ref={emptyStateInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            className="sr-only"
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? []);
+              if (files.length > 0) void handleFilesSelected(files);
+              event.currentTarget.value = "";
+            }}
+          />
         </div>
       ) : null}
 
@@ -427,6 +418,8 @@ export function PhotosTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <UploadFab onFilesSelected={handleFilesSelected} uploading={uploading} />
     </div>
   );
 }

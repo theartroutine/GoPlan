@@ -164,12 +164,12 @@ describe("PhotosTab", () => {
     render(<PhotosTab />);
     await screen.findByText("No photos yet.");
 
-    const input = document.querySelector('input[type="file"]');
-    if (!(input instanceof HTMLInputElement)) {
-      throw new Error("Photos file input was not rendered.");
+    const uploadButton = screen.getByRole("button", { name: "Upload photos" });
+    const targetInput = uploadButton.parentElement?.querySelector('input[type="file"]');
+    if (!(targetInput instanceof HTMLInputElement)) {
+      throw new Error("Empty-state file input was not rendered next to the CTA.");
     }
-
-    fireEvent.change(input, {
+    fireEvent.change(targetInput, {
       target: {
         files: [new File(["heic"], "memory.heic", { type: "image/heic" })],
       },
