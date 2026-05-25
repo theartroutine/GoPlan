@@ -6,7 +6,6 @@ import {
   ImageIcon,
   Loader2,
   RefreshCcw,
-  Trash2,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -22,6 +21,7 @@ import {
   bffListTripPhotos,
   bffUploadTripPhotos,
 } from "@/features/trips/infrastructure/photos-api";
+import { PhotoGrid } from "@/features/trips/presentation/photo-grid";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import {
   AlertDialog,
@@ -47,72 +47,8 @@ const LOAD_ERROR = "Could not load trip photos.";
 const UPLOAD_ERROR = "Could not upload photos.";
 const DELETE_ERROR = "Could not delete this photo.";
 
-function photoAlt(photo: TripPhoto): string {
-  return `Photo uploaded by ${photo.uploaded_by.display_name}`;
-}
-
 function photoDescription(photo: TripPhoto): string {
   return `photo uploaded by ${photo.uploaded_by.display_name}`;
-}
-
-function PhotoTile({
-  photo,
-  thumbnailUrl,
-  onOpen,
-  onDelete,
-}: {
-  photo: TripPhoto;
-  thumbnailUrl?: string;
-  onOpen: (photo: TripPhoto) => void;
-  onDelete: (photo: TripPhoto) => void;
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-lg border border-border bg-card">
-      <button
-        type="button"
-        aria-label={`Open ${photoDescription(photo)}`}
-        onClick={() => onOpen(photo)}
-        className="block aspect-[4/3] w-full overflow-hidden bg-muted text-left outline-none transition-opacity hover:opacity-95 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        {thumbnailUrl ? (
-          <img
-            alt={photoAlt(photo)}
-            src={thumbnailUrl}
-            width={photo.thumbnail_width}
-            height={photo.thumbnail_height}
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <Spinner />
-          </div>
-        )}
-      </button>
-      <div className="flex min-h-12 items-center justify-between gap-2 px-3 py-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{photo.uploaded_by.display_name}</p>
-          <p className="text-xs text-muted-foreground">
-            {new Intl.DateTimeFormat(undefined, {
-              month: "short",
-              day: "numeric",
-            }).format(new Date(photo.created_at))}
-          </p>
-        </div>
-        {photo.can_delete ? (
-          <Button
-            aria-label={`Delete ${photoDescription(photo)}`}
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onDelete(photo)}
-          >
-            <Trash2 />
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
 }
 
 export function PhotosTab() {
@@ -444,17 +380,12 @@ export function PhotosTab() {
       ) : null}
 
       {!loading && photos.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {photos.map((photo) => (
-            <PhotoTile
-              key={photo.id}
-              photo={photo}
-              thumbnailUrl={thumbnailUrls[photo.id]}
-              onOpen={setSelectedPhoto}
-              onDelete={setPhotoPendingDelete}
-            />
-          ))}
-        </div>
+        <PhotoGrid
+          photos={photos}
+          thumbnailUrls={thumbnailUrls}
+          onOpen={setSelectedPhoto}
+          onDelete={setPhotoPendingDelete}
+        />
       ) : null}
 
       {!loading && nextCursor ? (
