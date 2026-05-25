@@ -181,6 +181,7 @@ describe("PhotosTab", () => {
       ),
     ).toBeInTheDocument();
     expect(photosApiMock.bffUploadTripPhotos).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Review photos" })).not.toBeInTheDocument();
   });
 
   it("deletes a removable photo after confirmation", async () => {
@@ -205,6 +206,68 @@ describe("PhotosTab", () => {
       expect(screen.queryByAltText("Photo uploaded by Minh")).not.toBeInTheDocument();
     });
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:trip-photo-1");
+  });
+
+  it("stages selected files and only uploads after the user confirms", async () => {
+    photosApiMock.bffListTripPhotos.mockResolvedValueOnce({
+      results: [],
+      nextCursor: null,
+      previousCursor: null,
+    });
+    const uploaded: TripPhoto = { ...PHOTO, id: "photo_new" };
+    photosApiMock.bffUploadTripPhotos.mockResolvedValueOnce([uploaded]);
+
+    render(<PhotosTab />);
+    await screen.findByText("No photos yet.");
+
+    const uploadButton = screen.getByRole("button", { name: "Upload photos" });
+    const stagedInput = uploadButton.parentElement?.querySelector('input[type="file"]');
+    if (!(stagedInput instanceof HTMLInputElement)) {
+      throw new Error("Empty-state file input was not rendered next to the CTA.");
+    }
+    const file = new File(["x"], "trip.jpg", { type: "image/jpeg" });
+    fireEvent.change(stagedInput, { target: { files: [file] } });
+
+    const dialog = await screen.findByRole("dialog", { name: "Review photos" });
+    expect(within(dialog).getByAltText("trip.jpg")).toBeInTheDocument();
+    expect(photosApiMock.bffUploadTripPhotos).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Upload 1 photo" }));
+
+    await waitFor(() => {
+      expect(photosApiMock.bffUploadTripPhotos).toHaveBeenCalledWith("trip_1", [file]);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Review photos" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("cancels staging without calling the upload API", async () => {
+    photosApiMock.bffListTripPhotos.mockResolvedValueOnce({
+      results: [],
+      nextCursor: null,
+      previousCursor: null,
+    });
+
+    render(<PhotosTab />);
+    await screen.findByText("No photos yet.");
+
+    const uploadButton = screen.getByRole("button", { name: "Upload photos" });
+    const stagedInput = uploadButton.parentElement?.querySelector('input[type="file"]');
+    if (!(stagedInput instanceof HTMLInputElement)) {
+      throw new Error("Empty-state file input was not rendered next to the CTA.");
+    }
+    fireEvent.change(stagedInput, {
+      target: { files: [new File(["x"], "trip.jpg", { type: "image/jpeg" })] },
+    });
+
+    const dialog = await screen.findByRole("dialog", { name: "Review photos" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Review photos" })).not.toBeInTheDocument();
+    });
+    expect(photosApiMock.bffUploadTripPhotos).not.toHaveBeenCalled();
   });
 
   it("revokes thumbnail and medium object URLs on cleanup", async () => {

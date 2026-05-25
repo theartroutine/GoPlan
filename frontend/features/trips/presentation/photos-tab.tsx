@@ -23,6 +23,7 @@ import { PhotoGrid } from "@/features/trips/presentation/photo-grid";
 import { PhotoLightbox } from "@/features/trips/presentation/photo-lightbox";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import { UploadFab } from "@/features/trips/presentation/upload-fab";
+import { UploadReviewDialog } from "@/features/trips/presentation/upload-review-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +53,7 @@ export function PhotosTab() {
   const [error, setError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [stagedFiles, setStagedFiles] = useState<File[] | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<TripPhoto | null>(null);
   const [photoPendingDelete, setPhotoPendingDelete] = useState<TripPhoto | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
@@ -253,7 +255,7 @@ export function PhotosTab() {
     }
   }
 
-  async function handleFilesSelected(files: File[]) {
+  function handleFilesSelected(files: File[]) {
     const validation = validateTripPhotoFiles(files);
     setUploadError(null);
     setError(null);
@@ -263,10 +265,46 @@ export function PhotosTab() {
       return;
     }
 
+    setStagedFiles(files);
+  }
+
+  function handleStageAddFiles(extra: File[]) {
+    setStagedFiles((current) => {
+      const base = current ?? [];
+      const next = [...base, ...extra];
+      const validation = validateTripPhotoFiles(next);
+      if (!validation.ok) {
+        setUploadError(validation.message);
+        return current;
+      }
+      setUploadError(null);
+      return next;
+    });
+  }
+
+  function handleStageRemove(index: number) {
+    setStagedFiles((current) => {
+      if (!current) return current;
+      const next = current.filter((_, i) => i !== index);
+      return next.length === 0 ? null : next;
+    });
+  }
+
+  function handleStageCancel() {
+    if (uploading) return;
+    setStagedFiles(null);
+    setUploadError(null);
+  }
+
+  async function handleStageConfirm() {
+    if (!stagedFiles || stagedFiles.length === 0 || uploading) return;
     setUploading(true);
+    setUploadError(null);
+
     try {
-      const uploaded = await bffUploadTripPhotos(tripId, files);
+      const uploaded = await bffUploadTripPhotos(tripId, stagedFiles);
       setPhotos((current) => [...uploaded, ...current]);
+      setStagedFiles(null);
     } catch (err) {
       setUploadError(getTripPhotoErrorMessage(err, UPLOAD_ERROR));
     } finally {
@@ -420,6 +458,17 @@ export function PhotosTab() {
       </AlertDialog>
 
       <UploadFab onFilesSelected={handleFilesSelected} uploading={uploading} />
+
+      <UploadReviewDialog
+        open={stagedFiles !== null}
+        files={stagedFiles ?? []}
+        uploading={uploading}
+        error={uploadError}
+        onAddFiles={handleStageAddFiles}
+        onRemoveFile={handleStageRemove}
+        onCancel={handleStageCancel}
+        onConfirm={() => void handleStageConfirm()}
+      />
     </div>
   );
 }
