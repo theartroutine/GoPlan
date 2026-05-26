@@ -109,7 +109,7 @@ export function UploadReviewDialog({
               type="file"
               accept="image/jpeg,image/png,image/webp"
               multiple
-              className="sr-only"
+              className="hidden"
               onChange={(event) => {
                 const picked = Array.from(event.currentTarget.files ?? []);
                 if (picked.length > 0) {

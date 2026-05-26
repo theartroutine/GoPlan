@@ -9,6 +9,7 @@ import { bff } from "@/shared/http/bff-client";
 
 type ListTripPhotosOptions = {
   cursor?: string;
+  pageSize?: number;
   signal?: AbortSignal;
 };
 
@@ -42,8 +43,11 @@ export async function bffListTripPhotos(
   tripId: string,
   options: ListTripPhotosOptions = {},
 ): Promise<TripPhotoPage> {
+  const params: Record<string, number | string> = {};
+  if (options.cursor) params.cursor = options.cursor;
+  if (options.pageSize) params.page_size = options.pageSize;
   const res = await bff.get<TripPhotoListResponse>(tripPhotosPath(tripId), {
-    params: options.cursor ? { cursor: options.cursor } : undefined,
+    params: Object.keys(params).length > 0 ? params : undefined,
     signal: options.signal,
   });
   return {

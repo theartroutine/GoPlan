@@ -1,5 +1,5 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import type { TripPhoto } from "@/features/trips/domain/photo-types";
 import { PhotoLightbox } from "@/features/trips/presentation/photo-lightbox";
@@ -28,23 +28,19 @@ function renderLightbox(overrides: Partial<React.ComponentProps<typeof PhotoLigh
     mediumUrl: "blob:photo-medium",
     loading: false,
     error: null,
+    canNavigatePrevious: false,
+    canNavigateNext: false,
     onClose: vi.fn(),
     onRequestDelete: vi.fn(),
+    onNavigatePrevious: vi.fn(),
+    onNavigateNext: vi.fn(),
     ...overrides,
   };
   return { ...render(<PhotoLightbox {...props} />), props };
 }
 
 describe("PhotoLightbox", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("renders the medium image with uploader and date overlay", () => {
+  it("renders the medium image and keeps controls hidden until hover", () => {
     renderLightbox();
 
     const dialog = screen.getByRole("dialog", { name: "Photo detail" });
@@ -52,18 +48,43 @@ describe("PhotoLightbox", () => {
       "src",
       "blob:photo-medium",
     );
+    const overlay = dialog.querySelector("[data-photo-lightbox-controls]");
+    expect(overlay).toHaveAttribute("data-visible", "false");
+    expect(
+      within(dialog).queryByRole("button", { name: "Close photo viewer" }),
+    ).not.toBeInTheDocument();
+
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
+
+    expect(overlay).toHaveAttribute("data-visible", "true");
     expect(within(dialog).getByText("Minh")).toBeInTheDocument();
     expect(within(dialog).getByText("May 24")).toBeInTheDocument();
   });
 
   it("shows a delete button only when can_delete is true", () => {
     const { unmount } = renderLightbox();
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
     expect(
       screen.getByRole("button", { name: "Delete photo uploaded by Minh" }),
     ).toBeInTheDocument();
     unmount();
 
     renderLightbox({ photo: { ...PHOTO, can_delete: false } });
+    const nextDialog = screen.getByRole("dialog", { name: "Photo detail" });
+    const nextStage = nextDialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(nextStage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(nextStage);
     expect(
       screen.queryByRole("button", { name: "Delete photo uploaded by Minh" }),
     ).not.toBeInTheDocument();
@@ -73,6 +94,12 @@ describe("PhotoLightbox", () => {
     const onRequestDelete = vi.fn();
     renderLightbox({ onRequestDelete });
 
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
     fireEvent.click(screen.getByRole("button", { name: "Delete photo uploaded by Minh" }));
     expect(onRequestDelete).toHaveBeenCalledWith(PHOTO);
   });
@@ -81,41 +108,112 @@ describe("PhotoLightbox", () => {
     const onClose = vi.fn();
     renderLightbox({ onClose });
 
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
     fireEvent.click(screen.getByRole("button", { name: "Close photo viewer" }));
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("hides the overlay after 2.5s of inactivity and re-shows on mouse move", () => {
+  it("hides controls immediately when the pointer leaves the photo", () => {
     renderLightbox();
 
-    const closeBtn = screen.getByRole("button", { name: "Close photo viewer" });
-    const overlay = closeBtn.closest("[data-photo-lightbox-controls]");
-    expect(overlay).not.toBeNull();
-    expect(overlay).toHaveAttribute("data-visible", "true");
-
-    act(() => {
-      vi.advanceTimersByTime(2500);
-    });
-    expect(overlay).toHaveAttribute("data-visible", "false");
-
     const dialog = screen.getByRole("dialog", { name: "Photo detail" });
-    act(() => {
-      fireEvent.mouseMove(dialog);
-    });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    const overlay = dialog.querySelector("[data-photo-lightbox-controls]");
+    expect(overlay).not.toBeNull();
+
+    fireEvent.mouseEnter(stage);
     expect(overlay).toHaveAttribute("data-visible", "true");
+
+    fireEvent.mouseLeave(stage);
+    expect(overlay).toHaveAttribute("data-visible", "false");
   });
 
-  it("re-shows the overlay when a new photo is opened after the previous controls auto-hid", () => {
+  it("navigates by overlay buttons and disables unavailable directions", () => {
+    const onNavigatePrevious = vi.fn();
+    const onNavigateNext = vi.fn();
+    renderLightbox({
+      canNavigatePrevious: false,
+      canNavigateNext: true,
+      onNavigatePrevious,
+      onNavigateNext,
+    });
+
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
+
+    const previousButton = within(dialog).getByRole("button", { name: "Previous photo" });
+    const nextButton = within(dialog).getByRole("button", { name: "Next photo" });
+    expect(previousButton).toBeDisabled();
+    expect(nextButton).toBeEnabled();
+
+    fireEvent.click(previousButton);
+    fireEvent.click(nextButton);
+
+    expect(onNavigatePrevious).not.toHaveBeenCalled();
+    expect(onNavigateNext).toHaveBeenCalledOnce();
+  });
+
+  it("navigates with left and right keyboard arrows", () => {
+    const onNavigatePrevious = vi.fn();
+    const onNavigateNext = vi.fn();
+    renderLightbox({
+      canNavigatePrevious: true,
+      canNavigateNext: true,
+      onNavigatePrevious,
+      onNavigateNext,
+    });
+
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+
+    expect(onNavigatePrevious).toHaveBeenCalledOnce();
+    expect(onNavigateNext).toHaveBeenCalledOnce();
+  });
+
+  it("does not navigate with keyboard arrows at album boundaries", () => {
+    const onNavigatePrevious = vi.fn();
+    const onNavigateNext = vi.fn();
+    renderLightbox({
+      canNavigatePrevious: false,
+      canNavigateNext: false,
+      onNavigatePrevious,
+      onNavigateNext,
+    });
+
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+
+    expect(onNavigatePrevious).not.toHaveBeenCalled();
+    expect(onNavigateNext).not.toHaveBeenCalled();
+  });
+
+  it("keeps controls hidden when a photo is reopened until the user hovers again", () => {
     const { rerender } = renderLightbox();
 
-    const overlay = screen
-      .getByRole("button", { name: "Close photo viewer" })
-      .closest("[data-photo-lightbox-controls]");
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    const overlay = dialog.querySelector("[data-photo-lightbox-controls]");
     expect(overlay).not.toBeNull();
-
-    act(() => {
-      vi.advanceTimersByTime(2500);
-    });
+    fireEvent.mouseEnter(stage);
+    expect(overlay).toHaveAttribute("data-visible", "true");
+    fireEvent.mouseLeave(stage);
     expect(overlay).toHaveAttribute("data-visible", "false");
 
     rerender(
@@ -124,8 +222,12 @@ describe("PhotoLightbox", () => {
         mediumUrl={null}
         loading={false}
         error={null}
+        canNavigatePrevious={false}
+        canNavigateNext={false}
         onClose={vi.fn()}
         onRequestDelete={vi.fn()}
+        onNavigatePrevious={vi.fn()}
+        onNavigateNext={vi.fn()}
       />,
     );
 
@@ -135,14 +237,18 @@ describe("PhotoLightbox", () => {
         mediumUrl="blob:photo-medium-2"
         loading={false}
         error={null}
+        canNavigatePrevious={false}
+        canNavigateNext={false}
         onClose={vi.fn()}
         onRequestDelete={vi.fn()}
+        onNavigatePrevious={vi.fn()}
+        onNavigateNext={vi.fn()}
       />,
     );
 
     const reopenedOverlay = screen
-      .getByRole("button", { name: "Close photo viewer" })
-      .closest("[data-photo-lightbox-controls]");
-    expect(reopenedOverlay).toHaveAttribute("data-visible", "true");
+      .getByRole("dialog", { name: "Photo detail" })
+      .querySelector("[data-photo-lightbox-controls]");
+    expect(reopenedOverlay).toHaveAttribute("data-visible", "false");
   });
 });

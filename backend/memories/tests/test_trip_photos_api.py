@@ -141,6 +141,35 @@ class TripPhotosAPITests(APITestCase):
         self.assertIn("results", list_response.data)
         self.assertEqual(len(list_response.data["results"]), 2)
 
+    def test_member_can_request_larger_photo_page_size(self):
+        TripPhoto.objects.bulk_create(
+            [
+                TripPhoto(
+                    trip=self.trip,
+                    uploaded_by=self.member,
+                    original_filename=f"photo-{index}.jpg",
+                    original_width=1200,
+                    original_height=900,
+                    thumbnail=f"trip-photos/photo-{index}-thumb.webp",
+                    medium=f"trip-photos/photo-{index}-medium.webp",
+                    thumbnail_width=480,
+                    thumbnail_height=360,
+                    medium_width=1200,
+                    medium_height=900,
+                )
+                for index in range(3)
+            ]
+        )
+
+        response = self.client.get(
+            f"{_photos_url(self.trip.id)}?page_size=2",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 2)
+        self.assertIsNotNone(response.data["next"])
+
     def test_non_member_cannot_upload_photos(self):
         response = self.client.post(
             _photos_url(self.trip.id),

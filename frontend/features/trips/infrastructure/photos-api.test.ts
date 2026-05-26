@@ -52,7 +52,7 @@ describe("photos-api", () => {
     });
 
     await expect(
-      bffListTripPhotos("trip_1", { cursor: "current-page", signal }),
+      bffListTripPhotos("trip_1", { cursor: "current-page", pageSize: 28, signal }),
     ).resolves.toEqual({
       nextCursor: "next-page",
       previousCursor: null,
@@ -60,7 +60,7 @@ describe("photos-api", () => {
     });
 
     expect(bffMock.get).toHaveBeenCalledWith("/api/trips/trip_1/photos", {
-      params: { cursor: "current-page" },
+      params: { cursor: "current-page", page_size: 28 },
       signal,
     });
   });

@@ -26,8 +26,13 @@ const HEIC_TYPES = new Set(["image/heic", "image/heif"]);
 const GENERIC_BINARY_TYPES = new Set(["application/octet-stream", "binary/octet-stream"]);
 
 function buildQuery(searchParams: URLSearchParams): string | undefined {
+  const query = new URLSearchParams();
   const cursor = searchParams.get("cursor");
-  return cursor ? new URLSearchParams({ cursor }).toString() : undefined;
+  const pageSize = searchParams.get("page_size");
+  if (cursor) query.set("cursor", cursor);
+  if (pageSize) query.set("page_size", pageSize);
+  const value = query.toString();
+  return value.length > 0 ? value : undefined;
 }
 
 function isFile(value: FormDataEntryValue): value is File {

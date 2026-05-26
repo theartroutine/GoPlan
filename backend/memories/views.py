@@ -28,6 +28,8 @@ TRIP_PHOTO_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 
 class TripPhotoPagination(CursorPagination):
     page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 60
     ordering = ("-created_at", "-id")
     cursor_query_param = "cursor"
 

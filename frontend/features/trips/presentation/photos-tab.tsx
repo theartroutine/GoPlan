@@ -21,6 +21,7 @@ import {
 } from "@/features/trips/infrastructure/photos-api";
 import { PhotoGrid } from "@/features/trips/presentation/photo-grid";
 import { PhotoLightbox } from "@/features/trips/presentation/photo-lightbox";
+import { calculateInitialPhotoPageSizeFromElement } from "@/features/trips/presentation/photo-page-size";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import { UploadFab } from "@/features/trips/presentation/upload-fab";
 import { UploadReviewDialog } from "@/features/trips/presentation/upload-review-dialog";
@@ -43,9 +44,11 @@ const DELETE_ERROR = "Could not delete this photo.";
 
 export function PhotosTab() {
   const { tripId } = useTripContext();
+  const galleryRootRef = useRef<HTMLDivElement | null>(null);
   const emptyStateInputRef = useRef<HTMLInputElement | null>(null);
   const [photos, setPhotos] = useState<TripPhoto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -58,6 +61,7 @@ export function PhotosTab() {
   const [photoPendingDelete, setPhotoPendingDelete] = useState<TripPhoto | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [mediumUrl, setMediumUrl] = useState<string | null>(null);
+  const [mediumPhotoId, setMediumPhotoId] = useState<string | null>(null);
   const [mediumLoading, setMediumLoading] = useState(false);
   const [mediumError, setMediumError] = useState<string | null>(null);
   const thumbnailUrlsRef = useRef<Map<string, string>>(new Map());
@@ -65,6 +69,12 @@ export function PhotosTab() {
   const visiblePhotoIdsRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(false);
   const mediumUrlRef = useRef<string | null>(null);
+  const selectedPhotoIndex = selectedPhoto
+    ? photos.findIndex((photo) => photo.id === selectedPhoto.id)
+    : -1;
+  const canNavigatePreviousPhoto = selectedPhotoIndex > 0;
+  const canNavigateNextPhoto =
+    selectedPhotoIndex >= 0 && selectedPhotoIndex < photos.length - 1;
 
   const syncThumbnailUrls = useCallback(() => {
     setThumbnailUrls(Object.fromEntries(thumbnailUrlsRef.current.entries()));
@@ -78,11 +88,13 @@ export function PhotosTab() {
   }, []);
 
   const loadFirstPage = useCallback(async (signal?: AbortSignal) => {
+    if (pageSize === null) return;
+
     setLoading(true);
     setError(null);
 
     try {
-      const page = await bffListTripPhotos(tripId, { signal });
+      const page = await bffListTripPhotos(tripId, { pageSize, signal });
       if (signal?.aborted) return;
       setPhotos(page.results);
       setNextCursor(page.nextCursor);
@@ -95,15 +107,21 @@ export function PhotosTab() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
+  }, [pageSize, tripId]);
+
+  useEffect(() => {
+    setPageSize(calculateInitialPhotoPageSizeFromElement(galleryRootRef.current));
   }, [tripId]);
 
   useEffect(() => {
+    if (pageSize === null) return;
+
     const controller = new AbortController();
     void loadFirstPage(controller.signal);
     return () => {
       controller.abort();
     };
-  }, [loadFirstPage]);
+  }, [loadFirstPage, pageSize]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -137,6 +155,7 @@ export function PhotosTab() {
     setThumbnailUrls({});
     revokeMediumUrl();
     setMediumUrl(null);
+    setMediumPhotoId(null);
     setMediumLoading(false);
     setMediumError(null);
   }, [revokeMediumUrl, tripId]);
@@ -204,6 +223,7 @@ export function PhotosTab() {
     if (!selectedPhoto) {
       revokeMediumUrl();
       setMediumUrl(null);
+      setMediumPhotoId(null);
       setMediumLoading(false);
       setMediumError(null);
       return;
@@ -212,6 +232,7 @@ export function PhotosTab() {
     const controller = new AbortController();
     revokeMediumUrl();
     setMediumUrl(null);
+    setMediumPhotoId(null);
     setMediumLoading(true);
     setMediumError(null);
 
@@ -223,6 +244,7 @@ export function PhotosTab() {
         const objectUrl = URL.createObjectURL(blob);
         mediumUrlRef.current = objectUrl;
         setMediumUrl(objectUrl);
+        setMediumPhotoId(selectedPhoto.id);
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
@@ -245,7 +267,10 @@ export function PhotosTab() {
     setError(null);
 
     try {
-      const page = await bffListTripPhotos(tripId, { cursor: nextCursor });
+      const page = await bffListTripPhotos(tripId, {
+        cursor: nextCursor,
+        pageSize: pageSize ?? undefined,
+      });
       setPhotos((current) => [...current, ...page.results]);
       setNextCursor(page.nextCursor);
     } catch (err) {
@@ -334,8 +359,18 @@ export function PhotosTab() {
     }
   }
 
+  function handleNavigatePreviousPhoto() {
+    if (!canNavigatePreviousPhoto) return;
+    setSelectedPhoto(photos[selectedPhotoIndex - 1] ?? null);
+  }
+
+  function handleNavigateNextPhoto() {
+    if (!canNavigateNextPhoto) return;
+    setSelectedPhoto(photos[selectedPhotoIndex + 1] ?? null);
+  }
+
   return (
-    <div className="space-y-4">
+    <div ref={galleryRootRef} className="space-y-4">
       {uploadError && stagedFiles === null ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {uploadError}
@@ -390,7 +425,7 @@ export function PhotosTab() {
             type="file"
             accept="image/jpeg,image/png,image/webp"
             multiple
-            className="sr-only"
+            className="hidden"
             onChange={(event) => {
               const files = Array.from(event.currentTarget.files ?? []);
               if (files.length > 0) void handleFilesSelected(files);
@@ -424,11 +459,15 @@ export function PhotosTab() {
 
       <PhotoLightbox
         photo={selectedPhoto}
-        mediumUrl={mediumUrl}
+        mediumUrl={mediumPhotoId === selectedPhoto?.id ? mediumUrl : null}
         loading={mediumLoading}
         error={mediumError}
+        canNavigatePrevious={canNavigatePreviousPhoto}
+        canNavigateNext={canNavigateNextPhoto}
         onClose={() => setSelectedPhoto(null)}
         onRequestDelete={setPhotoPendingDelete}
+        onNavigatePrevious={handleNavigatePreviousPhoto}
+        onNavigateNext={handleNavigateNextPhoto}
       />
 
       <AlertDialog

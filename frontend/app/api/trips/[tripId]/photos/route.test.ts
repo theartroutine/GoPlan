@@ -73,7 +73,7 @@ describe("BFF /api/trips/[tripId]/photos", () => {
     vi.unstubAllGlobals();
   });
 
-  it("forwards GET list with cursor query", async () => {
+  it("forwards GET list with cursor and page size query", async () => {
     const { GET } = await import("@/app/api/trips/[tripId]/photos/route");
     protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
       ok: true,
@@ -81,7 +81,7 @@ describe("BFF /api/trips/[tripId]/photos", () => {
       status: 200,
     });
 
-    const response = await GET(buildGetRequest("?cursor=abc") as never, {
+    const response = await GET(buildGetRequest("?cursor=abc&page_size=28") as never, {
       params: Promise.resolve({ tripId: TRIP_ID }),
     });
 
@@ -89,7 +89,7 @@ describe("BFF /api/trips/[tripId]/photos", () => {
       expect.objectContaining({
         path: `/api/trips/${TRIP_ID}/photos`,
         method: "GET",
-        query: "cursor=abc",
+        query: "cursor=abc&page_size=28",
         authorization: "Bearer access-token",
       }),
     );

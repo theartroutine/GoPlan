@@ -41,6 +41,18 @@ const PHOTO: TripPhoto = {
   can_delete: true,
 };
 
+const SECOND_PHOTO: TripPhoto = {
+  ...PHOTO,
+  id: "photo_2",
+  created_at: "2026-05-25T01:00:00Z",
+  uploaded_by: {
+    id: "user_2",
+    display_name: "Lan",
+    identify_tag: "@lan",
+    avatar_url: null,
+  },
+};
+
 describe("PhotosTab", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -79,6 +91,25 @@ describe("PhotosTab", () => {
   });
 
   it("renders gallery photos and loads the next page on demand", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      bottom: 1080,
+      height: 991,
+      left: 0,
+      right: 1596,
+      toJSON: () => ({}),
+      top: 89,
+      width: 1596,
+      x: 0,
+      y: 89,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1920,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 1080,
+    });
     photosApiMock.bffListTripPhotos
       .mockResolvedValueOnce({
         results: [PHOTO],
@@ -95,6 +126,14 @@ describe("PhotosTab", () => {
 
     expect(await screen.findByRole("button", { name: /Open photo uploaded by Minh/i }))
       .toBeInTheDocument();
+    expect(photosApiMock.bffListTripPhotos).toHaveBeenNthCalledWith(
+      1,
+      "trip_1",
+      expect.objectContaining({
+        pageSize: 28,
+        signal: expect.any(AbortSignal),
+      }),
+    );
     await waitFor(() => {
       expect(screen.getByAltText("Photo uploaded by Minh")).toHaveAttribute(
         "src",
@@ -114,7 +153,7 @@ describe("PhotosTab", () => {
       expect(photosApiMock.bffListTripPhotos).toHaveBeenNthCalledWith(
         2,
         "trip_1",
-        expect.objectContaining({ cursor: "page-2" }),
+        expect.objectContaining({ cursor: "page-2", pageSize: 28 }),
       );
     });
     await waitFor(() => {
@@ -152,6 +191,72 @@ describe("PhotosTab", () => {
       "medium",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it("navigates the opened lightbox through adjacent album photos", async () => {
+    photosApiMock.bffListTripPhotos.mockResolvedValueOnce({
+      results: [PHOTO, SECOND_PHOTO],
+      nextCursor: null,
+      previousCursor: null,
+    });
+
+    render(<PhotosTab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Open photo uploaded by Minh/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Photo detail" });
+    await waitFor(() => {
+      expect(within(dialog).getByAltText("Selected photo uploaded by Minh")).toHaveAttribute(
+        "src",
+        expect.stringMatching(/^blob:trip-photo-/),
+      );
+    });
+
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
+
+    expect(within(dialog).getByRole("button", { name: "Previous photo" })).toBeDisabled();
+    const nextButton = within(dialog).getByRole("button", { name: "Next photo" });
+    expect(nextButton).toBeEnabled();
+    fireEvent.click(nextButton);
+
+    await waitFor(() => {
+      expect(photosApiMock.bffFetchTripPhotoAssetBlob).toHaveBeenCalledWith(
+        "trip_1",
+        "photo_2",
+        "medium",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+    await waitFor(() => {
+      expect(within(dialog).getByAltText("Selected photo uploaded by Lan")).toHaveAttribute(
+        "src",
+        expect.stringMatching(/^blob:trip-photo-/),
+      );
+    });
+
+    expect(within(dialog).getByRole("button", { name: "Previous photo" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Next photo" })).toBeDisabled();
+
+    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+
+    await waitFor(() => {
+      expect(photosApiMock.bffFetchTripPhotoAssetBlob).toHaveBeenCalledWith(
+        "trip_1",
+        "photo_1",
+        "medium",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+    await waitFor(() => {
+      expect(within(dialog).getByAltText("Selected photo uploaded by Minh")).toHaveAttribute(
+        "src",
+        expect.stringMatching(/^blob:trip-photo-/),
+      );
+    });
   });
 
   it("rejects HEIC before upload with user-friendly copy", async () => {
@@ -196,6 +301,11 @@ describe("PhotosTab", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /Open photo uploaded by Minh/i }));
     const dialog = await screen.findByRole("dialog", { name: "Photo detail" });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete photo uploaded by Minh" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete photo" }));
 

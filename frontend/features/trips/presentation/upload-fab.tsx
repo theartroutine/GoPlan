@@ -20,7 +20,7 @@ export function UploadFab({ onFilesSelected, uploading }: UploadFabProps) {
         type="file"
         accept="image/jpeg,image/png,image/webp"
         multiple
-        className="sr-only"
+        className="hidden"
         onChange={(event) => {
           const files = Array.from(event.currentTarget.files ?? []);
           if (files.length > 0) onFilesSelected(files);
