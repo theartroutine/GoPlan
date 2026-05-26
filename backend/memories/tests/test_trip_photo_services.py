@@ -8,7 +8,8 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.conf import settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from PIL import Image as PILImage
 
 from memories.models import TripPhoto
@@ -73,6 +74,11 @@ def _make_image_upload(
     )
 
 
+class TripPhotoConfigurationTests(SimpleTestCase):
+    def test_medium_variant_uses_large_album_preview_edge(self):
+        self.assertEqual(settings.TRIP_PHOTO_MEDIUM_MAX_EDGE, 2560)
+
+
 class TripPhotoServiceTests(TestCase):
     def setUp(self) -> None:
         self.tempdir = TemporaryDirectory()
@@ -81,7 +87,7 @@ class TripPhotoServiceTests(TestCase):
             TRIP_PHOTO_MAX_BYTES=10 * 1024 * 1024,
             TRIP_PHOTO_MAX_SOURCE_PIXELS=45_000_000,
             TRIP_PHOTO_THUMBNAIL_MAX_EDGE=480,
-            TRIP_PHOTO_MEDIUM_MAX_EDGE=1600,
+            TRIP_PHOTO_MEDIUM_MAX_EDGE=2560,
             TRIP_PHOTO_WEBP_QUALITY=84,
             TRIP_PHOTO_MAX_FILES_PER_UPLOAD=20,
         )
@@ -106,7 +112,7 @@ class TripPhotoServiceTests(TestCase):
         photos = create_trip_photos(
             trip_id=self.trip.id,
             actor=self.member,
-            files=[_make_image_upload(size=(2400, 1600))],
+            files=[_make_image_upload(size=(3840, 2160))],
         )
 
         self.assertEqual(len(photos), 1)
@@ -128,7 +134,8 @@ class TripPhotoServiceTests(TestCase):
 
         with PILImage.open(photo.medium.path) as medium:
             self.assertEqual(medium.format, "WEBP")
-            self.assertLessEqual(max(medium.size), 1600)
+            self.assertLessEqual(max(medium.size), 2560)
+            self.assertEqual(medium.size, (2560, 1440))
             self.assertEqual(photo.medium_width, medium.width)
             self.assertEqual(photo.medium_height, medium.height)
 

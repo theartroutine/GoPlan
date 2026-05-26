@@ -89,7 +89,7 @@ def _thumbnail_max_edge() -> int:
 
 
 def _medium_max_edge() -> int:
-    return _setting("TRIP_PHOTO_MEDIUM_MAX_EDGE", 1600)
+    return _setting("TRIP_PHOTO_MEDIUM_MAX_EDGE", 2560)
 
 
 def _webp_quality() -> int:

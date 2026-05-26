@@ -65,6 +65,32 @@ describe("PhotoLightbox", () => {
     expect(within(dialog).getByText("May 24")).toBeInTheDocument();
   });
 
+  it("uses a viewport-sized viewer instead of the compact dialog width", () => {
+    renderLightbox({
+      photo: {
+        ...PHOTO,
+        medium_width: 2560,
+        medium_height: 1440,
+      },
+    });
+
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    expect(dialog).toHaveClass("w-screen", "max-w-none", "sm:max-w-none");
+    expect(dialog).toHaveClass("overflow-hidden", "rounded-none");
+
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    expect(stage).toHaveClass("h-[100dvh]", "w-screen", "max-h-[100dvh]");
+
+    expect(within(dialog).getByAltText("Selected photo uploaded by Minh")).toHaveClass(
+      "max-h-[100dvh]",
+      "max-w-[100vw]",
+      "object-contain",
+    );
+  });
+
   it("shows a delete button only when can_delete is true", () => {
     const { unmount } = renderLightbox();
     const dialog = screen.getByRole("dialog", { name: "Photo detail" });

@@ -92,7 +92,7 @@ export function PhotoLightbox({
   return (
     <Dialog open={photo !== null} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent
-        className="max-w-[min(96vw,1400px)] border-none bg-black p-0"
+        className="h-[100dvh] max-h-[100dvh] w-screen max-w-none overflow-hidden rounded-none border-none bg-black p-0 shadow-none sm:max-w-none"
         showCloseButton={false}
         onKeyDown={handleKeyDown}
       >
@@ -103,7 +103,7 @@ export function PhotoLightbox({
         {photo ? (
           <div
             data-photo-lightbox-stage
-            className="relative flex max-h-[calc(100dvh-2rem)] min-h-72 items-center justify-center overflow-hidden bg-black"
+            className="relative flex h-[100dvh] max-h-[100dvh] w-screen items-center justify-center overflow-hidden bg-black"
             onMouseEnter={showControls}
             onMouseMove={showControls}
             onMouseLeave={hideControls}
@@ -124,7 +124,7 @@ export function PhotoLightbox({
                 src={mediumUrl}
                 width={photo.medium_width}
                 height={photo.medium_height}
-                className="max-h-[calc(100dvh-2rem)] w-auto max-w-full object-contain"
+                className="h-auto max-h-[100dvh] w-auto max-w-[100vw] object-contain"
               />
             ) : null}
 
