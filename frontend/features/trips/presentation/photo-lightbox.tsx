@@ -85,6 +85,7 @@ export function PhotoLightbox({
     <Dialog open={photo !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         className="max-w-[min(96vw,1400px)] border-none bg-black p-0"
+        showCloseButton={false}
         onMouseMove={revealControls}
         onTouchStart={revealControls}
         onKeyDown={revealControls}
