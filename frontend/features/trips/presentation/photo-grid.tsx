@@ -21,7 +21,7 @@ export type PhotoGridProps = {
 
 export function PhotoGrid({ photos, thumbnailUrls, onOpen }: PhotoGridProps) {
   return (
-    <div className="grid grid-cols-3 gap-1 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
+    <div className="-mx-4 grid grid-cols-3 gap-1 sm:-mx-6 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
       {photos.map((photo) => (
         <button
           key={photo.id}
