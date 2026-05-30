@@ -37,4 +37,25 @@ describe("TripTabBar", () => {
       "/trips/trip-1/photos",
     );
   });
+
+  it("includes a Memories tab between Photos and Chat", () => {
+    render(<TripTabBar />);
+
+    const links = screen.getAllByRole("link").map((link) => ({
+      href: link.getAttribute("href"),
+      name: link.textContent,
+    }));
+
+    expect(links).toEqual(
+      expect.arrayContaining([
+        { href: "/trips/trip-1/memories", name: "Memories" },
+      ]),
+    );
+    expect(links.findIndex((link) => link.name === "Photos")).toBeLessThan(
+      links.findIndex((link) => link.name === "Memories"),
+    );
+    expect(links.findIndex((link) => link.name === "Memories")).toBeLessThan(
+      links.findIndex((link) => link.name === "Chat"),
+    );
+  });
 });

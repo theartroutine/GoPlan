@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.http import FileResponse
 from rest_framework import permissions, status
 from rest_framework.pagination import CursorPagination
@@ -7,7 +8,37 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from memories.serializers import TripPhotoSerializer, TripPhotoUploadSerializer
+from memories.memory_video_services import (
+    MemoryVideoDeleteBlockedError,
+    MemoryVideoNotFoundError,
+    MemoryVideoNotReadyError,
+    MemoryVideoPermissionError,
+    MemoryVideoServiceError,
+    MemoryVideoValidationError,
+    create_trip_memory_video,
+    delete_trip_memory_video,
+    disable_memory_share_link,
+    enable_memory_share_link,
+    get_private_memory_download_file,
+    get_private_memory_poster_file,
+    get_private_memory_video_file,
+    get_public_memory_poster_file,
+    get_public_memory_video,
+    get_public_memory_video_file,
+    get_trip_memory_video,
+    list_memory_music_tracks,
+    list_trip_memory_videos,
+    update_trip_memory_video,
+)
+from memories.memory_video_streaming import range_streaming_response, safe_mp4_filename
+from memories.serializers import (
+    PublicTripMemoryVideoSerializer,
+    TripMemoryVideoCreateSerializer,
+    TripMemoryVideoSerializer,
+    TripMemoryVideoUpdateSerializer,
+    TripPhotoSerializer,
+    TripPhotoUploadSerializer,
+)
 from memories.services import (
     TripPhotoDeleteForbiddenError,
     TripPhotoNotFoundError,
@@ -24,9 +55,21 @@ from trips.permissions import IsProfileCompleted
 from trips.services import TripNotFoundError, TripTerminalError
 
 TRIP_PHOTO_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
+TRIP_MEMORY_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
+PUBLIC_MEMORY_NOT_FOUND_DETAIL = "Memory video not found."
+PUBLIC_MEMORY_NOT_FOUND_CODE = "MEMORY_NOT_FOUND"
+PUBLIC_MEMORY_CACHE_CONTROL = "no-store"
 
 
 class TripPhotoPagination(CursorPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 60
+    ordering = ("-created_at", "-id")
+    cursor_query_param = "cursor"
+
+
+class TripMemoryVideoPagination(CursorPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 60
@@ -56,7 +99,52 @@ def _map_service_error(exc: Exception) -> Response | None:
         return _error_response(exc.detail, exc.error_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
     if isinstance(exc, TripPhotoServiceError):
         return _error_response(exc.detail, exc.error_code, status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, MemoryVideoPermissionError):
+        return _error_response(exc.detail, exc.error_code, status.HTTP_403_FORBIDDEN)
+    if isinstance(exc, MemoryVideoNotFoundError):
+        return _error_response(exc.detail, exc.error_code, status.HTTP_404_NOT_FOUND)
+    if isinstance(exc, MemoryVideoDeleteBlockedError):
+        return _error_response(exc.detail, exc.error_code, status.HTTP_409_CONFLICT)
+    if isinstance(exc, MemoryVideoNotReadyError):
+        return _error_response(exc.detail, exc.error_code, status.HTTP_409_CONFLICT)
+    if isinstance(exc, MemoryVideoValidationError):
+        return _error_response(exc.detail, exc.error_code, status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, MemoryVideoServiceError):
+        return _error_response(exc.detail, exc.error_code, status.HTTP_400_BAD_REQUEST)
     return None
+
+
+def _memory_serializer_context(request, membership) -> dict:
+    return {
+        "request": request,
+        "actor": request.user,
+        "membership": membership,
+        "public_base_url": settings.PUBLIC_APP_BASE_URL,
+    }
+
+
+def _memory_serializer_validation_error(errors) -> Response:
+    error_code = "MEMORY_INVALID_REQUEST"
+    if isinstance(errors, dict):
+        if "source_mode" in errors:
+            error_code = "MEMORY_INVALID_SOURCE_MODE"
+        elif "photo_ids" in errors:
+            error_code = "MEMORY_INVALID_PHOTO_SELECTION"
+        elif "music_key" in errors:
+            error_code = "MEMORY_INVALID_MUSIC"
+    return _error_response(
+        "Invalid memory video request.",
+        error_code,
+        status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _public_memory_not_found_response() -> Response:
+    return _error_response(
+        PUBLIC_MEMORY_NOT_FOUND_DETAIL,
+        PUBLIC_MEMORY_NOT_FOUND_CODE,
+        status.HTTP_404_NOT_FOUND,
+    )
 
 
 class TripPhotoListCreateAPIView(APIView):
@@ -156,3 +244,343 @@ class TripPhotoAssetAPIView(APIView):
         response = FileResponse(field.storage.open(field.name, "rb"), content_type="image/webp")
         response.headers["Cache-Control"] = "private, no-store"
         return response
+
+
+class TripMemoryVideoListCreateAPIView(APIView):
+    permission_classes = TRIP_MEMORY_PERMISSIONS
+    throttle_scope = "trip_memories_list"
+
+    def get_throttles(self):
+        self.throttle_scope = (
+            "trip_memories_create" if self.request.method == "POST" else "trip_memories_list"
+        )
+        return super().get_throttles()
+
+    def get(self, request, trip_id):
+        try:
+            membership = _get_active_membership(trip_id, request.user)
+            queryset = list_trip_memory_videos(trip_id=trip_id, actor=request.user)
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        paginator = TripMemoryVideoPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = TripMemoryVideoSerializer(
+            page,
+            many=True,
+            context=_memory_serializer_context(request, membership),
+        )
+        return paginator.get_paginated_response(serializer.data)
+
+    def post(self, request, trip_id):
+        try:
+            membership = _get_active_membership(trip_id, request.user)
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        serializer = TripMemoryVideoCreateSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        if not serializer.is_valid():
+            return _memory_serializer_validation_error(serializer.errors)
+
+        try:
+            memory = create_trip_memory_video(
+                trip_id=trip_id,
+                actor=request.user,
+                title=serializer.validated_data["title"],
+                source_mode=serializer.validated_data["source_mode"],
+                photo_ids=serializer.validated_data["photo_ids"],
+                music_key=serializer.validated_data["music_key"],
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        return Response(
+            {
+                "memory": TripMemoryVideoSerializer(
+                    memory,
+                    context=_memory_serializer_context(request, membership),
+                ).data
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class TripMemoryVideoDetailAPIView(APIView):
+    permission_classes = TRIP_MEMORY_PERMISSIONS
+    throttle_scope = "trip_memories_detail"
+
+    def get(self, request, trip_id, memory_id):
+        try:
+            membership = _get_active_membership(trip_id, request.user)
+            memory = get_trip_memory_video(
+                trip_id=trip_id,
+                memory_id=memory_id,
+                actor=request.user,
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        return Response(
+            {
+                "memory": TripMemoryVideoSerializer(
+                    memory,
+                    context=_memory_serializer_context(request, membership),
+                ).data
+            }
+        )
+
+    def patch(self, request, trip_id, memory_id):
+        try:
+            membership = _get_active_membership(trip_id, request.user)
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        serializer = TripMemoryVideoUpdateSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        if not serializer.is_valid():
+            return _memory_serializer_validation_error(serializer.errors)
+
+        try:
+            memory = update_trip_memory_video(
+                trip_id=trip_id,
+                memory_id=memory_id,
+                actor=request.user,
+                title=serializer.validated_data["title"],
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        return Response(
+            {
+                "memory": TripMemoryVideoSerializer(
+                    memory,
+                    context=_memory_serializer_context(request, membership),
+                ).data
+            }
+        )
+
+    def delete(self, request, trip_id, memory_id):
+        try:
+            delete_trip_memory_video(
+                trip_id=trip_id,
+                memory_id=memory_id,
+                actor=request.user,
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TripMemoryVideoAssetAPIView(APIView):
+    permission_classes = TRIP_MEMORY_PERMISSIONS
+    throttle_scope = "trip_memory_assets"
+
+    def get(self, request, trip_id, memory_id, variant: str):
+        try:
+            if variant == "video":
+                asset = get_private_memory_video_file(
+                    trip_id=trip_id,
+                    memory_id=memory_id,
+                    actor=request.user,
+                )
+                response = range_streaming_response(
+                    field=asset.field,
+                    range_header=request.headers.get("Range"),
+                    content_type="video/mp4",
+                    content_disposition="inline",
+                )
+            elif variant == "download":
+                asset = get_private_memory_download_file(
+                    trip_id=trip_id,
+                    memory_id=memory_id,
+                    actor=request.user,
+                )
+                filename = safe_mp4_filename(asset.memory.title)
+                response = range_streaming_response(
+                    field=asset.field,
+                    range_header=request.headers.get("Range"),
+                    content_type="video/mp4",
+                    content_disposition=f'attachment; filename="{filename}"',
+                )
+            elif variant == "poster":
+                asset = get_private_memory_poster_file(
+                    trip_id=trip_id,
+                    memory_id=memory_id,
+                    actor=request.user,
+                )
+                field = asset.field
+                response = FileResponse(
+                    field.storage.open(field.name, "rb"),
+                    content_type="image/webp",
+                )
+                response.headers["Content-Length"] = str(field.size)
+                response.headers["Cache-Control"] = "private, no-store"
+            else:
+                raise MemoryVideoNotFoundError(
+                    "MEMORY_NOT_FOUND",
+                    "Memory video asset not found.",
+                )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        return response
+
+
+class TripMemoryVideoShareLinkAPIView(APIView):
+    permission_classes = TRIP_MEMORY_PERMISSIONS
+    throttle_scope = "trip_memory_share_link"
+
+    def post(self, request, trip_id, memory_id):
+        try:
+            membership = _get_active_membership(trip_id, request.user)
+            memory, _url = enable_memory_share_link(
+                trip_id=trip_id,
+                memory_id=memory_id,
+                actor=request.user,
+                public_base_url=settings.PUBLIC_APP_BASE_URL,
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        payload = TripMemoryVideoSerializer(
+            memory,
+            context=_memory_serializer_context(request, membership),
+        ).data
+        return Response({"share": payload["share"]})
+
+    def delete(self, request, trip_id, memory_id):
+        try:
+            membership = _get_active_membership(trip_id, request.user)
+            memory = disable_memory_share_link(
+                trip_id=trip_id,
+                memory_id=memory_id,
+                actor=request.user,
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        payload = TripMemoryVideoSerializer(
+            memory,
+            context=_memory_serializer_context(request, membership),
+        ).data
+        return Response({"share": payload["share"]})
+
+
+class TripMemoryMusicTracksAPIView(APIView):
+    permission_classes = TRIP_MEMORY_PERMISSIONS
+    throttle_scope = "trip_memories_music"
+
+    def get(self, request, trip_id):
+        try:
+            _get_active_membership(trip_id, request.user)
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        return Response(
+            {
+                "tracks": [
+                    {
+                        "key": track.key,
+                        "title": track.title,
+                        "artist": track.artist,
+                        "enabled": track.enabled,
+                        "license": track.license,
+                        "license_url": track.license_url,
+                        "source_url": track.source_url,
+                    }
+                    for track in list_memory_music_tracks()
+                ]
+            }
+        )
+
+
+class PublicTripMemoryVideoDetailAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "public_memory_detail"
+
+    def get(self, request, share_slug: str):
+        try:
+            memory = get_public_memory_video(share_slug=share_slug)
+        except MemoryVideoNotFoundError:
+            return _public_memory_not_found_response()
+
+        serializer = PublicTripMemoryVideoSerializer(
+            memory,
+            context={"request": request},
+        )
+        response = Response(serializer.data)
+        response.headers["Cache-Control"] = PUBLIC_MEMORY_CACHE_CONTROL
+        return response
+
+
+class PublicTripMemoryVideoAssetAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "public_memory_assets"
+
+    def get(self, request, share_slug: str, variant: str):
+        try:
+            if variant == "video":
+                asset = get_public_memory_video_file(share_slug=share_slug)
+                response = range_streaming_response(
+                    field=asset.field,
+                    range_header=request.headers.get("Range"),
+                    content_type="video/mp4",
+                    content_disposition="inline",
+                )
+                response.headers["Cache-Control"] = PUBLIC_MEMORY_CACHE_CONTROL
+                return response
+
+            if variant == "poster":
+                asset = get_public_memory_poster_file(share_slug=share_slug)
+                field = asset.field
+                response = FileResponse(
+                    field.storage.open(field.name, "rb"),
+                    content_type="image/webp",
+                )
+                response.headers["Content-Length"] = str(field.size)
+                response.headers["Cache-Control"] = PUBLIC_MEMORY_CACHE_CONTROL
+                return response
+        except (MemoryVideoNotFoundError, OSError, FileNotFoundError):
+            return _public_memory_not_found_response()
+
+        return _public_memory_not_found_response()

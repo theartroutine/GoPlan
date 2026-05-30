@@ -24,6 +24,12 @@ def env_bool(name: str, default: bool = False) -> bool:
 DEBUG = os.environ.get('DJANGO_DEBUG') == '1'
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 ALLOWED_HOSTS = os.environ['DJANGO_ALLOWED_HOSTS'].split(',')
+_RAW_FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL')
+_RAW_PUBLIC_APP_BASE_URL = os.environ.get("PUBLIC_APP_BASE_URL")
+if not DEBUG and not (_RAW_FRONTEND_BASE_URL or _RAW_PUBLIC_APP_BASE_URL):
+    raise RuntimeError("Set PUBLIC_APP_BASE_URL or FRONTEND_BASE_URL in production.")
+FRONTEND_BASE_URL = _RAW_FRONTEND_BASE_URL or 'http://localhost:3000'
+PUBLIC_APP_BASE_URL = (_RAW_PUBLIC_APP_BASE_URL or FRONTEND_BASE_URL).rstrip('/')
 
 # -------- Installed Apps --------
 INSTALLED_APPS = [
@@ -144,6 +150,19 @@ TRIP_PHOTO_MAX_SOURCE_PIXELS = 45_000_000
 TRIP_PHOTO_THUMBNAIL_MAX_EDGE = 480
 TRIP_PHOTO_MEDIUM_MAX_EDGE = 2560
 TRIP_PHOTO_WEBP_QUALITY = 84
+TRIP_MEMORY_MIN_PHOTOS = 5
+TRIP_MEMORY_MAX_PHOTOS = 50
+TRIP_MEMORY_AUTO_PICK_PHOTOS = 20
+TRIP_MEMORY_RENDER_QUEUE = "memory_render"
+TRIP_MEMORY_VIDEO_WIDTH = 1920
+TRIP_MEMORY_VIDEO_HEIGHT = 1080
+TRIP_MEMORY_VIDEO_FPS = 30
+TRIP_MEMORY_SECONDS_PER_PHOTO = 3
+TRIP_MEMORY_RENDER_STALE_SECONDS = 15 * 60
+TRIP_MEMORY_RENDER_ACTIVE_RETRY_MAX_RETRIES = 3
+TRIP_MEMORY_FFMPEG_TIMEOUT_SECONDS = 540
+TRIP_MEMORY_MAX_ACTIVE_PER_USER_PER_TRIP = 1
+TRIP_MEMORY_MAX_ACTIVE_PER_TRIP = 3
 
 # -------- Cross-Origin Settings --------
 CORS_ALLOWED_ORIGINS = os.environ['CORS_ALLOWED_ORIGINS'].split(',')
@@ -209,6 +228,14 @@ REST_FRAMEWORK = {
         'trip_photos_upload': '30/hour',
         'trip_photos_detail': '120/hour',
         'trip_photo_assets': '600/hour',
+        'trip_memories_list': '120/hour',
+        'trip_memories_create': '30/hour',
+        'trip_memories_detail': '120/hour',
+        'trip_memory_assets': '600/hour',
+        'trip_memory_share_link': '60/hour',
+        'trip_memories_music': '120/hour',
+        'public_memory_detail': '600/hour',
+        'public_memory_assets': '600/hour',
         'trips_list_create': '60/hour',
         'trips_detail_update': '120/hour',
         'trips_invitations_list': '240/hour',
@@ -278,8 +305,6 @@ PASSWORD_RESET_TIMEOUT = 3600  # 1 hour
 
 # -------- Email Verification --------
 EMAIL_VERIFICATION_MAX_AGE_SECONDS = 60 * 60 * 24  # 24 hours
-FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:3000')
-
 # MongoDB Integration
 # MONGO_URL = os.environ.get('MONGO_URL')
 # MONGO_DB = os.environ.get('MONGO_DB')
@@ -292,6 +317,9 @@ CELERY_TASK_REJECT_ON_WORKER_LOST = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "120"))
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "90"))
+CELERY_TASK_ROUTES = {
+    "memories.tasks.render_trip_memory_video_task": {"queue": TRIP_MEMORY_RENDER_QUEUE},
+}
 
 # -------- DeepSeek AI Configuration --------
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")

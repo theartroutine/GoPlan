@@ -4,6 +4,11 @@ FROM python:3.12-slim
 # -------- Workspace Location --------
 WORKDIR /app
 
+# -------- System Dependency Installation --------
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # -------- Dependency Installation --------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
