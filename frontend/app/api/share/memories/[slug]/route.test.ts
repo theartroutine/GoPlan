@@ -23,6 +23,7 @@ describe("BFF /api/share/memories/[slug]", () => {
       video_url: "/api/public/memories/public-slug/video",
       duration_seconds: 42,
       source_photo_count: 7,
+      music: null,
     };
     vi.mocked(fetch).mockResolvedValue(
       new Response(JSON.stringify(payload), {
@@ -50,7 +51,39 @@ describe("BFF /api/share/memories/[slug]", () => {
       video_url: "/api/share/memories/public%2Fslug/video",
       duration_seconds: 42,
       source_photo_count: 7,
+      music: null,
     });
+  });
+
+  it("preserves public music attribution from the backend", async () => {
+    const { GET } = await import("@/app/api/share/memories/[slug]/route");
+    const music = {
+      title: "Air Prelude",
+      artist: "Kevin MacLeod (incompetech.com)",
+      license: "CC BY 4.0",
+      license_url: "https://creativecommons.org/licenses/by/4.0/",
+      source_url: "https://incompetech.com/music/royalty-free/",
+    };
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({
+        title: "Da Nang recap",
+        poster_url: "/api/public/memories/public-slug/poster",
+        video_url: "/api/public/memories/public-slug/video",
+        duration_seconds: 42,
+        source_photo_count: 7,
+        music,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const response = await GET({} as never, {
+      params: Promise.resolve({ slug: "public-slug" }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ music });
   });
 
   it("rejects invalid successful upstream metadata instead of leaking it", async () => {

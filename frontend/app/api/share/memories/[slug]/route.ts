@@ -13,6 +13,15 @@ type PublicMemoryPayload = {
   video_url: string;
   duration_seconds: number | null;
   source_photo_count: number;
+  music: PublicMemoryMusic | null;
+};
+
+type PublicMemoryMusic = {
+  title: string;
+  artist: string;
+  license: string;
+  license_url: string;
+  source_url: string;
 };
 
 async function parseJsonResponse(response: Response): Promise<unknown> {
@@ -54,7 +63,22 @@ function isPublicMemoryPayload(value: unknown): value is PublicMemoryPayload {
       typeof candidate.duration_seconds === "number" ||
       candidate.duration_seconds === null
     ) &&
-    typeof candidate.source_photo_count === "number"
+    typeof candidate.source_photo_count === "number" &&
+    isPublicMemoryMusic(candidate.music)
+  );
+}
+
+function isPublicMemoryMusic(value: unknown): value is PublicMemoryMusic | null {
+  if (value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.title === "string" &&
+    typeof candidate.artist === "string" &&
+    typeof candidate.license === "string" &&
+    typeof candidate.license_url === "string" &&
+    typeof candidate.source_url === "string"
   );
 }
 
@@ -70,6 +94,7 @@ function normalizePublicMemoryPayload(
     video_url: `/api/share/memories/${encodedSlug}/video`,
     duration_seconds: data.duration_seconds,
     source_photo_count: data.source_photo_count,
+    music: data.music,
   };
 }
 
