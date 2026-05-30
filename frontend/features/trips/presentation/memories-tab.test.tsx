@@ -99,6 +99,8 @@ describe("MemoriesTab", () => {
       "src",
       "/api/trips/trip_1/memories/memory_1/video",
     );
+    expect(screen.getByRole("button", { name: "Close viewer" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close dialog" })).not.toBeInTheDocument();
   });
 
   it("renders queued, rendering, and failed states", async () => {

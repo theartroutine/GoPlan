@@ -289,7 +289,7 @@ export function MemoriesTab() {
           if (!open) setViewerMemory(null);
         }}
       >
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="sm:max-w-3xl" showCloseButton={false}>
           <DialogTitle className="sr-only">Memory video viewer</DialogTitle>
           <DialogDescription className="sr-only">
             Watch the selected trip memory video.
