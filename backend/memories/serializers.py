@@ -78,7 +78,12 @@ class TripMemoryVideoCreateSerializer(serializers.Serializer):
         allow_empty=True,
         default=list,
     )
-    music_key = serializers.CharField(max_length=80)
+    music_key = serializers.CharField(
+        max_length=80,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
 
 
 class TripMemoryVideoUpdateSerializer(serializers.Serializer):
@@ -197,8 +202,8 @@ class PublicTripMemoryVideoSerializer(serializers.ModelSerializer):
         ]
 
     def get_music(self, obj: TripMemoryVideo) -> dict | None:
-        # CC-BY obliges us to credit the music to public viewers too. Only
-        # expose attribution when the track actually carries a license.
+        # Expose music provenance when the bundled track carries license
+        # metadata. This keeps public shares auditable without exposing files.
         track = get_memory_music_track(obj.music_key)
         if track is None or not track.license:
             return None

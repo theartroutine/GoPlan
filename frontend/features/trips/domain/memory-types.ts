@@ -61,7 +61,7 @@ export type CreateTripMemoryPayload = {
   title?: string;
   source_mode: TripMemorySourceMode;
   photo_ids?: string[];
-  music_key: string;
+  music_key?: string;
 };
 
 export type UpdateTripMemoryPayload = {

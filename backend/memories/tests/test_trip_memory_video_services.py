@@ -17,6 +17,7 @@ from memories.memory_video_services import (
     delete_trip_memory_video,
     disable_memory_share_link,
     enable_memory_share_link,
+    get_memory_music_track,
     list_memory_music_tracks,
     select_auto_pick_photos,
     update_trip_memory_video,
@@ -127,10 +128,29 @@ class TripMemoryVideoServiceTests(TestCase):
     def test_music_catalog_exposes_audible_tracks_not_silent_placeholder(self):
         tracks = list_memory_music_tracks()
 
-        self.assertGreaterEqual(len(tracks), 3)
+        self.assertGreaterEqual(len(tracks), 7)
         self.assertNotIn("silent-placeholder", {track.key for track in tracks})
         self.assertTrue(all(track.enabled for track in tracks))
         self.assertTrue(all(not track.placeholder for track in tracks))
+        self.assertTrue(all(track.license == "CC0 1.0" for track in tracks))
+
+    @patch("memories.memory_video_services.secrets.choice")
+    def test_create_memory_randomly_assigns_music_when_key_is_omitted(self, choice):
+        selected_track = get_memory_music_track("traveling-mind")
+        self.assertIsNotNone(selected_track)
+        choice.return_value = selected_track
+        photos = self._photos(5)
+
+        memory = create_trip_memory_video(
+            trip_id=self.trip.id,
+            actor=self.member,
+            title="Random music recap",
+            source_mode=TripMemoryVideoSourceMode.MANUAL,
+            photo_ids=[photo.id for photo in photos],
+        )
+
+        choice.assert_called_once()
+        self.assertEqual(memory.music_key, "traveling-mind")
 
     def test_manual_create_rejects_fewer_than_five_photos(self):
         photos = self._photos(4)

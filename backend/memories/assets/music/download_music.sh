@@ -7,8 +7,7 @@
 # HTML page saved as .mp3) so a broken file never gets committed.
 #
 # HOW TO USE
-#   1. Pick tracks from a license-safe source (see README.md — CC0 preferred,
-#      CC-BY allowed if you keep attribution in CREDITS.md).
+#   1. Pick tracks from a license-safe CC0/Public Domain source (see README.md).
 #   2. Put each track's DIRECT download URL in TRACKS below.
 #   3. Run:  cd backend/memories/assets/music && ./download_music.sh
 #   4. Run:  ./verify_music.sh
@@ -20,9 +19,13 @@ cd "$(dirname "$0")"
 
 # "output-filename|direct-download-url"
 TRACKS=(
-  "sunrise-road.mp3|REPLACE_WITH_DIRECT_CC0_OR_CCBY_URL"
-  "coastal-light.mp3|REPLACE_WITH_DIRECT_CC0_OR_CCBY_URL"
-  "lantern-evening.mp3|REPLACE_WITH_DIRECT_CC0_OR_CCBY_URL"
+  "intro-adventure.ogg|REPLACE_WITH_DIRECT_CC0_URL"
+  "the-adventure.ogg|REPLACE_WITH_DIRECT_CC0_URL"
+  "arcade-adventure.mp3|REPLACE_WITH_DIRECT_CC0_URL"
+  "travel-horizon.mp3|REPLACE_WITH_DIRECT_CC0_URL"
+  "open-road.mp3|REPLACE_WITH_DIRECT_CC0_URL"
+  "victory.mp3|REPLACE_WITH_DIRECT_CC0_URL"
+  "traveling-in-your-mind.mp3|REPLACE_WITH_DIRECT_CC0_URL"
 )
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -66,4 +69,4 @@ if [[ "$failed" -gt 0 ]]; then
   echo "$failed download(s) failed. Re-check the URLs in this script."
   exit 1
 fi
-echo "Done. Now run ./verify_music.sh and, for any CC-BY track, fill CREDITS.md."
+echo "Done. Now run ./verify_music.sh and update CREDITS.md with source provenance."

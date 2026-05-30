@@ -131,6 +131,23 @@ def _validate_music_key(music_key: str) -> None:
         )
 
 
+def _select_random_music_key() -> str:
+    tracks = list_memory_music_tracks()
+    if not tracks:
+        raise MemoryVideoValidationError(
+            "MEMORY_INVALID_MUSIC",
+            "No memory music tracks are available.",
+        )
+    return secrets.choice(tracks).key
+
+
+def _resolve_music_key(music_key: str | None) -> str:
+    if music_key:
+        _validate_music_key(music_key)
+        return music_key
+    return _select_random_music_key()
+
+
 def _assert_trip_accepts_memory_mutation(status: str) -> None:
     if status == TripStatus.CANCELLED:
         raise TripTerminalError("Cancelled trips cannot change memory videos.")
@@ -399,9 +416,9 @@ def create_trip_memory_video(
     title: str,
     source_mode: str,
     photo_ids: list,
-    music_key: str,
+    music_key: str | None = None,
 ) -> TripMemoryVideo:
-    _validate_music_key(music_key)
+    resolved_music_key = _resolve_music_key(music_key)
     membership = _get_active_membership(trip_id, actor)
     trip = membership.trip
     _assert_trip_accepts_memory_mutation(trip.status)
@@ -430,7 +447,7 @@ def create_trip_memory_video(
             source_mode=source_mode,
             source_photo_ids=source_photo_ids,
             source_photo_count=len(source_photo_ids),
-            music_key=music_key,
+            music_key=resolved_music_key,
         )
         transaction.on_commit(lambda memory_id=str(memory.id): _enqueue_trip_memory_render(memory_id))
     memory.refresh_from_db()

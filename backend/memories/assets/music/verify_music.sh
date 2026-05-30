@@ -14,7 +14,15 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
-EXPECTED=("sunrise-road.mp3" "coastal-light.mp3" "lantern-evening.mp3")
+EXPECTED=(
+  "intro-adventure.ogg"
+  "the-adventure.ogg"
+  "arcade-adventure.mp3"
+  "travel-horizon.mp3"
+  "open-road.mp3"
+  "victory.mp3"
+  "traveling-in-your-mind.mp3"
+)
 MIN_SECONDS=20
 
 if ! command -v ffprobe >/dev/null 2>&1; then

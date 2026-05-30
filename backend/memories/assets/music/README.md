@@ -1,95 +1,59 @@
 # Memory video music assets
 
-Background-music tracks used when rendering trip memory videos.
+Background music used when rendering trip memory videos.
+
+## Current catalog
+
+The MVP catalog is intentionally CC0/Public Domain only and tuned for bright,
+upbeat travel/adventure memories. The backend chooses one enabled track at
+memory creation time; users do not pick music in the create flow.
+
+| catalog key | file | source |
+|-------------|------|--------|
+| `sunrise-road` | `intro-adventure.ogg` | Komiku - Introduction to your adventure |
+| `coastal-light` | `travel-horizon.mp3` | Komiku - Travel to the Horizon |
+| `lantern-evening` | `open-road.mp3` | Komiku - The road we use to travel when we were kids |
+| `the-adventure` | `the-adventure.ogg` | Komiku - The adventure |
+| `arcade-adventure` | `arcade-adventure.mp3` | Komiku - Poupi Great Adventures: The Arcade Game |
+| `victory` | `victory.mp3` | Komiku - Victory |
+| `traveling-mind` | `traveling-in-your-mind.mp3` | Loyalty Freak Music - Traveling in your mind |
+
+See `CREDITS.md` for source URLs and license provenance.
 
 ## How the render uses these files
 
 `memory_video_rendering.render_memory_video` resolves each catalog track
 (`music_catalog.py`) to a file here via `resolve_music_asset_path`:
 
-- **File present** → the real track is used (looped to cover the slideshow).
-- **File missing** → a synthesized tone is used as a fallback, so the video
-  still has audio. The synth is a stopgap, not real music — add the files below
-  to ship proper audio.
+- File present: the real track is used and looped to cover the slideshow.
+- File missing: the catalog synth fallback is used so rendering still succeeds.
 
-Expected filenames (drop files with EXACTLY these names):
+## Licensing rules
 
-| catalog key       | filename              |
-|-------------------|-----------------------|
-| `sunrise-road`    | `sunrise-road.mp3`    |
-| `coastal-light`   | `coastal-light.mp3`   |
-| `lantern-evening` | `lantern-evening.mp3` |
+Putting an audio file in this repo redistributes it. Most "free music" sites let
+you use a track inside a video but forbid redistributing the standalone file.
+Those are not allowed here.
 
-Recommended encoding: MP3 (or M4A/AAC), 48 kHz, stereo, ~2–4 min, 128–192 kbps.
-The renderer loops the track, so a 2-min file is enough.
+Allowed:
 
-## ⚠️ Licensing — read before adding any file
+- CC0 1.0 / Public Domain: preferred. No attribution, redistribution OK.
+- CC-BY 4.0: allowed only if attribution remains recorded here and visible to
+  end users wherever listeners hear the music.
 
-Putting an audio file in this repo **redistributes** it. Most "free music"
-sites (Pixabay, Mixkit, Bensound, Uppbeat, YouTube Audio Library) let you *use*
-a track inside a video but **forbid redistributing the standalone file** — those
-are NOT allowed here.
+Not allowed:
 
-Only use a license that permits redistributing the file:
+- NC (non-commercial) licenses.
+- ND (no-derivatives) licenses.
+- Stock/content licenses that forbid standalone redistribution.
 
-- **CC0 1.0 / Public Domain** — preferred. No attribution, redistribution OK.
-- **CC-BY 4.0** — allowed, but you MUST keep attribution: record it in
-  `CREDITS.md` AND show it to end users (e.g. on the share page).
+## Verification
 
-Do NOT add NC (non-commercial) or "no redistribution" tracks.
+Run this after changing the catalog or files:
 
-## Setup — pick ONE route
+```bash
+cd backend/memories/assets/music
+./verify_music.sh
+```
 
-### Route A — CC0, simplest (recommended)
-
-CC0 needs no attribution, so you can rename the files freely and skip
-`CREDITS.md` entirely. Downloading in the browser is the most reliable way —
-no guessing direct URLs.
-
-1. Open a CC0 source and pick 3 calm/cinematic instrumental tracks. These
-   artists release **everything** under CC0 — safe to grab any track:
-   - **Komiku** (FMA): https://freemusicarchive.org/music/Komiku/
-   - **Monplaisir** (FMA): https://freemusicarchive.org/music/Monplaisir/
-   - **Loyalty Freak Music** (FMA): https://freemusicarchive.org/music/Loyalty_Freak_Music/
-   Other CC0 pools (verify each track's badge says **CC0 / Public Domain**):
-   - Chosic, "No attribution" filter: https://www.chosic.com/free-music/all/?attribution=no
-   - Wikimedia Commons, CC-Zero audio: https://commons.wikimedia.org/wiki/Category:CC-Zero
-2. Download the 3 files, rename them to `sunrise-road.mp3`, `coastal-light.mp3`,
-   `lantern-evening.mp3`, and drop them in THIS folder.
-3. Verify: `./verify_music.sh` (it rejects anything that is not real,
-   decodable, stereo audio of sane length).
-
-### Route B — CC-BY (e.g. Kevin MacLeod / incompetech)
-
-High quality and very stable, but attribution is mandatory — you must show the
-credit to end users, not just keep it in `CREDITS.md` (this needs a small UI
-addition on the memory/share page). Prefer Route A unless you specifically want
-these tracks.
-
-Good calm picks:
-- **Kevin MacLeod** (incompetech.com): "Dreamer", "Almost in F - Tranquillity",
-  "Lightless Dawn". Browse: https://incompetech.com/music/royalty-free/
-- **Scott Buckley** (scottbuckley.com.au): "Reverie", "Moonlight", "Snowfall".
-  All CC BY 4.0, with clean per-track download buttons.
-
-Steps:
-1. Fastest: run `./download_incompetech.sh`. It resolves 3 calm Kevin MacLeod
-   tracks from the Internet Archive mirror, installs them under the 3 filenames,
-   validates them, and prints a ready-to-paste `CREDITS.md` block.
-   (Or pick tracks manually from an artist above, download in the browser, and
-   rename to the filenames; or put direct URLs into `download_music.sh`.)
-2. Paste the printed block into `CREDITS.md`.
-3. Make sure the attribution is shown to end users on the memory/share page
-   (CC BY 4.0 requires this — not just the file).
-4. Verify: `./verify_music.sh`
-
-## Scripts in this folder
-
-- `download_incompetech.sh` — one-command CC BY 4.0 install from the Internet
-  Archive mirror (auto-resolves calm tracks, validates, prints credits block).
-- `download_music.sh` — paste direct URLs, it downloads + auto-rejects bad files.
-- `verify_music.sh` — checks each expected file is real, decodable, stereo audio
-  of sane length. Run it after adding files; run it before committing.
-
-Until real files are added, renders use the synth fallback automatically — the
-feature works either way.
+The script checks each expected file exists, is decodable audio, is stereo, and
+has a sane duration.

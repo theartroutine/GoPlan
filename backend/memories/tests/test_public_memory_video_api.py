@@ -108,7 +108,7 @@ class PublicTripMemoryVideoAPITests(APITestCase):
         )
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
-    def test_licensed_track_exposes_attribution_to_public_viewers(self):
+    def test_cc0_track_exposes_music_provenance_to_public_viewers(self):
         memory = self._memory(slug="credited-share")
         memory.music_key = "sunrise-road"
         memory.save(update_fields=["music_key"])
@@ -119,11 +119,11 @@ class PublicTripMemoryVideoAPITests(APITestCase):
         self.assertEqual(
             response.data["music"],
             {
-                "title": "Air Prelude",
-                "artist": "Kevin MacLeod (incompetech.com)",
-                "license": "CC BY 4.0",
-                "license_url": "https://creativecommons.org/licenses/by/4.0/",
-                "source_url": "https://incompetech.com/music/royalty-free/",
+                "title": "Introduction to your adventure",
+                "artist": "Komiku",
+                "license": "CC0 1.0",
+                "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                "source_url": "https://commons.wikimedia.org/wiki/File:Komiku_-_01_-_Introduction_to_your_adventure.ogg",
             },
         )
 

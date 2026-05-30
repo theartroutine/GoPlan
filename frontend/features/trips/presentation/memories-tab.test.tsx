@@ -193,6 +193,7 @@ describe("MemoriesTab", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Create memory" }).at(-1)!);
 
     expect(await screen.findByText("Created memory")).toBeInTheDocument();
+    expect(memoriesApiMock.bffListMemoryMusicTracks).not.toHaveBeenCalled();
   });
 
   it("loads additional memory pages", async () => {

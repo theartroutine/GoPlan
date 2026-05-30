@@ -68,7 +68,6 @@ describe("BFF /api/trips/[tripId]/memories", () => {
     const { POST } = await import("@/app/api/trips/[tripId]/memories/route");
     const payload = {
       source_mode: "auto",
-      music_key: "silent-placeholder",
       title: "Da Nang recap",
     };
     const data = { memory: { id: "memory_1", status: "queued" } };

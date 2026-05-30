@@ -1,20 +1,15 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type {
-  MemoryMusicTrack,
   TripMemorySourceMode,
   TripMemoryVideo,
 } from "@/features/trips/domain/memory-types";
 import { getTripMemoryErrorMessage } from "@/features/trips/domain/memory-errors";
-import {
-  bffCreateTripMemory,
-  bffListMemoryMusicTracks,
-} from "@/features/trips/infrastructure/memories-api";
+import { bffCreateTripMemory } from "@/features/trips/infrastructure/memories-api";
 import { MemoryPhotoPicker } from "@/features/trips/presentation/memory-photo-picker";
-import { MusicTrackPicker } from "@/features/trips/presentation/music-track-picker";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -33,7 +28,6 @@ type CreateMemoryDialogProps = {
 };
 
 const CREATE_ERROR = "Could not create memory video.";
-const NO_MUSIC_ERROR = "No music available.";
 
 function validateManualSelection(photoIds: string[]): string | null {
   if (photoIds.length < 5 || photoIds.length > 50) {
@@ -51,82 +45,18 @@ export function CreateMemoryDialog({
   const [title, setTitle] = useState("");
   const [sourceMode, setSourceMode] = useState<TripMemorySourceMode>("manual");
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
-  const [tracks, setTracks] = useState<MemoryMusicTrack[]>([]);
-  const [tracksLoaded, setTracksLoaded] = useState(false);
-  // Null means "no explicit choice yet" — the effective key falls back to the
-  // first available track so the dialog never submits a silent placeholder.
-  const [musicKey, setMusicKey] = useState<string | null>(null);
-  const [loadingTracks, setLoadingTracks] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // The in-flight tracks request, so a submit fired before the catalog loads
-  // can await it and use the resolved track instead of a stale value.
-  const tracksPromiseRef = useRef<Promise<MemoryMusicTrack[]> | null>(null);
-
-  const effectiveMusicKey = musicKey ?? tracks[0]?.key ?? null;
-
-  useEffect(() => {
-    if (!open) return;
-
-    const controller = new AbortController();
-    setLoadingTracks(true);
-    setTracksLoaded(false);
-    setError(null);
-
-    const request = bffListMemoryMusicTracks(tripId, { signal: controller.signal });
-    tracksPromiseRef.current = request;
-
-    void request
-      .then((loadedTracks) => {
-        if (controller.signal.aborted) return;
-        setTracks(loadedTracks);
-        setTracksLoaded(true);
-      })
-      .catch((err) => {
-        if (!controller.signal.aborted) {
-          setError(getTripMemoryErrorMessage(err, "Could not load music tracks."));
-          setTracks([]);
-          setTracksLoaded(true);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingTracks(false);
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [open, tripId]);
 
   useEffect(() => {
     if (!open) {
       setTitle("");
       setSourceMode("manual");
       setSelectedPhotoIds([]);
-      setTracks([]);
-      setTracksLoaded(false);
-      setMusicKey(null);
       setError(null);
       setSubmitting(false);
-      tracksPromiseRef.current = null;
     }
   }, [open]);
-
-  async function resolveMusicKey(): Promise<string | null> {
-    if (musicKey) return musicKey;
-    if (tracks.length > 0) return tracks[0].key;
-    // Catalog may still be loading when the user clicks create; wait for it.
-    if (tracksPromiseRef.current) {
-      try {
-        const loaded = await tracksPromiseRef.current;
-        return loaded[0]?.key ?? null;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
 
   async function handleSubmit() {
     if (submitting) return;
@@ -142,16 +72,9 @@ export function CreateMemoryDialog({
 
     setSubmitting(true);
     try {
-      const resolvedMusicKey = await resolveMusicKey();
-      if (!resolvedMusicKey) {
-        setError(NO_MUSIC_ERROR);
-        return;
-      }
-
       const memory = await bffCreateTripMemory(tripId, {
         source_mode: sourceMode,
         ...(sourceMode === "manual" ? { photo_ids: selectedPhotoIds } : {}),
-        music_key: resolvedMusicKey,
         title: title.trim(),
       });
       onCreated(memory);
@@ -162,8 +85,6 @@ export function CreateMemoryDialog({
       setSubmitting(false);
     }
   }
-
-  const noMusicAvailable = tracksLoaded && tracks.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -228,16 +149,6 @@ export function CreateMemoryDialog({
             </div>
           ) : null}
 
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Music</p>
-            <MusicTrackPicker
-              tracks={tracks}
-              selectedKey={effectiveMusicKey ?? ""}
-              loading={loadingTracks}
-              disabled={submitting}
-              onSelect={setMusicKey}
-            />
-          </div>
         </div>
 
         <DialogFooter>
@@ -251,7 +162,7 @@ export function CreateMemoryDialog({
           </Button>
           <Button
             type="button"
-            disabled={submitting || noMusicAvailable}
+            disabled={submitting}
             onClick={() => void handleSubmit()}
           >
             {submitting ? <Loader2 className="animate-spin" /> : null}

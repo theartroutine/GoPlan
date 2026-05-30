@@ -137,7 +137,6 @@ class TripMemoryVideoAPITests(APITestCase):
                 "title": "Trip recap",
                 "source_mode": "manual",
                 "photo_ids": [str(photo.id) for photo in photos],
-                "music_key": MUSIC_KEY,
             },
             format="json",
             **_auth(self.member),
@@ -146,7 +145,7 @@ class TripMemoryVideoAPITests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["memory"]["status"], "queued")
         self.assertEqual(response.data["memory"]["source_photo_count"], 5)
-        self.assertEqual(response.data["memory"]["music"]["key"], MUSIC_KEY)
+        self.assertTrue(response.data["memory"]["music"]["key"])
         self.assertFalse(response.data["memory"]["can_download"])
 
     def test_memory_response_has_full_phase_one_shape(self):
@@ -269,7 +268,6 @@ class TripMemoryVideoAPITests(APITestCase):
             {
                 "title": "Auto recap",
                 "source_mode": "auto",
-                "music_key": MUSIC_KEY,
             },
             format="json",
             **_auth(self.member),
@@ -529,11 +527,12 @@ class TripMemoryVideoAPITests(APITestCase):
         response = self.client.get(_music_tracks_url(self.trip.id), **_auth(self.member))
 
         self.assertEqual(response.status_code, 200)
-        self.assertGreaterEqual(len(response.data["tracks"]), 3)
+        self.assertGreaterEqual(len(response.data["tracks"]), 7)
         self.assertNotIn(
             "silent-placeholder",
             {track["key"] for track in response.data["tracks"]},
         )
+        self.assertTrue(all(track["license"] == "CC0 1.0" for track in response.data["tracks"]))
 
     def test_failed_memory_response_includes_render_error(self):
         memory = TripMemoryVideo.objects.create(

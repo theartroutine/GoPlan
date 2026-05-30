@@ -112,19 +112,18 @@ describe("CreateMemoryDialog", () => {
     await waitFor(() => {
       expect(memoriesApiMock.bffCreateTripMemory).toHaveBeenCalledWith("trip_1", {
         source_mode: "auto",
-        music_key: "sunrise-road",
         title: "",
       });
       expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ source_mode: "auto" }));
+      expect(memoriesApiMock.bffListMemoryMusicTracks).not.toHaveBeenCalled();
     });
   });
 
-  it("blocks creation when the music catalog is empty", async () => {
-    memoriesApiMock.bffListMemoryMusicTracks.mockResolvedValue([]);
+  it("does not show a user-facing music picker", () => {
     renderDialog();
 
-    expect(await screen.findByText("No music available.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create memory" })).toBeDisabled();
+    expect(screen.queryByText("Music")).not.toBeInTheDocument();
+    expect(memoriesApiMock.bffListMemoryMusicTracks).not.toHaveBeenCalled();
   });
 
   it("loads later photo pages and can submit selected photos from them", async () => {
@@ -162,7 +161,6 @@ describe("CreateMemoryDialog", () => {
       expect(memoriesApiMock.bffCreateTripMemory).toHaveBeenCalledWith("trip_1", {
         source_mode: "manual",
         photo_ids: ["photo_1", "photo_2", "photo_3", "photo_4", "photo_5"],
-        music_key: "sunrise-road",
         title: "",
       });
     });

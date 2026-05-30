@@ -82,7 +82,6 @@ describe("memories-api", () => {
       bffCreateTripMemory("trip/1", {
         source_mode: "manual",
         photo_ids: ["photo_1", "photo_2"],
-        music_key: "sunrise-road",
         title: "Da Nang recap",
       }),
     ).resolves.toBe(MEMORY);
@@ -94,7 +93,6 @@ describe("memories-api", () => {
     expect(bffMock.post).toHaveBeenCalledWith("/api/trips/trip%2F1/memories", {
       source_mode: "manual",
       photo_ids: ["photo_1", "photo_2"],
-      music_key: "sunrise-road",
       title: "Da Nang recap",
     });
     expect(bffMock.patch).toHaveBeenCalledWith(
