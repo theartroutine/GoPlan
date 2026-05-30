@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
 import type { TripPhoto } from "@/features/trips/domain/photo-types";
@@ -10,6 +10,7 @@ const memoriesApiMock = vi.hoisted(() => ({
 }));
 
 const photosApiMock = vi.hoisted(() => ({
+  bffFetchTripPhotoAssetBlob: vi.fn(),
   bffListTripPhotos: vi.fn(),
 }));
 
@@ -70,11 +71,26 @@ function renderDialog(onCreated = vi.fn()) {
 describe("CreateMemoryDialog", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    let objectUrlIndex = 0;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => {
+        objectUrlIndex += 1;
+        return `blob:memory-photo-${objectUrlIndex}`;
+      }),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
     photosApiMock.bffListTripPhotos.mockResolvedValue({
       results: Array.from({ length: 6 }, (_, index) => photo(`photo_${index + 1}`)),
       nextCursor: null,
       previousCursor: null,
     });
+    photosApiMock.bffFetchTripPhotoAssetBlob.mockResolvedValue(
+      new Blob(["image"], { type: "image/webp" }),
+    );
     memoriesApiMock.bffListMemoryMusicTracks.mockResolvedValue([
       {
         key: "sunrise-road",
@@ -83,6 +99,30 @@ describe("CreateMemoryDialog", () => {
         enabled: true,
       },
     ]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows manual photos as a thumbnail album", async () => {
+    renderDialog();
+
+    expect(
+      await screen.findByRole("checkbox", {
+        name: /select photo photo_1 uploaded by Minh/i,
+      }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByAltText("Trip photo uploaded by Minh")).toHaveLength(6);
+    });
+    expect(screen.queryByText("photo_1")).not.toBeInTheDocument();
+    expect(photosApiMock.bffFetchTripPhotoAssetBlob).toHaveBeenCalledWith(
+      "trip_1",
+      "photo_1",
+      "thumbnail",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("requires 5 to 50 selected photos in manual mode", async () => {
