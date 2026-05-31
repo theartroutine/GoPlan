@@ -22,12 +22,27 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
+type TripMemoryAssetVariant = "poster" | "video";
+
+type FetchTripMemoryAssetBlobOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
+
 function tripMemoriesPath(tripId: string): string {
   return `/api/trips/${encodeURIComponent(tripId)}/memories`;
 }
 
 function tripMemoryPath(tripId: string, memoryId: string): string {
   return `${tripMemoriesPath(tripId)}/${encodeURIComponent(memoryId)}`;
+}
+
+function tripMemoryAssetPath(
+  tripId: string,
+  memoryId: string,
+  variant: TripMemoryAssetVariant,
+): string {
+  return `${tripMemoryPath(tripId, memoryId)}/${variant}`;
 }
 
 function extractCursor(url: string | null): string | null {
@@ -105,6 +120,29 @@ export async function bffDisableTripMemoryShareLink(
     `${tripMemoryPath(tripId, memoryId)}/share-link`,
   );
   return res.data.share;
+}
+
+export async function bffFetchTripMemoryAssetBlob(
+  tripId: string,
+  memoryId: string,
+  variant: TripMemoryAssetVariant,
+  options: FetchTripMemoryAssetBlobOptions = {},
+): Promise<Blob> {
+  const requestConfig: {
+    responseType: "blob";
+    signal?: AbortSignal;
+    timeout?: number;
+  } = {
+    responseType: "blob",
+  };
+  if (options.signal) requestConfig.signal = options.signal;
+  if (options.timeoutMs) requestConfig.timeout = options.timeoutMs;
+
+  const res = await bff.get<Blob>(
+    tripMemoryAssetPath(tripId, memoryId, variant),
+    requestConfig,
+  );
+  return res.data;
 }
 
 export async function bffListMemoryMusicTracks(

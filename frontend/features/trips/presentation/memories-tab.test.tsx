@@ -6,6 +6,7 @@ import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
 const memoriesApiMock = vi.hoisted(() => ({
   bffCreateTripMemory: vi.fn(),
   bffDeleteTripMemory: vi.fn(),
+  bffFetchTripMemoryAssetBlob: vi.fn(),
   bffListMemoryMusicTracks: vi.fn(),
   bffListTripMemories: vi.fn(),
 }));
@@ -52,6 +53,18 @@ function memory(overrides: Partial<TripMemoryVideo> = {}): TripMemoryVideo {
 describe("MemoriesTab", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    let objectUrlIndex = 0;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => {
+        objectUrlIndex += 1;
+        return `blob:trip-memory-${objectUrlIndex}`;
+      }),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
     memoriesApiMock.bffListMemoryMusicTracks.mockResolvedValue([
       {
         key: "sunrise-road",
@@ -60,6 +73,9 @@ describe("MemoriesTab", () => {
         enabled: true,
       },
     ]);
+    memoriesApiMock.bffFetchTripMemoryAssetBlob.mockResolvedValue(
+      new Blob(["poster"], { type: "image/webp" }),
+    );
     photosApiMock.bffListTripPhotos.mockResolvedValue({
       results: [],
       nextCursor: null,
@@ -69,6 +85,7 @@ describe("MemoriesTab", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("shows an empty state with create memory action", async () => {
@@ -84,7 +101,7 @@ describe("MemoriesTab", () => {
     expect(screen.getAllByRole("button", { name: "Create memory" }).length).toBeGreaterThan(0);
   });
 
-  it("opens the viewer from a ready memory card", async () => {
+  it("opens the viewer from a ready memory preview", async () => {
     memoriesApiMock.bffListTripMemories.mockResolvedValueOnce({
       results: [memory()],
       nextCursor: null,
@@ -93,11 +110,33 @@ describe("MemoriesTab", () => {
 
     render(<MemoriesTab />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Play memory" }));
+    const previewImage = await screen.findByRole("img", { name: "Da Nang recap preview" });
+    expect(previewImage).toHaveAttribute("src", "blob:trip-memory-1");
+    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledWith(
+      "trip_1",
+      "memory_1",
+      "poster",
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(screen.queryByRole("button", { name: "Play memory" })).not.toBeInTheDocument();
 
-    expect(screen.getByLabelText("Da Nang recap video")).toHaveAttribute(
+    fireEvent.error(previewImage);
+    const readyCard = screen.getByTestId("memory-card-memory_1");
+    expect(readyCard.querySelector("video")).toHaveAttribute(
       "src",
-      "/api/trips/trip_1/memories/memory_1/video",
+      "/api/trips/trip_1/memories/memory_1/video#t=0.1",
+    );
+    expect(within(readyCard).queryByText("Ready")).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Play Da Nang recap" }));
+
+    const viewerVideo = await screen.findByLabelText("Da Nang recap video");
+    expect(viewerVideo).toHaveAttribute("src", "blob:trip-memory-3");
+    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledWith(
+      "trip_1",
+      "memory_1",
+      "video",
+      { signal: expect.any(AbortSignal), timeoutMs: 60000 },
     );
     expect(screen.getByRole("button", { name: "Close viewer" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Close dialog" })).not.toBeInTheDocument();
@@ -106,8 +145,8 @@ describe("MemoriesTab", () => {
   it("renders queued, rendering, and failed states", async () => {
     memoriesApiMock.bffListTripMemories.mockResolvedValueOnce({
       results: [
-        memory({ id: "queued_1", status: "queued", title: "Queued" }),
-        memory({ id: "rendering_1", status: "rendering", title: "Rendering" }),
+        memory({ id: "queued_1", status: "queued", title: "Queued memory" }),
+        memory({ id: "rendering_1", status: "rendering", title: "Rendering memory" }),
         memory({
           id: "failed_1",
           status: "failed",
@@ -125,8 +164,15 @@ describe("MemoriesTab", () => {
 
     render(<MemoriesTab />);
 
-    expect((await screen.findAllByText("Queued")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Rendering").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Queued memory")).toBeInTheDocument();
+    expect(screen.getByText("Rendering memory")).toBeInTheDocument();
+    const queuedCard = screen.getByTestId("memory-card-queued_1");
+    const renderingCard = screen.getByTestId("memory-card-rendering_1");
+    expect(queuedCard).toHaveClass("memory-progress-border");
+    expect(renderingCard).toHaveClass("memory-progress-border");
+    expect(within(queuedCard).queryByText("Queued")).not.toBeInTheDocument();
+    expect(within(renderingCard).queryByText("Rendering")).not.toBeInTheDocument();
+    expect(screen.getByTestId("memory-card-failed_1")).not.toHaveClass("memory-progress-border");
     expect(screen.getByText("Failed")).toBeInTheDocument();
     expect(screen.getByText("Render failed")).toBeInTheDocument();
     expect(screen.getByText("A source photo file is missing.")).toBeInTheDocument();
@@ -157,7 +203,7 @@ describe("MemoriesTab", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(screen.getAllByText("Queued").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("memory-card-memory_1")).toHaveAttribute("aria-busy", "true");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
@@ -226,8 +272,8 @@ describe("MemoriesTab", () => {
   it("does not offer delete for queued or rendering memories", async () => {
     memoriesApiMock.bffListTripMemories.mockResolvedValueOnce({
       results: [
-        memory({ id: "queued_1", status: "queued", title: "Queued" }),
-        memory({ id: "rendering_1", status: "rendering", title: "Rendering" }),
+        memory({ id: "queued_1", status: "queued", title: "Queued memory" }),
+        memory({ id: "rendering_1", status: "rendering", title: "Rendering memory" }),
       ],
       nextCursor: null,
       previousCursor: null,

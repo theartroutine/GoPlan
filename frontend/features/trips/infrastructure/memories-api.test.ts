@@ -17,6 +17,7 @@ import {
   bffDeleteTripMemory,
   bffDisableTripMemoryShareLink,
   bffEnableTripMemoryShareLink,
+  bffFetchTripMemoryAssetBlob,
   bffListMemoryMusicTracks,
   bffListTripMemories,
   bffUpdateTripMemory,
@@ -126,6 +127,24 @@ describe("memories-api", () => {
     );
     expect(bffMock.get).toHaveBeenCalledWith(
       "/api/trips/trip%201/memories/music-tracks",
+    );
+  });
+
+  it("fetches memory assets as blobs through the BFF route", async () => {
+    const signal = new AbortController().signal;
+    const posterBlob = new Blob(["poster"], { type: "image/webp" });
+    bffMock.get.mockResolvedValueOnce({ data: posterBlob });
+
+    await expect(
+      bffFetchTripMemoryAssetBlob("trip/1", "memory/1", "poster", { signal }),
+    ).resolves.toBe(posterBlob);
+
+    expect(bffMock.get).toHaveBeenCalledWith(
+      "/api/trips/trip%2F1/memories/memory%2F1/poster",
+      {
+        responseType: "blob",
+        signal,
+      },
     );
   });
 });

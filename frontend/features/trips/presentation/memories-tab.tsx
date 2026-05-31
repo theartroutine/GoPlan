@@ -34,15 +34,45 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/shared/ui/dialog";
-import { Spinner } from "@/shared/ui/spinner";
 
 const LOAD_ERROR = "Could not load trip memories.";
 const DELETE_ERROR = "Could not delete this memory video.";
 const POLL_INTERVAL_MS = 3_000;
+const LOADING_SKELETON_KEYS = ["primary", "secondary"] as const;
 
 function hasInProgressMemory(memories: TripMemoryVideo[]): boolean {
   return memories.some(
     (memory) => memory.status === "queued" || memory.status === "rendering",
+  );
+}
+
+function MemoryLoadingSkeleton() {
+  return (
+    <div className="space-y-3" role="status">
+      <span className="sr-only">Loading memories</span>
+      {LOADING_SKELETON_KEYS.map((key) => (
+        <div
+          className="memory-progress-border relative isolate overflow-hidden rounded-md border border-transparent p-[3px] shadow-md"
+          key={key}
+        >
+          <div className="relative z-10 flex flex-col gap-3 rounded-[4px] bg-card p-3 sm:flex-row sm:p-4">
+            <div className="aspect-video w-full animate-pulse rounded-md bg-muted sm:w-48 sm:shrink-0 lg:w-56" />
+            <div className="flex-1 space-y-3 py-1">
+              <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+              <div className="flex flex-wrap gap-2">
+                <div className="h-3 w-20 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-28 animate-pulse rounded bg-muted" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <div className="h-8 w-28 animate-pulse rounded-md bg-muted" />
+                <div className="h-8 w-20 animate-pulse rounded-md bg-muted" />
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -122,7 +152,10 @@ export function MemoriesTab() {
     if (!hasInProgressMemory(memories)) return;
 
     const interval = window.setInterval(() => {
-      void loadMemories({ cursors: loadedCursors });
+      // Poll silently: the per-card animated border already signals progress,
+      // and toggling a "Refreshing" banner every few seconds shifts the list
+      // layout and makes it flicker.
+      void loadMemories({ cursors: loadedCursors, showRefreshing: false });
     }, POLL_INTERVAL_MS);
 
     return () => {
@@ -224,9 +257,7 @@ export function MemoriesTab() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-16">
-          <Spinner />
-        </div>
+        <MemoryLoadingSkeleton />
       ) : null}
 
       {!loading && memories.length === 0 ? (
