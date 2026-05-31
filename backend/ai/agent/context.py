@@ -115,6 +115,7 @@ def _active_drafts_payload(*, trip) -> list[dict]:
             "status": d.status,
             "summary": d.summary,
             "missing_field_names": [f.get("name") for f in (d.missing_fields or []) if isinstance(f, dict)],
+            "missing_field_labels": [f.get("label") for f in (d.missing_fields or []) if isinstance(f, dict) and f.get("label")],
             "created_at": d.created_at.isoformat(),
         }
         for d in drafts

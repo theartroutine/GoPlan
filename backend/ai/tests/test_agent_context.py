@@ -242,7 +242,10 @@ class AgentContextTests(TestCase):
             action_type="timeline.create_activity",
             status=AIActionDraftStatus.NEEDS_INFO,
             summary="Activity X awaiting time",
-            missing_fields=[{"name": "start_time"}, {"name": "end_time"}],
+            missing_fields=[
+                {"name": "start_time", "label": "Start time"},
+                {"name": "end_time", "label": "End time"},
+            ],
             required_confirmation="CAPTAIN",
             payload={},
             preview={},
@@ -261,6 +264,8 @@ class AgentContextTests(TestCase):
         self.assertIn("status", draft)
         self.assertIn("missing_field_names", draft)
         self.assertEqual(draft["missing_field_names"], ["start_time", "end_time"])
+        self.assertIn("missing_field_labels", draft)
+        self.assertEqual(draft["missing_field_labels"], ["Start time", "End time"])
         self.assertEqual(draft["action_type"], "timeline.create_activity")
         self.assertEqual(draft["status"], AIActionDraftStatus.NEEDS_INFO)
 
