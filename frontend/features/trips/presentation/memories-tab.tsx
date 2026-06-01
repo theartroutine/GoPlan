@@ -288,16 +288,11 @@ export function MemoriesTab() {
 
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="flex items-baseline gap-2 text-base font-semibold">
-            Memories
-            {memories.length > 0 ? (
-              <span className="text-sm font-normal text-muted-foreground">
-                {memories.length} {memories.length === 1 ? "video" : "videos"}
-              </span>
-            ) : null}
-          </h2>
+          <h2 className="sr-only">Memories</h2>
           <p className="text-sm text-muted-foreground">
-            Create and manage private videos for this trip.
+            {memories.length > 0
+              ? `${memories.length} ${memories.length === 1 ? "video" : "videos"} in this trip.`
+              : "Create and manage private videos for this trip."}
           </p>
         </div>
         <Button type="button" onClick={() => setCreateOpen(true)}>

@@ -251,7 +251,7 @@ export function MemoryVideoCard({
         </div>
 
         <div className="flex flex-1 flex-col gap-1.5 p-3">
-          <h2 className="truncate text-sm font-semibold">{title}</h2>
+          <h3 className="truncate text-sm font-semibold">{title}</h3>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <Images className="size-3.5" />
