@@ -51,10 +51,16 @@ function memory(overrides: Partial<TripMemoryVideo> = {}): TripMemoryVideo {
 }
 
 function openMenu() {
+  // Radix's uncontrolled DropdownMenu opens on pointerDown (button 0, ctrlKey false).
+  // We stop at pointerUp — a trailing click would re-toggle the menu closed.
   const trigger = screen.getByRole("button", { name: "Memory actions" });
   fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: "mouse" });
   fireEvent.pointerUp(trigger, { button: 0, pointerType: "mouse" });
-  fireEvent.click(trigger);
+}
+
+function closeMenu() {
+  // Press Escape to close the uncontrolled Radix menu when it is open.
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
 }
 
 describe("MemoryVideoCard", () => {
@@ -107,6 +113,8 @@ describe("MemoryVideoCard", () => {
     expect(
       within(screen.getByRole("menu")).getByRole("menuitem", { name: "Download" }),
     ).toHaveAttribute("href", "/api/trips/trip_1/memories/memory_1/download");
+    // Close menu before re-opening; Radix toggle on pointerDown would shut it if already open.
+    closeMenu();
 
     openMenu();
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete memory" }));

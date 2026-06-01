@@ -87,10 +87,6 @@ export function MemoryVideoCard({
   onShare,
 }: MemoryVideoCardProps) {
   const [posterPreview, setPosterPreview] = useState<PosterPreviewState | null>(null);
-  // Controlled open state so the trigger's click event can reliably open the menu in tests
-  // (Radix's pointerDown-based toggle doesn't play well with jsdom's missing DismissableLayer
-  // setTimeout tick, so we drive open state via onClick="always open" + Radix's onOpenChange).
-  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const title = memory.title.trim() || "Untitled memory";
   const duration = formatDuration(memory.duration_seconds);
   const isReady = memory.status === "ready";
@@ -208,19 +204,13 @@ export function MemoryVideoCard({
             </span>
           ) : null}
 
+          {/* modal={false}: avoids body-scroll lock and focus-trap on this small corner menu — deliberate UX choice. */}
           {hasMenu ? (
-            <DropdownMenu
-              modal={false}
-              open={actionsMenuOpen}
-              onOpenChange={setActionsMenuOpen}
-            >
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button
                   aria-label="Memory actions"
                   className="absolute right-2 top-2 size-8 bg-background/80 backdrop-blur hover:bg-background"
-                  // Drive open state via onClick so the menu reliably opens when the trigger
-                  // is clicked regardless of prior open state (avoids jsdom toggle race).
-                  onClick={() => setActionsMenuOpen(true)}
                   size="icon-sm"
                   type="button"
                   variant="secondary"
