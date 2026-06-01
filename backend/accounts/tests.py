@@ -1351,7 +1351,10 @@ class ChangePasswordAPITests(APITestCase):
 # -------- Throttle Smoke Tests --------
 
 from django.core.cache import cache as _throttle_cache
+from django.test import override_settings
 from rest_framework.throttling import ScopedRateThrottle
+
+from accounts.throttling import DevBypassScopedRateThrottle, DevBypassUserRateThrottle
 
 
 class AvatarThrottleTests(APITestCase):
@@ -1393,3 +1396,61 @@ class PasswordChangeThrottleTests(APITestCase):
                 format="json",
             )
             self.assertEqual(response.status_code, 429)
+
+
+class DevThrottleBypassTests(AuthAPITestCase):
+    def setUp(self) -> None:
+        _throttle_cache.clear()
+
+    @override_settings(DEBUG=True, DEV_THROTTLE_BYPASS_EMAILS=("a@email.com",))
+    def test_debug_bypass_allows_repeated_login_for_configured_email(self):
+        self.create_verified_user(email="a@email.com", password="StrongPass#2026")
+        rates = {**DevBypassScopedRateThrottle.THROTTLE_RATES, "auth_login": "1/hour"}
+
+        with patch.object(DevBypassScopedRateThrottle, "THROTTLE_RATES", rates):
+            first = self.client.post(
+                self.login_url,
+                {"email": "A@Email.com", "password": "StrongPass#2026"},
+                format="json",
+            )
+            second = self.client.post(
+                self.login_url,
+                {"email": "a@email.com", "password": "StrongPass#2026"},
+                format="json",
+            )
+
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+
+    @override_settings(DEBUG=False, DEV_THROTTLE_BYPASS_EMAILS=("a@email.com",))
+    def test_bypass_is_disabled_when_debug_is_false(self):
+        self.create_verified_user(email="a@email.com", password="StrongPass#2026")
+        rates = {**DevBypassScopedRateThrottle.THROTTLE_RATES, "auth_login": "1/hour"}
+
+        with patch.object(DevBypassScopedRateThrottle, "THROTTLE_RATES", rates):
+            first = self.client.post(
+                self.login_url,
+                {"email": "a@email.com", "password": "StrongPass#2026"},
+                format="json",
+            )
+            second = self.client.post(
+                self.login_url,
+                {"email": "a@email.com", "password": "StrongPass#2026"},
+                format="json",
+            )
+
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    @override_settings(DEBUG=True, DEV_THROTTLE_BYPASS_EMAILS=("a@email.com",))
+    def test_debug_bypass_allows_repeated_authenticated_requests(self):
+        user = self.create_verified_user(email="a@email.com", password="StrongPass#2026")
+        self.client.force_authenticate(user=user)
+        rates = {**DevBypassUserRateThrottle.THROTTLE_RATES, "user": "1/hour"}
+
+        with patch.object(DevBypassUserRateThrottle, "THROTTLE_RATES", rates):
+            first = self.client.get(self.me_url)
+            second = self.client.get(self.me_url)
+
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)

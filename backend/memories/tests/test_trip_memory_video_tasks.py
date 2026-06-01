@@ -25,7 +25,7 @@ from memories.models import (
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
-MUSIC_KEY = "sunrise-road"
+MUSIC_KEY = "life-of-riley"
 
 
 def _make_trip(captain, *, name="Memory Render Trip") -> Trip:
@@ -359,6 +359,15 @@ class MemoryVideoRenderingHelperTests(TestCase):
         self.override.disable()
         self.tempdir.cleanup()
 
+    @staticmethod
+    def _final_mux_call(run):
+        """Return the args of the final concat/mux ffmpeg invocation."""
+        for call in run.call_args_list:
+            args = call.args[0]
+            if "concat" in args and ("-stream_loop" in args or "lavfi" in args):
+                return args
+        raise AssertionError("No final mux ffmpeg call was recorded.")
+
     @patch("memories.memory_video_rendering.subprocess.run")
     def test_ffmpeg_args_use_required_profile_audio_track_and_list_form(self, run):
         from memories.memory_video_rendering import render_memory_video
@@ -378,14 +387,20 @@ class MemoryVideoRenderingHelperTests(TestCase):
                 music_key=MUSIC_KEY,
             )
 
-        first_call_args = run.call_args_list[0].args[0]
-        first_call_kwargs = run.call_args_list[0].kwargs
-        self.assertIsInstance(first_call_args, list)
-        self.assertIn("libx264", first_call_args)
-        self.assertIn("aac", first_call_args)
-        self.assertIn("yuv420p", first_call_args)
-        # The track has a bundled asset, so the render loops the real file
-        # rather than the synth fallback.
+        # Stage 1 renders each photo into its own cinematic clip.
+        clip_args = run.call_args_list[0].args[0]
+        clip_joined = " ".join(clip_args)
+        self.assertIsInstance(clip_args, list)
+        self.assertIn("-filter_complex", clip_args)
+        self.assertIn("zoompan", clip_joined)
+        self.assertIn("overlay", clip_joined)
+        self.assertIn("gblur", clip_joined)
+        self.assertIn("libx264", clip_args)
+
+        # The final mux carries the looped CC0 track and bounds it with -t
+        # (never -shortest, which OOMs against an infinite audio loop).
+        final_args = self._final_mux_call(run)
+        final_joined = " ".join(final_args)
         from memories.music_catalog import (
             get_memory_music_track,
             resolve_music_asset_path,
@@ -393,16 +408,22 @@ class MemoryVideoRenderingHelperTests(TestCase):
 
         asset_path = resolve_music_asset_path(get_memory_music_track(MUSIC_KEY))
         self.assertIsNotNone(asset_path)
-        self.assertIn("-stream_loop", first_call_args)
-        self.assertIn(str(asset_path), first_call_args)
-        self.assertIn("-af", first_call_args)
-        self.assertIn("afade=t=out", " ".join(first_call_args))
-        self.assertNotIn("anullsrc", " ".join(first_call_args))
-        self.assertIn(str(output_video), first_call_args)
-        self.assertNotIsInstance(first_call_args, str)
-        self.assertEqual(first_call_kwargs["stdout"], subprocess.DEVNULL)
-        self.assertEqual(first_call_kwargs["stderr"], subprocess.DEVNULL)
-        self.assertEqual(first_call_kwargs["timeout"], 540)
+        self.assertIn("-stream_loop", final_args)
+        self.assertIn(str(asset_path), final_args)
+        self.assertNotIn("-shortest", final_args)
+        self.assertIn("-t", final_args)
+        self.assertIn("aac", final_args)
+        self.assertIn("yuv420p", final_args)
+        self.assertIn("afade=t=out", final_joined)
+        self.assertNotIn("anullsrc", final_joined)
+        self.assertIn(str(output_video), final_args)
+        self.assertNotIsInstance(final_args, str)
+
+        # Every ffmpeg call is silenced and bounded by the configured timeout.
+        for call in run.call_args_list:
+            self.assertEqual(call.kwargs["stdout"], subprocess.DEVNULL)
+            self.assertEqual(call.kwargs["stderr"], subprocess.DEVNULL)
+            self.assertEqual(call.kwargs["timeout"], 540)
 
     @patch("memories.memory_video_rendering.resolve_music_asset_path", return_value=None)
     @patch("memories.memory_video_rendering.subprocess.run")
@@ -424,9 +445,108 @@ class MemoryVideoRenderingHelperTests(TestCase):
                 music_key=MUSIC_KEY,
             )
 
-        first_call_args = run.call_args_list[0].args[0]
+        final_args = self._final_mux_call(run)
         # With no bundled asset, the render still produces audible video via the
         # synth fallback (lavfi) rather than a silent track.
-        self.assertIn("lavfi", first_call_args)
-        self.assertNotIn("-stream_loop", first_call_args)
-        self.assertNotIn("anullsrc", " ".join(first_call_args))
+        self.assertIn("lavfi", final_args)
+        self.assertNotIn("-stream_loop", final_args)
+        self.assertNotIn("anullsrc", " ".join(final_args))
+
+    def test_clip_render_args_have_no_crossfade(self) -> None:
+        from memories.memory_video_rendering import (
+            _build_clip_render_args,
+            _load_profile,
+        )
+
+        with self.settings(TRIP_MEMORY_SECONDS_PER_PHOTO=4):
+            profile = _load_profile()
+            args = _build_clip_render_args(
+                image_path=Path("/tmp/p.webp"),
+                index=0,
+                output_path=Path("/tmp/clip.mp4"),
+                profile=profile,
+            )
+
+        joined = " ".join(args)
+        # A single clip carries Ken Burns motion but no transition or audio.
+        self.assertIn("zoompan", joined)
+        self.assertNotIn("xfade", joined)
+        self.assertIn("-an", args)
+
+    def test_transition_args_crossfade_only_clip_edges(self) -> None:
+        from memories.memory_video_rendering import (
+            _build_transition_args,
+            _load_profile,
+        )
+
+        with self.settings(
+            TRIP_MEMORY_SECONDS_PER_PHOTO=4,
+            TRIP_MEMORY_TRANSITION_SECONDS=0.8,
+        ):
+            profile = _load_profile()
+            args = _build_transition_args(
+                prev_clip_path=Path("/tmp/a.mp4"),
+                next_clip_path=Path("/tmp/b.mp4"),
+                output_path=Path("/tmp/t.mp4"),
+                profile=profile,
+            )
+
+        joined = " ".join(args)
+        # Only the 0.8s touching edges feed xfade, so memory stays bounded.
+        self.assertIn("xfade=transition=fade", joined)
+        self.assertIn("duration=0.8", joined)
+        # The previous clip is seeked to its final 0.8s (tail at 4 - 0.8 = 3.2).
+        self.assertIn("3.2", joined)
+        self.assertEqual(args.count("-i"), 2)
+
+    def test_concat_lines_interleave_bodies_and_transitions(self) -> None:
+        from memories.memory_video_rendering import (
+            _build_concat_lines,
+            _load_profile,
+        )
+
+        clips = [Path(f"/tmp/clip-{i}.mp4") for i in range(3)]
+        transitions = [Path(f"/tmp/trans-{i}.mp4") for i in range(2)]
+        with self.settings(
+            TRIP_MEMORY_SECONDS_PER_PHOTO=4,
+            TRIP_MEMORY_TRANSITION_SECONDS=0.8,
+        ):
+            profile = _load_profile()
+            lines = _build_concat_lines(
+                clip_paths=clips,
+                transition_paths=transitions,
+                profile=profile,
+            )
+
+        text = "\n".join(lines)
+        # body0 -> trans0 -> body1 -> trans1 -> body2.
+        for clip in clips:
+            self.assertIn(str(clip), text)
+        for transition in transitions:
+            self.assertIn(str(transition), text)
+        # First clip stops where its outgoing transition begins (4 - 0.8 = 3.2).
+        self.assertIn("outpoint 3.2", text)
+        # Following clips start after the incoming transition edge.
+        self.assertIn("inpoint 0.8", text)
+        # Total duration = 3*4 - 2*0.8 = 10.4 seconds.
+        self.assertAlmostEqual(profile.total_duration(3), 10.4, places=6)
+
+    def test_single_photo_concat_has_only_the_clip(self) -> None:
+        from memories.memory_video_rendering import (
+            _build_concat_lines,
+            _load_profile,
+        )
+
+        with self.settings(TRIP_MEMORY_SECONDS_PER_PHOTO=4):
+            profile = _load_profile()
+            lines = _build_concat_lines(
+                clip_paths=[Path("/tmp/only.mp4")],
+                transition_paths=[],
+                profile=profile,
+            )
+
+        text = "\n".join(lines)
+        self.assertIn("/tmp/only.mp4", text)
+        self.assertNotIn("inpoint", text)
+        self.assertNotIn("outpoint", text)
+        self.assertAlmostEqual(profile.total_duration(1), 4, places=6)

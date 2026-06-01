@@ -15,6 +15,15 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 EXPECTED=(
+  # Active set (Kevin MacLeod, CC-BY 4.0)
+  "life-of-riley.mp3"
+  "carefree.mp3"
+  "wallpaper.mp3"
+  "pixelland.mp3"
+  "jaunty-gumption.mp3"
+  "monkeys-spinning-monkeys.mp3"
+  "funkorama.mp3"
+  # Retired set (Komiku / Loyalty Freak Music, CC0) — disabled in the catalog
   "intro-adventure.ogg"
   "the-adventure.ogg"
   "arcade-adventure.mp3"

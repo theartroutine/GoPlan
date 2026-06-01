@@ -20,6 +20,11 @@ def env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_list(name: str) -> tuple[str, ...]:
+    raw = os.environ.get(name, "")
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
 # -------- Core Flags --------
 DEBUG = os.environ.get('DJANGO_DEBUG') == '1'
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
@@ -30,6 +35,7 @@ if not DEBUG and not (_RAW_FRONTEND_BASE_URL or _RAW_PUBLIC_APP_BASE_URL):
     raise RuntimeError("Set PUBLIC_APP_BASE_URL or FRONTEND_BASE_URL in production.")
 FRONTEND_BASE_URL = _RAW_FRONTEND_BASE_URL or 'http://localhost:3000'
 PUBLIC_APP_BASE_URL = (_RAW_PUBLIC_APP_BASE_URL or FRONTEND_BASE_URL).rstrip('/')
+DEV_THROTTLE_BYPASS_EMAILS = env_list("DEV_THROTTLE_BYPASS_EMAILS") if DEBUG else ()
 
 # -------- Installed Apps --------
 INSTALLED_APPS = [
@@ -157,7 +163,14 @@ TRIP_MEMORY_RENDER_QUEUE = "memory_render"
 TRIP_MEMORY_VIDEO_WIDTH = 1920
 TRIP_MEMORY_VIDEO_HEIGHT = 1080
 TRIP_MEMORY_VIDEO_FPS = 30
-TRIP_MEMORY_SECONDS_PER_PHOTO = 3
+TRIP_MEMORY_SECONDS_PER_PHOTO = 4
+# Cinematic render tuning (Ken Burns motion + crossfade + blurred fill).
+TRIP_MEMORY_TRANSITION_SECONDS = 0.8
+TRIP_MEMORY_VIDEO_FADE_SECONDS = 0.8
+TRIP_MEMORY_KEN_BURNS_ZOOM = 0.12
+TRIP_MEMORY_KEN_BURNS_SUPERSAMPLE = 4.0
+TRIP_MEMORY_BACKGROUND_BLUR_SIGMA = 20
+TRIP_MEMORY_VIDEO_PRESET = "faster"
 TRIP_MEMORY_RENDER_STALE_SECONDS = 15 * 60
 TRIP_MEMORY_RENDER_ACTIVE_RETRY_MAX_RETRIES = 3
 TRIP_MEMORY_FFMPEG_TIMEOUT_SECONDS = 540
@@ -191,9 +204,9 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     'DEFAULT_THROTTLE_CLASSES': (
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle',
-        'rest_framework.throttling.ScopedRateThrottle',
+        'accounts.throttling.DevBypassAnonRateThrottle',
+        'accounts.throttling.DevBypassUserRateThrottle',
+        'accounts.throttling.DevBypassScopedRateThrottle',
     ),
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',

@@ -1,10 +1,57 @@
 # Music provenance
 
-All tracks currently enabled in `music_catalog.py` are CC0 1.0 / Public Domain.
-CC0 does not require attribution, but this file records source and license data
-for auditability.
+This file records source and license data for every bundled track, for
+auditability and to satisfy CC-BY attribution requirements.
 
-## Tracks in use
+The render picks one **enabled** track at random per memory video. The active
+set below is CC-BY 4.0 (Kevin MacLeod / incompetech.com); attribution is shown
+to listeners via the music summary serializer (picker, viewer, share page).
+
+## Active set — Kevin MacLeod, CC-BY 4.0
+
+License for all: CC-BY 4.0 — https://creativecommons.org/licenses/by/4.0/
+Attribution: "Music by Kevin MacLeod (incompetech.com)".
+
+### life-of-riley.mp3
+- Title: Life of Riley
+- Artist: Kevin MacLeod
+- Source: https://incompetech.com/music/royalty-free/mp3-royaltyfree/Life%20of%20Riley.mp3
+
+### carefree.mp3
+- Title: Carefree
+- Artist: Kevin MacLeod
+- Source: https://incompetech.com/music/royalty-free/mp3-royaltyfree/Carefree.mp3
+
+### wallpaper.mp3
+- Title: Wallpaper
+- Artist: Kevin MacLeod
+- Source: https://incompetech.com/music/royalty-free/mp3-royaltyfree/Wallpaper.mp3
+
+### pixelland.mp3
+- Title: Pixelland
+- Artist: Kevin MacLeod
+- Source: https://incompetech.com/music/royalty-free/mp3-royaltyfree/Pixelland.mp3
+
+### jaunty-gumption.mp3
+- Title: Jaunty Gumption
+- Artist: Kevin MacLeod
+- Source: https://incompetech.com/music/royalty-free/mp3-royaltyfree/Jaunty%20Gumption.mp3
+
+### monkeys-spinning-monkeys.mp3
+- Title: Monkeys Spinning Monkeys
+- Artist: Kevin MacLeod
+- Source: https://incompetech.com/music/royalty-free/mp3-royaltyfree/Monkeys%20Spinning%20Monkeys.mp3
+
+### funkorama.mp3
+- Title: Funkorama
+- Artist: Kevin MacLeod
+- Source: https://incompetech.com/music/royalty-free/mp3-royaltyfree/Funkorama.mp3
+
+## Retired set — Komiku / Loyalty Freak Music, CC0 1.0
+
+Disabled in `music_catalog.py` (`enabled=False`) because the mood was too mellow
+for an energetic recap. Files are kept for provenance and easy re-enabling. CC0
+1.0 — https://creativecommons.org/publicdomain/zero/1.0/ (no attribution required).
 
 ### intro-adventure.ogg
 - Title: Introduction to your adventure

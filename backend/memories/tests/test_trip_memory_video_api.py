@@ -19,7 +19,7 @@ from memories.serializers import TripMemoryVideoSerializer
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
-MUSIC_KEY = "sunrise-road"
+MUSIC_KEY = "life-of-riley"
 
 
 def _auth(user):
@@ -532,7 +532,13 @@ class TripMemoryVideoAPITests(APITestCase):
             "silent-placeholder",
             {track["key"] for track in response.data["tracks"]},
         )
-        self.assertTrue(all(track["license"] == "CC0 1.0" for track in response.data["tracks"]))
+        for track in response.data["tracks"]:
+            self.assertIn(track["license"], {"CC0 1.0", "CC-BY 4.0"})
+            if track["license"] == "CC-BY 4.0":
+                # CC-BY tracks must expose attribution to listeners.
+                self.assertTrue(track["artist"])
+                self.assertTrue(track["license_url"])
+                self.assertTrue(track["source_url"])
 
     def test_failed_memory_response_includes_render_error(self):
         memory = TripMemoryVideo.objects.create(

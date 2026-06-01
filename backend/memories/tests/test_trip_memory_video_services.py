@@ -32,7 +32,7 @@ from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 from trips.services import TripTerminalError
 
-MUSIC_KEY = "sunrise-road"
+MUSIC_KEY = "life-of-riley"
 
 
 def _make_trip(captain, *, status=TripStatus.PLANNING, name="Memory Trip") -> Trip:
@@ -132,11 +132,18 @@ class TripMemoryVideoServiceTests(TestCase):
         self.assertNotIn("silent-placeholder", {track.key for track in tracks})
         self.assertTrue(all(track.enabled for track in tracks))
         self.assertTrue(all(not track.placeholder for track in tracks))
-        self.assertTrue(all(track.license == "CC0 1.0" for track in tracks))
+        # Only redistribution-safe licenses are allowed; CC-BY tracks must also
+        # carry the attribution data the serializer surfaces to listeners.
+        for track in tracks:
+            self.assertIn(track.license, {"CC0 1.0", "CC-BY 4.0"})
+            if track.license == "CC-BY 4.0":
+                self.assertTrue(track.artist)
+                self.assertTrue(track.license_url)
+                self.assertTrue(track.source_url)
 
     @patch("memories.memory_video_services.secrets.choice")
     def test_create_memory_randomly_assigns_music_when_key_is_omitted(self, choice):
-        selected_track = get_memory_music_track("traveling-mind")
+        selected_track = get_memory_music_track("carefree")
         self.assertIsNotNone(selected_track)
         choice.return_value = selected_track
         photos = self._photos(5)
@@ -150,7 +157,7 @@ class TripMemoryVideoServiceTests(TestCase):
         )
 
         choice.assert_called_once()
-        self.assertEqual(memory.music_key, "traveling-mind")
+        self.assertEqual(memory.music_key, "carefree")
 
     def test_manual_create_rejects_fewer_than_five_photos(self):
         photos = self._photos(4)

@@ -4,9 +4,29 @@ Background music used when rendering trip memory videos.
 
 ## Current catalog
 
-The MVP catalog is intentionally CC0/Public Domain only and tuned for bright,
-upbeat travel/adventure memories. The backend chooses one enabled track at
-memory creation time; users do not pick music in the create flow.
+The active catalog is tuned for a bright, energetic, fun travel-recap mood. The
+backend chooses one **enabled** track at random at memory creation time; users
+do not pick music in the create flow.
+
+### Active set — Kevin MacLeod (incompetech.com), CC-BY 4.0
+
+Attribution is required and is surfaced to listeners via the music summary
+serializer (picker, viewer, share page).
+
+| catalog key | file | source |
+|-------------|------|--------|
+| `life-of-riley` | `life-of-riley.mp3` | Kevin MacLeod - Life of Riley |
+| `carefree` | `carefree.mp3` | Kevin MacLeod - Carefree |
+| `wallpaper` | `wallpaper.mp3` | Kevin MacLeod - Wallpaper |
+| `pixelland` | `pixelland.mp3` | Kevin MacLeod - Pixelland |
+| `jaunty-gumption` | `jaunty-gumption.mp3` | Kevin MacLeod - Jaunty Gumption |
+| `monkeys-spinning` | `monkeys-spinning-monkeys.mp3` | Kevin MacLeod - Monkeys Spinning Monkeys |
+| `funkorama` | `funkorama.mp3` | Kevin MacLeod - Funkorama |
+
+### Retired set — Komiku / Loyalty Freak Music, CC0 1.0
+
+Disabled in `music_catalog.py` (`enabled=False`); files kept for provenance and
+easy re-enabling.
 
 | catalog key | file | source |
 |-------------|------|--------|

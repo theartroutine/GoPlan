@@ -18,7 +18,7 @@ from memories.models import (
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 
-MUSIC_KEY = "sunrise-road"
+MUSIC_KEY = "life-of-riley"
 
 
 def _auth(user):
