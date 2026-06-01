@@ -33,6 +33,13 @@ function memoryAssetPath(
   return `/api/trips/${encodeURIComponent(tripId)}/memories/${encodeURIComponent(memoryId)}/${variant}`;
 }
 
+function formatDuration(seconds: number | null): string | null {
+  if (seconds === null) return null;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return `${minutes}:${remaining.toString().padStart(2, "0")}`;
+}
+
 function formatDownloadFileName(title: string): string {
   const slug = title
     .toLowerCase()
@@ -96,6 +103,7 @@ function useMemoryAssetBlobUrl({
 
 export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewerProps) {
   const title = memory.title.trim() || "Trip memory";
+  const duration = formatDuration(memory.duration_seconds);
   const isReady = memory.status === "ready";
   const posterAsset = useMemoryAssetBlobUrl({
     enabled: isReady,
@@ -122,6 +130,7 @@ export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewer
           <h2 className="text-lg font-semibold">{title}</h2>
           <p className="text-sm text-muted-foreground">
             {memory.source_photo_count} photos
+            {duration ? ` · ${duration}` : ""}
           </p>
         </div>
         <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>
