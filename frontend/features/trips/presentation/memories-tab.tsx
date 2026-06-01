@@ -11,6 +11,7 @@ import { getTripMemoryErrorMessage } from "@/features/trips/domain/memory-errors
 import {
   bffDeleteTripMemory,
   bffListTripMemories,
+  bffListTripMemoryStatuses,
 } from "@/features/trips/infrastructure/memories-api";
 import { CreateMemoryDialog } from "@/features/trips/presentation/create-memory-dialog";
 import { MemoryVideoCard } from "@/features/trips/presentation/memory-video-card";
@@ -37,13 +38,19 @@ import {
 
 const LOAD_ERROR = "Could not load trip memories.";
 const DELETE_ERROR = "Could not delete this memory video.";
-const POLL_INTERVAL_MS = 3_000;
+const POLL_INTERVAL_MS = 15_000;
 const LOADING_SKELETON_KEYS = ["primary", "secondary"] as const;
 
 function hasInProgressMemory(memories: TripMemoryVideo[]): boolean {
   return memories.some(
     (memory) => memory.status === "queued" || memory.status === "rendering",
   );
+}
+
+function inProgressMemoryIds(memories: TripMemoryVideo[]): string[] {
+  return memories
+    .filter((memory) => memory.status === "queued" || memory.status === "rendering")
+    .map((memory) => memory.id);
 }
 
 function MemoryLoadingSkeleton() {
@@ -93,6 +100,7 @@ export function MemoriesTab() {
   const [memoryPendingDelete, setMemoryPendingDelete] =
     useState<TripMemoryVideo | null>(null);
   const loadedCursorsRef = useRef<(string | null)[]>([null]);
+  const activeMemoryIdsRef = useRef<string[]>([]);
   const pollInFlightRef = useRef(false);
   const hasActiveMemory = hasInProgressMemory(memories);
 
@@ -134,7 +142,7 @@ export function MemoriesTab() {
     } catch (err) {
       if (!options.signal?.aborted) {
         setError(getTripMemoryErrorMessage(err, LOAD_ERROR));
-        setMemories([]);
+        if (options.showLoading) setMemories([]);
       }
     } finally {
       if (!options.signal?.aborted) {
@@ -157,26 +165,47 @@ export function MemoriesTab() {
   }, [loadedCursors]);
 
   useEffect(() => {
+    activeMemoryIdsRef.current = inProgressMemoryIds(memories);
+  }, [memories]);
+
+  useEffect(() => {
     if (!hasActiveMemory) return;
 
+    let stopped = false;
+    let controller: AbortController | null = null;
     const interval = window.setInterval(() => {
       if (pollInFlightRef.current) return;
+      const ids = activeMemoryIdsRef.current.slice(0, 10);
+      if (ids.length === 0) return;
+
       pollInFlightRef.current = true;
-      // Poll silently: the per-card animated border already signals progress,
-      // and toggling a "Refreshing" banner every few seconds shifts the list
-      // layout and makes it flicker.
-      void loadMemories({
-        cursors: loadedCursorsRef.current,
-        showRefreshing: false,
-      }).finally(() => {
-        pollInFlightRef.current = false;
-      });
+      controller = new AbortController();
+      void bffListTripMemoryStatuses(tripId, ids, {
+        signal: controller.signal,
+      })
+        .then(({ results }) => {
+          if (stopped || controller?.signal.aborted || results.length === 0) return;
+          const updates = new Map(results.map((memory) => [memory.id, memory]));
+          setMemories((current) =>
+            current.map((memory) => updates.get(memory.id) ?? memory),
+          );
+        })
+        .catch(() => {
+          // Background polling is best-effort. Keep the current list visible on
+          // transient network errors or throttles; the next tick can recover.
+        })
+        .finally(() => {
+          pollInFlightRef.current = false;
+        });
     }, POLL_INTERVAL_MS);
 
     return () => {
+      stopped = true;
+      controller?.abort();
+      pollInFlightRef.current = false;
       window.clearInterval(interval);
     };
-  }, [hasActiveMemory, loadMemories]);
+  }, [hasActiveMemory, tripId]);
 
   async function handleLoadMore() {
     if (!nextCursor || loadingMore) return;

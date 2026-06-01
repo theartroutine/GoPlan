@@ -7,8 +7,10 @@ const memoriesApiMock = vi.hoisted(() => ({
   bffCreateTripMemory: vi.fn(),
   bffDeleteTripMemory: vi.fn(),
   bffFetchTripMemoryAssetBlob: vi.fn(),
+  bffGetTripMemoryCreateOptions: vi.fn(),
   bffListMemoryMusicTracks: vi.fn(),
   bffListTripMemories: vi.fn(),
+  bffListTripMemoryStatuses: vi.fn(),
 }));
 
 const photosApiMock = vi.hoisted(() => ({
@@ -76,6 +78,13 @@ describe("MemoriesTab", () => {
     memoriesApiMock.bffFetchTripMemoryAssetBlob.mockResolvedValue(
       new Blob(["poster"], { type: "image/webp" }),
     );
+    memoriesApiMock.bffGetTripMemoryCreateOptions.mockResolvedValue({
+      photo_limits: {
+        min: 5,
+        max: 50,
+        auto_pick: 20,
+      },
+    });
     photosApiMock.bffListTripPhotos.mockResolvedValue({
       results: [],
       nextCursor: null,
@@ -180,21 +189,17 @@ describe("MemoriesTab", () => {
 
   it("polls while memories are queued or rendering and stops after terminal results", async () => {
     vi.useFakeTimers();
-    memoriesApiMock.bffListTripMemories
+    memoriesApiMock.bffListTripMemories.mockResolvedValueOnce({
+      results: [memory({ status: "queued" })],
+      nextCursor: null,
+      previousCursor: null,
+    });
+    memoriesApiMock.bffListTripMemoryStatuses
       .mockResolvedValueOnce({
-        results: [memory({ status: "queued" })],
-        nextCursor: null,
-        previousCursor: null,
+        results: [memory({ status: "rendering", updated_at: "2026-05-24T01:02:00Z" })],
       })
       .mockResolvedValueOnce({
-        results: [memory({ status: "rendering" })],
-        nextCursor: null,
-        previousCursor: null,
-      })
-      .mockResolvedValueOnce({
-        results: [memory({ status: "ready" })],
-        nextCursor: null,
-        previousCursor: null,
+        results: [memory({ status: "ready", updated_at: "2026-05-24T01:03:00Z" })],
       });
 
     render(<MemoriesTab />);
@@ -206,35 +211,40 @@ describe("MemoriesTab", () => {
     expect(screen.getByTestId("memory-card-memory_1")).toHaveAttribute("aria-busy", "true");
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(15_000);
     });
-    expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(2);
+    expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(1);
+    expect(memoriesApiMock.bffListTripMemoryStatuses).toHaveBeenCalledWith(
+      "trip_1",
+      ["memory_1"],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(screen.getByTestId("memory-card-memory_1")).toHaveAttribute("aria-busy", "true");
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(15_000);
     });
-    expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(3);
+    expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(1);
+    expect(memoriesApiMock.bffListTripMemoryStatuses).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("memory-card-memory_1")).not.toHaveAttribute("aria-busy");
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(15_000);
     });
-    expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(3);
+    expect(memoriesApiMock.bffListTripMemoryStatuses).toHaveBeenCalledTimes(2);
   });
 
   it("does not recreate the polling interval on every in-progress update", async () => {
     vi.useFakeTimers();
     const setIntervalSpy = vi.spyOn(window, "setInterval");
-    memoriesApiMock.bffListTripMemories
-      .mockResolvedValueOnce({
-        results: [memory({ status: "queued" })],
-        nextCursor: null,
-        previousCursor: null,
-      })
-      .mockResolvedValueOnce({
-        results: [memory({ status: "rendering" })],
-        nextCursor: null,
-        previousCursor: null,
-      });
+    memoriesApiMock.bffListTripMemories.mockResolvedValueOnce({
+      results: [memory({ status: "queued" })],
+      nextCursor: null,
+      previousCursor: null,
+    });
+    memoriesApiMock.bffListTripMemoryStatuses.mockResolvedValueOnce({
+      results: [memory({ status: "rendering", updated_at: "2026-05-24T01:02:00Z" })],
+    });
 
     render(<MemoriesTab />);
 
@@ -245,11 +255,38 @@ describe("MemoriesTab", () => {
     expect(setIntervalSpy).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(15_000);
     });
 
-    expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(2);
+    expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(1);
+    expect(memoriesApiMock.bffListTripMemoryStatuses).toHaveBeenCalledTimes(1);
     expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps visible memories when silent status polling fails", async () => {
+    vi.useFakeTimers();
+    memoriesApiMock.bffListTripMemories.mockResolvedValueOnce({
+      results: [memory({ status: "rendering" })],
+      nextCursor: null,
+      previousCursor: null,
+    });
+    memoriesApiMock.bffListTripMemoryStatuses.mockRejectedValueOnce(new Error("rate limit"));
+
+    render(<MemoriesTab />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Da Nang recap")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+
+    expect(screen.getByText("Da Nang recap")).toBeInTheDocument();
+    expect(screen.queryByText("Could not load trip memories.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No memories yet.")).not.toBeInTheDocument();
   });
 
   it("inserts a created memory into the list", async () => {

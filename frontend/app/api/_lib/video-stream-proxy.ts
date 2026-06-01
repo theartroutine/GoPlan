@@ -74,6 +74,7 @@ function isStreamableMediaResponse(upstream: Response): boolean {
 function streamResponse(
   upstream: Response,
   refreshedAccessToken: string | null,
+  options: { forceNoStore?: boolean } = {},
 ): NextResponse {
   const headers = new Headers();
   for (const headerName of STREAM_HEADER_NAMES) {
@@ -86,7 +87,9 @@ function streamResponse(
     headers,
   });
 
-  setNoStoreHeaders(response);
+  if (options.forceNoStore ?? true) {
+    setNoStoreHeaders(response);
+  }
 
   if (refreshedAccessToken) {
     response.headers.set("X-Access-Token", refreshedAccessToken);
@@ -99,9 +102,10 @@ async function finalizeStreamResponse(
   upstream: Response,
   fallbackDetail: string,
   refreshedAccessToken: string | null,
+  options: { forceNoStore?: boolean } = {},
 ): Promise<NextResponse> {
   if (isStreamableMediaResponse(upstream)) {
-    return streamResponse(upstream, refreshedAccessToken);
+    return streamResponse(upstream, refreshedAccessToken, options);
   }
 
   if (!upstream.ok) {
@@ -152,5 +156,7 @@ export async function proxyPublicVideoStream({
     );
   }
 
-  return finalizeStreamResponse(upstream, fallbackDetail, null);
+  return finalizeStreamResponse(upstream, fallbackDetail, null, {
+    forceNoStore: false,
+  });
 }

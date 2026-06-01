@@ -347,7 +347,7 @@ class TripMemoryVideoServiceTests(TestCase):
                     music_key=MUSIC_KEY,
                 )
 
-        self.assertEqual(ctx.exception.error_code, "MEMORY_RENDER_ALREADY_RUNNING")
+        self.assertEqual(ctx.exception.error_code, "MEMORY_RENDER_TRIP_LIMIT_REACHED")
 
     def test_creator_can_manage_own_memory(self):
         memory = TripMemoryVideo.objects.create(

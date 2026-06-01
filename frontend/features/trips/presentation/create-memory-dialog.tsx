@@ -4,11 +4,15 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type {
+  MemoryPhotoLimits,
   TripMemorySourceMode,
   TripMemoryVideo,
 } from "@/features/trips/domain/memory-types";
 import { getTripMemoryErrorMessage } from "@/features/trips/domain/memory-errors";
-import { bffCreateTripMemory } from "@/features/trips/infrastructure/memories-api";
+import {
+  bffCreateTripMemory,
+  bffGetTripMemoryCreateOptions,
+} from "@/features/trips/infrastructure/memories-api";
 import { MemoryPhotoPicker } from "@/features/trips/presentation/memory-photo-picker";
 import { Button } from "@/shared/ui/button";
 import {
@@ -28,10 +32,14 @@ type CreateMemoryDialogProps = {
 };
 
 const CREATE_ERROR = "Could not create memory video.";
+const OPTIONS_ERROR = "Could not load memory options.";
 
-function validateManualSelection(photoIds: string[]): string | null {
-  if (photoIds.length < 5 || photoIds.length > 50) {
-    return "Select between 5 and 50 photos.";
+function validateManualSelection(
+  photoIds: string[],
+  photoLimits: MemoryPhotoLimits,
+): string | null {
+  if (photoIds.length < photoLimits.min || photoIds.length > photoLimits.max) {
+    return `Select between ${photoLimits.min} and ${photoLimits.max} photos.`;
   }
   return null;
 }
@@ -45,25 +53,55 @@ export function CreateMemoryDialog({
   const [title, setTitle] = useState("");
   const [sourceMode, setSourceMode] = useState<TripMemorySourceMode>("manual");
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
+  const [photoLimits, setPhotoLimits] = useState<MemoryPhotoLimits | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       setTitle("");
       setSourceMode("manual");
       setSelectedPhotoIds([]);
+      setPhotoLimits(null);
       setError(null);
+      setOptionsError(null);
       setSubmitting(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const controller = new AbortController();
+    void bffGetTripMemoryCreateOptions(tripId, { signal: controller.signal })
+      .then((options) => {
+        if (controller.signal.aborted) return;
+        setPhotoLimits(options.photo_limits);
+        setOptionsError(null);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setPhotoLimits(null);
+          setOptionsError(OPTIONS_ERROR);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [open, tripId]);
 
   async function handleSubmit() {
     if (submitting) return;
 
     setError(null);
     if (sourceMode === "manual") {
-      const validationError = validateManualSelection(selectedPhotoIds);
+      if (!photoLimits) {
+        setError(OPTIONS_ERROR);
+        return;
+      }
+      const validationError = validateManualSelection(selectedPhotoIds, photoLimits);
       if (validationError) {
         setError(validationError);
         return;
@@ -103,6 +141,12 @@ export function CreateMemoryDialog({
             </div>
           ) : null}
 
+          {optionsError ? (
+            <div className="rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {optionsError}
+            </div>
+          ) : null}
+
           <label className="grid gap-1.5 text-sm">
             <span className="font-medium">Title</span>
             <input
@@ -137,13 +181,16 @@ export function CreateMemoryDialog({
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-medium">Photos</p>
                 <p className="text-xs text-muted-foreground">
-                  {selectedPhotoIds.length}/50 selected
+                  {photoLimits
+                    ? `${selectedPhotoIds.length}/${photoLimits.max} selected`
+                    : `${selectedPhotoIds.length} selected`}
                 </p>
               </div>
               <MemoryPhotoPicker
                 tripId={tripId}
                 selectedIds={selectedPhotoIds}
-                disabled={submitting}
+                maxSelectable={photoLimits?.max ?? 0}
+                disabled={submitting || !photoLimits}
                 onSelectionChange={setSelectedPhotoIds}
               />
             </div>
@@ -162,7 +209,7 @@ export function CreateMemoryDialog({
           </Button>
           <Button
             type="button"
-            disabled={submitting}
+            disabled={submitting || (sourceMode === "manual" && !photoLimits)}
             onClick={() => void handleSubmit()}
           >
             {submitting ? <Loader2 className="animate-spin" /> : null}

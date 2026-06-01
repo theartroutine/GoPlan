@@ -18,8 +18,10 @@ import {
   bffDisableTripMemoryShareLink,
   bffEnableTripMemoryShareLink,
   bffFetchTripMemoryAssetBlob,
+  bffGetTripMemoryCreateOptions,
   bffListMemoryMusicTracks,
   bffListTripMemories,
+  bffListTripMemoryStatuses,
   bffUpdateTripMemory,
 } from "@/features/trips/infrastructure/memories-api";
 
@@ -72,6 +74,36 @@ describe("memories-api", () => {
       params: { cursor: "current-page", page_size: 20 },
       signal,
     });
+  });
+
+  it("lists selected memory statuses through the status BFF route", async () => {
+    const signal = new AbortController().signal;
+    bffMock.get.mockResolvedValueOnce({ data: { results: [MEMORY] } });
+
+    await expect(
+      bffListTripMemoryStatuses("trip 1", ["memory 1", "memory/2"], { signal }),
+    ).resolves.toEqual({ results: [MEMORY] });
+
+    expect(bffMock.get).toHaveBeenCalledWith(
+      "/api/trips/trip%201/memories/status",
+      expect.objectContaining({ signal }),
+    );
+    const requestConfig = bffMock.get.mock.calls[0][1] as { params: URLSearchParams };
+    expect(requestConfig.params.toString()).toBe("ids=memory+1&ids=memory%2F2");
+  });
+
+  it("loads memory create options with photo limits", async () => {
+    bffMock.get.mockResolvedValueOnce({
+      data: { photo_limits: { min: 3, max: 12, auto_pick: 8 } },
+    });
+
+    await expect(bffGetTripMemoryCreateOptions("trip/1")).resolves.toEqual({
+      photo_limits: { min: 3, max: 12, auto_pick: 8 },
+    });
+
+    expect(bffMock.get).toHaveBeenCalledWith(
+      "/api/trips/trip%2F1/memories/create-options",
+    );
   });
 
   it("creates, updates, and deletes memories through encoded BFF routes", async () => {

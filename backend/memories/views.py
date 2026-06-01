@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from django.conf import settings
 from django.http import FileResponse
 from rest_framework import permissions, status
@@ -27,7 +29,9 @@ from memories.memory_video_services import (
     get_public_memory_video_file,
     get_trip_memory_video,
     list_memory_music_tracks,
+    list_trip_memory_video_statuses,
     list_trip_memory_videos,
+    memory_photo_limits,
     update_trip_memory_video,
 )
 from memories.memory_video_streaming import range_streaming_response, safe_mp4_filename
@@ -58,7 +62,9 @@ TRIP_PHOTO_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 TRIP_MEMORY_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 PUBLIC_MEMORY_NOT_FOUND_DETAIL = "Memory video not found."
 PUBLIC_MEMORY_NOT_FOUND_CODE = "MEMORY_NOT_FOUND"
-PUBLIC_MEMORY_CACHE_CONTROL = "no-store"
+PUBLIC_MEMORY_METADATA_CACHE_CONTROL = "no-store"
+PUBLIC_MEMORY_ASSET_CACHE_CONTROL = "public, max-age=300"
+MAX_MEMORY_STATUS_IDS = 10
 
 
 class TripPhotoPagination(CursorPagination):
@@ -137,6 +143,26 @@ def _memory_serializer_validation_error(errors) -> Response:
         error_code,
         status.HTTP_400_BAD_REQUEST,
     )
+
+
+def _parse_memory_status_ids(query_params) -> list[str]:
+    raw_ids = query_params.getlist("ids")
+    if len(raw_ids) > MAX_MEMORY_STATUS_IDS:
+        raise MemoryVideoValidationError(
+            "MEMORY_INVALID_REQUEST",
+            f"Request at most {MAX_MEMORY_STATUS_IDS} memory ids.",
+        )
+
+    parsed_ids = []
+    for raw_id in raw_ids:
+        try:
+            parsed_ids.append(str(uuid.UUID(str(raw_id))))
+        except (TypeError, ValueError) as exc:
+            raise MemoryVideoValidationError(
+                "MEMORY_INVALID_REQUEST",
+                "Memory status ids must be valid UUIDs.",
+            ) from exc
+    return parsed_ids
 
 
 def _public_memory_not_found_response() -> Response:
@@ -315,6 +341,52 @@ class TripMemoryVideoListCreateAPIView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class TripMemoryVideoStatusAPIView(APIView):
+    permission_classes = TRIP_MEMORY_PERMISSIONS
+    throttle_scope = "trip_memories_status"
+
+    def get(self, request, trip_id):
+        try:
+            memory_ids = _parse_memory_status_ids(request.query_params)
+            membership = _get_active_membership(trip_id, request.user)
+            memories = list_trip_memory_video_statuses(
+                trip_id=trip_id,
+                actor=request.user,
+                memory_ids=memory_ids,
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        return Response(
+            {
+                "results": TripMemoryVideoSerializer(
+                    memories,
+                    many=True,
+                    context=_memory_serializer_context(request, membership),
+                ).data
+            }
+        )
+
+
+class TripMemoryVideoCreateOptionsAPIView(APIView):
+    permission_classes = TRIP_MEMORY_PERMISSIONS
+    throttle_scope = "trip_memories_detail"
+
+    def get(self, request, trip_id):
+        try:
+            _get_active_membership(trip_id, request.user)
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        return Response({"photo_limits": memory_photo_limits()})
 
 
 class TripMemoryVideoDetailAPIView(APIView):
@@ -548,7 +620,7 @@ class PublicTripMemoryVideoDetailAPIView(APIView):
             context={"request": request},
         )
         response = Response(serializer.data)
-        response.headers["Cache-Control"] = PUBLIC_MEMORY_CACHE_CONTROL
+        response.headers["Cache-Control"] = PUBLIC_MEMORY_METADATA_CACHE_CONTROL
         return response
 
 
@@ -567,7 +639,7 @@ class PublicTripMemoryVideoAssetAPIView(APIView):
                     content_type="video/mp4",
                     content_disposition="inline",
                 )
-                response.headers["Cache-Control"] = PUBLIC_MEMORY_CACHE_CONTROL
+                response.headers["Cache-Control"] = PUBLIC_MEMORY_ASSET_CACHE_CONTROL
                 return response
 
             if variant == "poster":
@@ -578,7 +650,7 @@ class PublicTripMemoryVideoAssetAPIView(APIView):
                     content_type="image/webp",
                 )
                 response.headers["Content-Length"] = str(field.size)
-                response.headers["Cache-Control"] = PUBLIC_MEMORY_CACHE_CONTROL
+                response.headers["Cache-Control"] = PUBLIC_MEMORY_ASSET_CACHE_CONTROL
                 return response
         except (MemoryVideoNotFoundError, OSError, FileNotFoundError):
             return _public_memory_not_found_response()

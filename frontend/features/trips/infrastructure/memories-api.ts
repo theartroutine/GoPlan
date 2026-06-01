@@ -1,5 +1,6 @@
 import type {
   CreateTripMemoryPayload,
+  TripMemoryCreateOptionsResponse,
   MemoryMusicTracksResponse,
   MemoryMusicTrack,
   TripMemoryListResponse,
@@ -7,6 +8,7 @@ import type {
   TripMemoryResponse,
   TripMemoryShare,
   TripMemoryShareResponse,
+  TripMemoryStatusResponse,
   TripMemoryVideo,
   UpdateTripMemoryPayload,
 } from "@/features/trips/domain/memory-types";
@@ -45,6 +47,14 @@ function tripMemoryAssetPath(
   return `${tripMemoryPath(tripId, memoryId)}/${variant}`;
 }
 
+function tripMemoryStatusPath(tripId: string): string {
+  return `${tripMemoriesPath(tripId)}/status`;
+}
+
+function tripMemoryCreateOptionsPath(tripId: string): string {
+  return `${tripMemoriesPath(tripId)}/create-options`;
+}
+
 function extractCursor(url: string | null): string | null {
   if (!url) return null;
 
@@ -53,6 +63,12 @@ function extractCursor(url: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+function buildMemoryStatusParams(ids: string[]): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const id of ids) params.append("ids", id);
+  return params;
 }
 
 export async function bffListTripMemories(
@@ -73,6 +89,36 @@ export async function bffListTripMemories(
     nextCursor: extractCursor(res.data.next),
     previousCursor: extractCursor(res.data.previous),
   };
+}
+
+export async function bffListTripMemoryStatuses(
+  tripId: string,
+  ids: string[],
+  options: RequestOptions = {},
+): Promise<TripMemoryStatusResponse> {
+  const res = await bff.get<TripMemoryStatusResponse>(
+    tripMemoryStatusPath(tripId),
+    {
+      params: buildMemoryStatusParams(ids),
+      signal: options.signal,
+    },
+  );
+  return res.data;
+}
+
+export async function bffGetTripMemoryCreateOptions(
+  tripId: string,
+  options: RequestOptions = {},
+): Promise<TripMemoryCreateOptionsResponse> {
+  const res = options.signal
+    ? await bff.get<TripMemoryCreateOptionsResponse>(
+      tripMemoryCreateOptionsPath(tripId),
+      { signal: options.signal },
+    )
+    : await bff.get<TripMemoryCreateOptionsResponse>(
+      tripMemoryCreateOptionsPath(tripId),
+    );
+  return res.data;
 }
 
 export async function bffCreateTripMemory(

@@ -51,10 +51,24 @@ export type TripMemoryListResponse = {
   results: TripMemoryVideo[];
 };
 
+export type TripMemoryStatusResponse = {
+  results: TripMemoryVideo[];
+};
+
 export type TripMemoryPage = {
   nextCursor: string | null;
   previousCursor: string | null;
   results: TripMemoryVideo[];
+};
+
+export type MemoryPhotoLimits = {
+  min: number;
+  max: number;
+  auto_pick: number;
+};
+
+export type TripMemoryCreateOptionsResponse = {
+  photo_limits: MemoryPhotoLimits;
 };
 
 export type CreateTripMemoryPayload = {

@@ -11,6 +11,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   MEMORY_FORBIDDEN: "You do not have permission to manage this memory video.",
   MEMORY_NOT_READY: "This memory video is not ready yet.",
   MEMORY_RENDER_FAILED: "Memory video rendering failed. Try creating it again.",
+  MEMORY_RENDER_TRIP_LIMIT_REACHED: "This trip already has too many memory videos rendering.",
   TRIP_TERMINAL: "Cancelled trips cannot change memory videos.",
 };
 

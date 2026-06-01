@@ -85,6 +85,14 @@ def _music_tracks_url(trip_id) -> str:
     return f"/api/trips/{trip_id}/memories/music-tracks"
 
 
+def _status_url(trip_id) -> str:
+    return f"/api/trips/{trip_id}/memories/status"
+
+
+def _create_options_url(trip_id) -> str:
+    return f"/api/trips/{trip_id}/memories/create-options"
+
+
 class TripMemoryVideoAPITests(APITestCase):
     def setUp(self) -> None:
         self.tempdir = TemporaryDirectory()
@@ -539,6 +547,107 @@ class TripMemoryVideoAPITests(APITestCase):
                 self.assertTrue(track["artist"])
                 self.assertTrue(track["license_url"])
                 self.assertTrue(track["source_url"])
+
+    def test_create_options_route_returns_photo_limits_only(self):
+        response = self.client.get(_create_options_url(self.trip.id), **_auth(self.member))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data,
+            {
+                "photo_limits": {
+                    "min": 5,
+                    "max": 50,
+                    "auto_pick": 20,
+                },
+            },
+        )
+
+    def test_status_route_returns_requested_memories_for_trip(self):
+        ready = TripMemoryVideo.objects.create(
+            trip=self.trip,
+            created_by=self.member,
+            title="Ready recap",
+            status=TripMemoryVideoStatus.READY,
+            source_mode=TripMemoryVideoSourceMode.MANUAL,
+            source_photo_ids=[],
+            source_photo_count=5,
+            music_key=MUSIC_KEY,
+        )
+        rendering = TripMemoryVideo.objects.create(
+            trip=self.trip,
+            created_by=self.member,
+            title="Rendering recap",
+            status=TripMemoryVideoStatus.RENDERING,
+            source_mode=TripMemoryVideoSourceMode.MANUAL,
+            source_photo_ids=[],
+            source_photo_count=5,
+            music_key=MUSIC_KEY,
+        )
+        other_trip = _make_trip(self.outsider, name="Other Memory Trip")
+        other_memory = TripMemoryVideo.objects.create(
+            trip=other_trip,
+            created_by=self.outsider,
+            title="Other trip recap",
+            status=TripMemoryVideoStatus.READY,
+            source_mode=TripMemoryVideoSourceMode.MANUAL,
+            source_photo_ids=[],
+            source_photo_count=5,
+            music_key=MUSIC_KEY,
+        )
+
+        response = self.client.get(
+            _status_url(self.trip.id),
+            {
+                "ids": [str(ready.id), str(rendering.id), str(other_memory.id)],
+            },
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in response.data["results"]],
+            [str(rendering.id), str(ready.id)],
+        )
+        self.assertEqual(response.data["results"][0]["status"], "rendering")
+        self.assertEqual(response.data["results"][1]["status"], "ready")
+
+    def test_status_route_rejects_invalid_ids_and_too_many_ids(self):
+        invalid_response = self.client.get(
+            _status_url(self.trip.id),
+            {"ids": ["not-a-uuid"]},
+            **_auth(self.member),
+        )
+        too_many_response = self.client.get(
+            _status_url(self.trip.id),
+            {"ids": [str(self.member.id)] * 11},
+            **_auth(self.member),
+        )
+
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertEqual(invalid_response.data["error_code"], "MEMORY_INVALID_REQUEST")
+        self.assertEqual(too_many_response.status_code, 400)
+        self.assertEqual(too_many_response.data["error_code"], "MEMORY_INVALID_REQUEST")
+
+    def test_status_route_rejects_non_member(self):
+        memory = TripMemoryVideo.objects.create(
+            trip=self.trip,
+            created_by=self.member,
+            status=TripMemoryVideoStatus.RENDERING,
+            source_mode=TripMemoryVideoSourceMode.MANUAL,
+            source_photo_ids=[],
+            source_photo_count=5,
+            music_key=MUSIC_KEY,
+        )
+
+        response = self.client.get(
+            _status_url(self.trip.id),
+            {"ids": [str(memory.id)]},
+            **_auth(self.outsider),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "TRIP_NOT_FOUND")
 
     def test_failed_memory_response_includes_render_error(self):
         memory = TripMemoryVideo.objects.create(

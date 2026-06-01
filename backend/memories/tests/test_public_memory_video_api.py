@@ -188,10 +188,10 @@ class PublicTripMemoryVideoAPITests(APITestCase):
         self.assertEqual(response.headers["Content-Length"], "4")
         self.assertEqual(response.headers["Content-Type"], "video/mp4")
         self.assertEqual(response.headers["Content-Disposition"], "inline")
-        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(response.headers["Cache-Control"], "public, max-age=300")
         self.assertEqual(_response_body(response), b"2345")
 
-    def test_public_poster_returns_webp_with_no_store_cache(self):
+    def test_public_poster_returns_webp_with_short_cache(self):
         self._memory(slug="poster-share")
 
         response = self.client.get(_public_memory_asset_url("poster-share", "poster"))
@@ -199,7 +199,7 @@ class PublicTripMemoryVideoAPITests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["Content-Type"], "image/webp")
         self.assertEqual(response.headers["Content-Length"], "4")
-        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(response.headers["Cache-Control"], "public, max-age=300")
         self.assertEqual(_response_body(response), b"WEBP")
 
     def test_public_routes_never_require_authentication(self):

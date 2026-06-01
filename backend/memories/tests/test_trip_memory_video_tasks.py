@@ -124,9 +124,34 @@ class TripMemoryVideoTaskTests(TestCase):
         apply_async.assert_called_once_with(
             args=[str(memory.id)],
             queue="memory_render",
+            soft_time_limit=600,
+            time_limit=720,
         )
         memory.refresh_from_db()
         self.assertEqual(memory.celery_task_id, "memory-task-123")
+
+    @patch("memories.memory_video_services.render_trip_memory_video_task.apply_async")
+    def test_create_large_memory_enqueues_render_task_with_scaled_time_limits(self, apply_async):
+        apply_async.return_value = SimpleNamespace(id="memory-task-large")
+        photos = self._photos(50)
+
+        with self.settings(TRIP_MEMORY_MAX_PHOTOS=50):
+            with self.captureOnCommitCallbacks(execute=True):
+                memory = create_trip_memory_video(
+                    trip_id=self.trip.id,
+                    actor=self.captain,
+                    title="Large render",
+                    source_mode=TripMemoryVideoSourceMode.MANUAL,
+                    photo_ids=[photo.id for photo in photos],
+                    music_key=MUSIC_KEY,
+                )
+
+        apply_async.assert_called_once_with(
+            args=[str(memory.id)],
+            queue="memory_render",
+            soft_time_limit=1200,
+            time_limit=1320,
+        )
 
     @patch("memories.memory_video_services.render_trip_memory_video_task.apply_async")
     def test_create_memory_marks_failed_when_enqueue_raises(self, apply_async):

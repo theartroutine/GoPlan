@@ -17,6 +17,7 @@ import { Spinner } from "@/shared/ui/spinner";
 
 type MemoryPhotoPickerProps = {
   disabled?: boolean;
+  maxSelectable: number;
   selectedIds: string[];
   tripId: string;
   onSelectionChange: (ids: string[]) => void;
@@ -40,6 +41,7 @@ function formatPhotoDate(value: string): string {
 
 export function MemoryPhotoPicker({
   disabled = false,
+  maxSelectable,
   selectedIds,
   tripId,
   onSelectionChange,
@@ -245,7 +247,7 @@ export function MemoryPhotoPicker({
       onSelectionChange(selectedIds.filter((id) => id !== photoId));
       return;
     }
-    if (selectedIds.length >= 50) return;
+    if (selectedIds.length >= maxSelectable) return;
     onSelectionChange([...selectedIds, photoId]);
   }
 
@@ -290,7 +292,7 @@ export function MemoryPhotoPicker({
           const selectedOrder = selectedOrderById.get(photo.id);
           const thumbnailUrl = thumbnailUrls[photo.id] ?? null;
           const thumbnailFailed = thumbnailErrors.has(photo.id);
-          const selectionDisabled = disabled || (!checked && selectedIds.length >= 50);
+          const selectionDisabled = disabled || (!checked && selectedIds.length >= maxSelectable);
           return (
             <label
               key={photo.id}

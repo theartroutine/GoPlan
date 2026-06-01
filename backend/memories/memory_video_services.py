@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -37,6 +38,7 @@ MEMORY_RENDER_ENQUEUE_FAILED = "MEMORY_RENDER_ENQUEUE_FAILED"
 MEMORY_RENDER_FAILED = "MEMORY_RENDER_FAILED"
 MEMORY_SOURCE_UNAVAILABLE = "MEMORY_SOURCE_UNAVAILABLE"
 MEMORY_STORAGE_ERROR = "MEMORY_STORAGE_ERROR"
+MEMORY_RENDER_TRIP_LIMIT_REACHED = "MEMORY_RENDER_TRIP_LIMIT_REACHED"
 
 
 class _RenderTaskProxy:
@@ -122,6 +124,27 @@ def _max_active_per_trip() -> int:
     return _setting("TRIP_MEMORY_MAX_ACTIVE_PER_TRIP", 3)
 
 
+def memory_photo_limits() -> dict[str, int]:
+    return {
+        "min": _min_photos(),
+        "max": _max_photos(),
+        "auto_pick": _auto_pick_photos(),
+    }
+
+
+def _render_task_time_limits(source_photo_count: int) -> dict[str, int]:
+    soft_floor = _setting("TRIP_MEMORY_RENDER_SOFT_TIME_LIMIT_SECONDS", 600)
+    hard_floor = _setting("TRIP_MEMORY_RENDER_TIME_LIMIT_SECONDS", 720)
+    per_photo_budget = _setting("TRIP_MEMORY_RENDER_SECONDS_PER_PHOTO_BUDGET", 24)
+    hard_grace = _setting("TRIP_MEMORY_RENDER_TIME_LIMIT_GRACE_SECONDS", 120)
+    soft_time_limit = max(soft_floor, source_photo_count * per_photo_budget)
+    time_limit = max(hard_floor, soft_time_limit + hard_grace)
+    return {
+        "soft_time_limit": soft_time_limit,
+        "time_limit": time_limit,
+    }
+
+
 def _validate_music_key(music_key: str) -> None:
     track = get_memory_music_track(music_key)
     if track is None or not track.enabled or track.placeholder:
@@ -171,7 +194,7 @@ def _assert_active_memory_quota_available(*, trip_id, actor) -> None:
 
     if active_query.count() >= _max_active_per_trip():
         raise MemoryVideoValidationError(
-            "MEMORY_RENDER_ALREADY_RUNNING",
+            MEMORY_RENDER_TRIP_LIMIT_REACHED,
             "This trip already has too many memory videos rendering.",
         )
 
@@ -268,6 +291,18 @@ def list_trip_memory_videos(*, trip_id, actor):
     return (
         TripMemoryVideo.objects
         .filter(trip_id=trip_id)
+        .select_related("created_by")
+        .order_by("-created_at", "-id")
+    )
+
+
+def list_trip_memory_video_statuses(*, trip_id, actor, memory_ids: list[str]):
+    _get_active_membership(trip_id, actor)
+    if not memory_ids:
+        return TripMemoryVideo.objects.none()
+    return (
+        TripMemoryVideo.objects
+        .filter(trip_id=trip_id, id__in=memory_ids)
         .select_related("created_by")
         .order_by("-created_at", "-id")
     )
@@ -449,16 +484,24 @@ def create_trip_memory_video(
             source_photo_count=len(source_photo_ids),
             music_key=resolved_music_key,
         )
-        transaction.on_commit(lambda memory_id=str(memory.id): _enqueue_trip_memory_render(memory_id))
+        transaction.on_commit(
+            lambda memory_id=str(memory.id), source_photo_count=memory.source_photo_count: (
+                _enqueue_trip_memory_render(
+                    memory_id,
+                    source_photo_count=source_photo_count,
+                )
+            )
+        )
     memory.refresh_from_db()
     return memory
 
 
-def _enqueue_trip_memory_render(memory_id: str) -> None:
+def _enqueue_trip_memory_render(memory_id: str, *, source_photo_count: int) -> None:
     try:
         async_result = render_trip_memory_video_task.apply_async(
             args=[str(memory_id)],
             queue=settings.TRIP_MEMORY_RENDER_QUEUE,
+            **_render_task_time_limits(source_photo_count),
         )
     except Exception:
         logger.exception("Failed to enqueue memory video render %s", memory_id)
@@ -689,6 +732,9 @@ def render_trip_memory_video(memory_id: str) -> None:
         return
 
     expected_started_at = memory.render_started_at
+    photo_count = memory.source_photo_count
+    render_log_status = "unknown"
+    started_monotonic = time.monotonic()
     try:
         source_photos = _resolve_render_source_photos(memory)
         with TemporaryDirectory() as tempdir:
@@ -711,7 +757,9 @@ def render_trip_memory_video(memory_id: str) -> None:
                 poster_path=output_poster_path,
                 duration_seconds=render_result.duration_seconds,
             )
+            render_log_status = TripMemoryVideoStatus.READY
     except MemoryVideoRenderSourceError as exc:
+        render_log_status = MEMORY_SOURCE_UNAVAILABLE
         _mark_memory_render_failed(
             memory_id=memory_id,
             error_code=MEMORY_SOURCE_UNAVAILABLE,
@@ -719,6 +767,7 @@ def render_trip_memory_video(memory_id: str) -> None:
             expected_started_at=expected_started_at,
         )
     except MemoryVideoRenderStorageError as exc:
+        render_log_status = MEMORY_STORAGE_ERROR
         logger.exception("Memory video storage failed for %s", memory_id)
         _mark_memory_render_failed(
             memory_id=memory_id,
@@ -727,12 +776,22 @@ def render_trip_memory_video(memory_id: str) -> None:
             expected_started_at=expected_started_at,
         )
     except Exception as exc:
+        render_log_status = MEMORY_RENDER_FAILED
         logger.exception("Memory video render failed for %s", memory_id)
         _mark_memory_render_failed(
             memory_id=memory_id,
             error_code=MEMORY_RENDER_FAILED,
             message=str(exc) or "Memory video render failed.",
             expected_started_at=expected_started_at,
+        )
+    finally:
+        elapsed_seconds = time.monotonic() - started_monotonic
+        logger.info(
+            "Memory video render finished for %s with status=%s photo_count=%s elapsed_seconds=%.2f",
+            memory_id,
+            render_log_status,
+            photo_count,
+            elapsed_seconds,
         )
 
 

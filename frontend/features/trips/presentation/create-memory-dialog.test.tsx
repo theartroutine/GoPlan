@@ -6,6 +6,7 @@ import type { TripPhoto } from "@/features/trips/domain/photo-types";
 
 const memoriesApiMock = vi.hoisted(() => ({
   bffCreateTripMemory: vi.fn(),
+  bffGetTripMemoryCreateOptions: vi.fn(),
   bffListMemoryMusicTracks: vi.fn(),
 }));
 
@@ -99,6 +100,13 @@ describe("CreateMemoryDialog", () => {
         enabled: true,
       },
     ]);
+    memoriesApiMock.bffGetTripMemoryCreateOptions.mockResolvedValue({
+      photo_limits: {
+        min: 5,
+        max: 50,
+        auto_pick: 20,
+      },
+    });
   });
 
   afterEach(() => {
@@ -135,6 +143,36 @@ describe("CreateMemoryDialog", () => {
       await screen.findByText("Select between 5 and 50 photos."),
     ).toBeInTheDocument();
     expect(memoriesApiMock.bffCreateTripMemory).not.toHaveBeenCalled();
+  });
+
+  it("uses backend photo limits and still creates without music_key", async () => {
+    memoriesApiMock.bffGetTripMemoryCreateOptions.mockResolvedValueOnce({
+      photo_limits: {
+        min: 3,
+        max: 4,
+        auto_pick: 4,
+      },
+    });
+    memoriesApiMock.bffCreateTripMemory.mockResolvedValue(CREATED_MEMORY);
+    const onCreated = vi.fn();
+    renderDialog(onCreated);
+
+    await screen.findByRole("checkbox", { name: /photo_1/i });
+    expect(screen.getByText("0/4 selected")).toBeInTheDocument();
+
+    for (const id of ["photo_1", "photo_2", "photo_3", "photo_4"]) {
+      fireEvent.click(screen.getByRole("checkbox", { name: new RegExp(id, "i") }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Create memory" }));
+
+    await waitFor(() => {
+      expect(memoriesApiMock.bffCreateTripMemory).toHaveBeenCalledWith("trip_1", {
+        source_mode: "manual",
+        photo_ids: ["photo_1", "photo_2", "photo_3", "photo_4"],
+        title: "",
+      });
+      expect(onCreated).toHaveBeenCalledWith(CREATED_MEMORY);
+    });
   });
 
   it("submits auto mode without photo ids", async () => {
