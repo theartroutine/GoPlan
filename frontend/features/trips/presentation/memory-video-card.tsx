@@ -42,6 +42,8 @@ type PosterPreviewState = {
 };
 
 const FAILED_STATUS_LABEL = "Render failed";
+const QUEUED_STATUS_LABEL = "Queued";
+const RENDERING_STATUS_LABEL = "Rendering…";
 const POSTER_GRADIENT =
   "bg-[radial-gradient(circle_at_24%_18%,rgba(255,255,255,0.22),transparent_32%),linear-gradient(135deg,rgba(14,165,233,0.22),transparent_48%,rgba(245,158,11,0.18))]";
 
@@ -175,11 +177,11 @@ export function MemoryVideoCard({
           {isReady ? (
             <button
               aria-label={`Play ${title}`}
-              className="absolute inset-0 flex items-center justify-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="absolute inset-0 flex items-center justify-center outline-none"
               onClick={() => onPlay(memory)}
               type="button"
             >
-              <span className="flex size-12 items-center justify-center rounded-full bg-white/90 text-zinc-950 shadow-lg shadow-black/25 backdrop-blur transition-transform group-hover:scale-105">
+              <span className="flex size-12 items-center justify-center rounded-full bg-white/90 text-zinc-950 shadow-lg shadow-black/25 backdrop-blur transition-transform group-hover:scale-105 [button:focus-visible_&]:ring-[3px] [button:focus-visible_&]:ring-ring/70 [button:focus-visible_&]:ring-offset-1">
                 <Play className="ml-0.5 size-5 fill-current" />
               </span>
             </button>
@@ -193,7 +195,7 @@ export function MemoryVideoCard({
 
           {isInProgress ? (
             <span className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/55 px-2 py-0.5 text-xs font-medium text-white">
-              {memory.status === "rendering" ? "Rendering…" : "Queued"}
+              {memory.status === "rendering" ? RENDERING_STATUS_LABEL : QUEUED_STATUS_LABEL}
             </span>
           ) : null}
 

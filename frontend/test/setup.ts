@@ -53,3 +53,17 @@ class NoopIntersectionObserver implements IntersectionObserver {
 }
 
 vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
+
+// jsdom does not provide ResizeObserver. Provide a no-op default so
+// components mounting under it do not throw.
+class NoopResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+vi.stubGlobal("ResizeObserver", NoopResizeObserver);
+
+// jsdom does not implement scrollIntoView. Provide a no-op so Radix
+// dropdown items (which call scrollIntoView on keyboard navigation) do not throw.
+Element.prototype.scrollIntoView = vi.fn();

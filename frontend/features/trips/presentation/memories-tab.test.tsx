@@ -352,9 +352,9 @@ describe("MemoriesTab", () => {
     const queuedCard = await screen.findByTestId("memory-card-queued_1");
     const renderingCard = screen.getByTestId("memory-card-rendering_1");
 
-    expect(within(queuedCard).queryByRole("button", { name: "Delete memory" }))
+    expect(within(queuedCard).queryByRole("button", { name: "Memory actions" }))
       .not.toBeInTheDocument();
-    expect(within(renderingCard).queryByRole("button", { name: "Delete memory" }))
+    expect(within(renderingCard).queryByRole("button", { name: "Memory actions" }))
       .not.toBeInTheDocument();
   });
 });

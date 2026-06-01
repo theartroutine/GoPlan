@@ -11,7 +11,8 @@ vi.mock("@/features/trips/infrastructure/memories-api", () => memoriesApiMock);
 
 import { MemoryVideoCard } from "@/features/trips/presentation/memory-video-card";
 
-// Radix DropdownMenu needs these in jsdom to open.
+// Radix DropdownMenu needs hasPointerCapture / releasePointerCapture in jsdom to open.
+// ResizeObserver and scrollIntoView are stubbed globally in test/setup.ts.
 beforeAll(() => {
   if (!Element.prototype.hasPointerCapture) {
     Element.prototype.hasPointerCapture = () => false;
@@ -19,15 +20,6 @@ beforeAll(() => {
   if (!Element.prototype.releasePointerCapture) {
     Element.prototype.releasePointerCapture = () => {};
   }
-  Element.prototype.scrollIntoView = vi.fn();
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
 });
 
 function memory(overrides: Partial<TripMemoryVideo> = {}): TripMemoryVideo {
@@ -40,6 +32,7 @@ function memory(overrides: Partial<TripMemoryVideo> = {}): TripMemoryVideo {
     source_photo_count: 12,
     duration_seconds: 95,
     music: { key: "sunrise", title: "Sunrise Road", artist: "GoPlan", license: "CC-BY" },
+    created_by: { id: "user_1", display_name: "Minh" },
     can_manage: true,
     can_download: true,
     share: { enabled: false, url: null },
@@ -47,7 +40,7 @@ function memory(overrides: Partial<TripMemoryVideo> = {}): TripMemoryVideo {
     updated_at: "2026-05-24T01:00:00Z",
     created_at: "2026-05-24T00:00:00Z",
     ...overrides,
-  } as TripMemoryVideo;
+  };
 }
 
 function openMenu() {
@@ -113,6 +106,9 @@ describe("MemoryVideoCard", () => {
     expect(
       within(screen.getByRole("menu")).getByRole("menuitem", { name: "Download" }),
     ).toHaveAttribute("href", "/api/trips/trip_1/memories/memory_1/download");
+    expect(
+      within(screen.getByRole("menu")).getByRole("menuitem", { name: "Download" }),
+    ).toHaveAttribute("download", "da-nang-recap.mp4");
     // Close menu before re-opening; Radix toggle on pointerDown would shut it if already open.
     closeMenu();
 
@@ -132,6 +128,17 @@ describe("MemoryVideoCard", () => {
     );
     expect(screen.queryByRole("button", { name: "Memory actions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Play/ })).not.toBeInTheDocument();
+  });
+
+  it("shows the rendering badge and no actions while rendering", () => {
+    render(
+      <MemoryVideoCard
+        memory={memory({ status: "rendering" })}
+        onDelete={vi.fn()} onPlay={vi.fn()} onShare={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Rendering…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Memory actions" })).not.toBeInTheDocument();
   });
 
   it("shows the failed badge and error, and offers only delete in the menu", () => {
