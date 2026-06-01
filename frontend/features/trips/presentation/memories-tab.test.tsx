@@ -179,8 +179,8 @@ describe("MemoriesTab", () => {
     const renderingCard = screen.getByTestId("memory-card-rendering_1");
     expect(queuedCard).toHaveClass("memory-progress-border");
     expect(renderingCard).toHaveClass("memory-progress-border");
-    expect(within(queuedCard).queryByText("Queued")).not.toBeInTheDocument();
-    expect(within(renderingCard).queryByText("Rendering")).not.toBeInTheDocument();
+    expect(within(queuedCard).getByText("Queued")).toBeInTheDocument();
+    expect(within(renderingCard).getByText("Rendering…")).toBeInTheDocument();
     expect(screen.getByTestId("memory-card-failed_1")).not.toHaveClass("memory-progress-border");
     expect(screen.getByText("Failed")).toBeInTheDocument();
     expect(screen.getByText("Render failed")).toBeInTheDocument();
