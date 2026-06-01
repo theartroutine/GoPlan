@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -9,6 +10,9 @@ from typing import Sequence
 from django.conf import settings
 
 from memories.music_catalog import get_memory_music_track, resolve_music_asset_path
+
+logger = logging.getLogger(__name__)
+FFMPEG_STDERR_LOG_LIMIT = 4000
 
 
 @dataclass(frozen=True)
@@ -274,6 +278,8 @@ def _build_concat_lines(
     if n == 1:
         lines.append(_concat_file_line(clip_paths[0]))
         return lines
+    if transition <= 0:
+        return [_concat_file_line(path) for path in clip_paths]
 
     # First clip: from start up to where its outgoing transition begins.
     lines.append(_concat_file_line(clip_paths[0]))
@@ -333,7 +339,7 @@ def _build_final_args(
     )
 
     audio_fade = max(0.0, min(profile.audio_fade_seconds, total))
-    audio_fade_in = min(1.0, max(0.0, total))
+    audio_fade_in = audio_fade
     audio_fade_out_start = max(0.0, total - audio_fade)
     audio_filter = (
         f"afade=t=in:st=0:d={audio_fade_in:g},"
@@ -398,14 +404,44 @@ def _build_poster_args(
     ]
 
 
+def _stderr_excerpt(stderr: object) -> str:
+    if stderr is None:
+        return ""
+    if isinstance(stderr, bytes):
+        text = stderr.decode("utf-8", errors="replace")
+    else:
+        text = str(stderr)
+    return text.strip()[-FFMPEG_STDERR_LOG_LIMIT:]
+
+
 def _run_ffmpeg(args: list[str], *, timeout: int) -> None:
-    subprocess.run(
-        args,
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=timeout,
-    )
+    try:
+        subprocess.run(
+            args,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = _stderr_excerpt(exc.stderr)
+        if stderr:
+            logger.error(
+                "ffmpeg failed with exit code %s. stderr:\n%s",
+                exc.returncode,
+                stderr,
+            )
+        else:
+            logger.error("ffmpeg failed with exit code %s and no stderr.", exc.returncode)
+        raise
+    except subprocess.TimeoutExpired as exc:
+        stderr = _stderr_excerpt(exc.stderr)
+        if stderr:
+            logger.error("ffmpeg timed out after %ss. stderr:\n%s", timeout, stderr)
+        else:
+            logger.error("ffmpeg timed out after %ss with no stderr.", timeout)
+        raise
 
 
 def render_memory_video(
@@ -447,18 +483,19 @@ def render_memory_video(
             clip_paths.append(clip_path)
 
         transition_paths: list[Path] = []
-        for index in range(photo_count - 1):
-            transition_path = tmp / f"trans-{index:04d}.mp4"
-            _run_ffmpeg(
-                _build_transition_args(
-                    prev_clip_path=clip_paths[index],
-                    next_clip_path=clip_paths[index + 1],
-                    output_path=transition_path,
-                    profile=profile,
-                ),
-                timeout=profile.timeout_seconds,
-            )
-            transition_paths.append(transition_path)
+        if profile.transition > 0:
+            for index in range(photo_count - 1):
+                transition_path = tmp / f"trans-{index:04d}.mp4"
+                _run_ffmpeg(
+                    _build_transition_args(
+                        prev_clip_path=clip_paths[index],
+                        next_clip_path=clip_paths[index + 1],
+                        output_path=transition_path,
+                        profile=profile,
+                    ),
+                    timeout=profile.timeout_seconds,
+                )
+                transition_paths.append(transition_path)
 
         concat_file_path = tmp / "segments.txt"
         concat_lines = _build_concat_lines(

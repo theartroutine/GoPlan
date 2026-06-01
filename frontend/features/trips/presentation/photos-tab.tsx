@@ -60,11 +60,15 @@ export function PhotosTab() {
   const [selectedPhoto, setSelectedPhoto] = useState<TripPhoto | null>(null);
   const [photoPendingDelete, setPhotoPendingDelete] = useState<TripPhoto | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
+  const [thumbnailErrors, setThumbnailErrors] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [mediumUrl, setMediumUrl] = useState<string | null>(null);
   const [mediumPhotoId, setMediumPhotoId] = useState<string | null>(null);
   const [mediumLoading, setMediumLoading] = useState(false);
   const [mediumError, setMediumError] = useState<string | null>(null);
   const thumbnailUrlsRef = useRef<Map<string, string>>(new Map());
+  const thumbnailErrorsRef = useRef<Set<string>>(new Set());
   const thumbnailRequestsRef = useRef<Map<string, AbortController>>(new Map());
   const visiblePhotoIdsRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(false);
@@ -78,6 +82,10 @@ export function PhotosTab() {
 
   const syncThumbnailUrls = useCallback(() => {
     setThumbnailUrls(Object.fromEntries(thumbnailUrlsRef.current.entries()));
+  }, []);
+
+  const syncThumbnailErrors = useCallback(() => {
+    setThumbnailErrors(new Set(thumbnailErrorsRef.current));
   }, []);
 
   const revokeMediumUrl = useCallback(() => {
@@ -127,6 +135,7 @@ export function PhotosTab() {
     mountedRef.current = true;
     const thumbnailRequests = thumbnailRequestsRef.current;
     const thumbnailObjectUrls = thumbnailUrlsRef.current;
+    const thumbnailErrorsByPhoto = thumbnailErrorsRef.current;
 
     return () => {
       mountedRef.current = false;
@@ -138,6 +147,7 @@ export function PhotosTab() {
         URL.revokeObjectURL(url);
       }
       thumbnailObjectUrls.clear();
+      thumbnailErrorsByPhoto.clear();
       revokeMediumUrl();
     };
   }, [revokeMediumUrl]);
@@ -151,8 +161,10 @@ export function PhotosTab() {
       URL.revokeObjectURL(url);
     }
     thumbnailUrlsRef.current.clear();
+    thumbnailErrorsRef.current.clear();
     visiblePhotoIdsRef.current = new Set();
     setThumbnailUrls({});
+    setThumbnailErrors(new Set());
     revokeMediumUrl();
     setMediumUrl(null);
     setMediumPhotoId(null);
@@ -165,6 +177,7 @@ export function PhotosTab() {
     visiblePhotoIdsRef.current = visibleIds;
 
     let didChange = false;
+    let errorsChanged = false;
     for (const [photoId, url] of thumbnailUrlsRef.current.entries()) {
       if (!visibleIds.has(photoId)) {
         URL.revokeObjectURL(url);
@@ -178,12 +191,20 @@ export function PhotosTab() {
         thumbnailRequestsRef.current.delete(photoId);
       }
     }
+    for (const photoId of thumbnailErrorsRef.current) {
+      if (!visibleIds.has(photoId)) {
+        thumbnailErrorsRef.current.delete(photoId);
+        errorsChanged = true;
+      }
+    }
     if (didChange) syncThumbnailUrls();
+    if (errorsChanged) syncThumbnailErrors();
 
     for (const photo of photos) {
       if (
         thumbnailUrlsRef.current.has(photo.id) ||
-        thumbnailRequestsRef.current.has(photo.id)
+        thumbnailRequestsRef.current.has(photo.id) ||
+        thumbnailErrorsRef.current.has(photo.id)
       ) {
         continue;
       }
@@ -208,16 +229,21 @@ export function PhotosTab() {
           thumbnailUrlsRef.current.set(photo.id, objectUrl);
           syncThumbnailUrls();
         })
-        .catch((err) => {
-          if (!controller.signal.aborted) {
-            setError(getTripPhotoErrorMessage(err, LOAD_ERROR));
+        .catch(() => {
+          if (
+            !controller.signal.aborted &&
+            mountedRef.current &&
+            visiblePhotoIdsRef.current.has(photo.id)
+          ) {
+            thumbnailErrorsRef.current.add(photo.id);
+            syncThumbnailErrors();
           }
         })
         .finally(() => {
           thumbnailRequestsRef.current.delete(photo.id);
         });
     }
-  }, [photos, syncThumbnailUrls, tripId]);
+  }, [photos, syncThumbnailErrors, syncThumbnailUrls, tripId]);
 
   useEffect(() => {
     if (!selectedPhoto) {
@@ -438,6 +464,7 @@ export function PhotosTab() {
       {!loading && photos.length > 0 ? (
         <PhotoGrid
           photos={photos}
+          thumbnailErrors={thumbnailErrors}
           thumbnailUrls={thumbnailUrls}
           onOpen={setSelectedPhoto}
         />

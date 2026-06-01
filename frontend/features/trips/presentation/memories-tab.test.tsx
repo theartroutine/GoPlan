@@ -122,21 +122,21 @@ describe("MemoriesTab", () => {
 
     fireEvent.error(previewImage);
     const readyCard = screen.getByTestId("memory-card-memory_1");
-    expect(readyCard.querySelector("video")).toHaveAttribute(
-      "src",
-      "/api/trips/trip_1/memories/memory_1/video#t=0.1",
-    );
+    expect(readyCard.querySelector("video")).toBeNull();
     expect(within(readyCard).queryByText("Ready")).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: "Play Da Nang recap" }));
 
     const viewerVideo = await screen.findByLabelText("Da Nang recap video");
-    expect(viewerVideo).toHaveAttribute("src", "blob:trip-memory-3");
-    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledWith(
+    expect(viewerVideo).toHaveAttribute(
+      "src",
+      "/api/trips/trip_1/memories/memory_1/video",
+    );
+    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).not.toHaveBeenCalledWith(
       "trip_1",
       "memory_1",
       "video",
-      { signal: expect.any(AbortSignal), timeoutMs: 60000 },
+      expect.anything(),
     );
     expect(screen.getByRole("button", { name: "Close viewer" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Close dialog" })).not.toBeInTheDocument();
@@ -219,6 +219,37 @@ describe("MemoriesTab", () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not recreate the polling interval on every in-progress update", async () => {
+    vi.useFakeTimers();
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    memoriesApiMock.bffListTripMemories
+      .mockResolvedValueOnce({
+        results: [memory({ status: "queued" })],
+        nextCursor: null,
+        previousCursor: null,
+      })
+      .mockResolvedValueOnce({
+        results: [memory({ status: "rendering" })],
+        nextCursor: null,
+        previousCursor: null,
+      });
+
+    render(<MemoriesTab />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(memoriesApiMock.bffListTripMemories).toHaveBeenCalledTimes(2);
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
   });
 
   it("inserts a created memory into the list", async () => {

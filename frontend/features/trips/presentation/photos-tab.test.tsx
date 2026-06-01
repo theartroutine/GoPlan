@@ -167,6 +167,38 @@ describe("PhotosTab", () => {
     });
   });
 
+  it("keeps the gallery visible when one thumbnail request fails", async () => {
+    photosApiMock.bffListTripPhotos.mockResolvedValueOnce({
+      results: [PHOTO, SECOND_PHOTO],
+      nextCursor: null,
+      previousCursor: null,
+    });
+    photosApiMock.bffFetchTripPhotoAssetBlob.mockImplementation(
+      async (_tripId: string, photoId: string) => {
+        if (photoId === "photo_1") {
+          throw new Error("thumbnail unavailable");
+        }
+        return new Blob(["image"], { type: "image/webp" });
+      },
+    );
+
+    render(<PhotosTab />);
+
+    expect(await screen.findByRole("button", { name: /Open photo uploaded by Minh/i }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Open photo uploaded by Lan/i }))
+      .toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByAltText("Photo uploaded by Lan")).toHaveAttribute(
+        "src",
+        "blob:trip-photo-1",
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Could not load trip photos.")).not.toBeInTheDocument();
+    });
+  });
+
   it("opens a medium-image lightbox from the thumbnail gallery", async () => {
     photosApiMock.bffListTripPhotos.mockResolvedValueOnce({
       results: [PHOTO],

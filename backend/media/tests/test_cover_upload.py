@@ -16,10 +16,14 @@ def _auth(user):
     return {"HTTP_AUTHORIZATION": f"Bearer {AccessToken.for_user(user)}"}
 
 
-def _fake_image(content_type: str = "image/jpeg", size_bytes: int | None = None) -> io.BytesIO:
+def _fake_image(
+    content_type: str = "image/jpeg",
+    size_bytes: int | None = None,
+    dimensions: tuple[int, int] = (16, 16),
+) -> io.BytesIO:
     """Return a tiny valid JPEG buffer."""
     buf = io.BytesIO()
-    Image.new("RGB", (16, 16), color="navy").save(buf, format="JPEG")
+    Image.new("RGB", dimensions, color="navy").save(buf, format="JPEG")
     if size_bytes is not None:
         content = buf.getvalue()
         buf = io.BytesIO(content + (b"\x00" * max(size_bytes - len(content), 0)))
@@ -113,3 +117,16 @@ class TripCoverUploadTests(APITestCase):
         )
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.data["error_code"], "FILE_TOO_LARGE")
+
+    @override_settings(UPLOAD_MAX_SOURCE_PIXELS=100)
+    def test_upload_rejects_oversized_source_pixels(self):
+        buf = _fake_image(dimensions=(11, 10))
+        res = self.client.post(
+            UPLOAD_URL,
+            {"file": buf},
+            format="multipart",
+            **_auth(self.user),
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["error_code"], "INVALID_TYPE")

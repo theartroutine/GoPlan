@@ -1,7 +1,7 @@
 "use client";
 
 import { Film, Loader2, Plus, RefreshCcw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   TripMemoryShare,
@@ -92,6 +92,9 @@ export function MemoriesTab() {
   const [shareMemory, setShareMemory] = useState<TripMemoryVideo | null>(null);
   const [memoryPendingDelete, setMemoryPendingDelete] =
     useState<TripMemoryVideo | null>(null);
+  const loadedCursorsRef = useRef<(string | null)[]>([null]);
+  const pollInFlightRef = useRef(false);
+  const hasActiveMemory = hasInProgressMemory(memories);
 
   const loadMemories = useCallback(async (
     options: {
@@ -125,6 +128,7 @@ export function MemoriesTab() {
         return true;
       });
       setMemories(results);
+      loadedCursorsRef.current = cursors;
       setLoadedCursors(cursors);
       setNextCursor(pages.at(-1)?.nextCursor ?? null);
     } catch (err) {
@@ -149,19 +153,30 @@ export function MemoriesTab() {
   }, [loadMemories]);
 
   useEffect(() => {
-    if (!hasInProgressMemory(memories)) return;
+    loadedCursorsRef.current = loadedCursors;
+  }, [loadedCursors]);
+
+  useEffect(() => {
+    if (!hasActiveMemory) return;
 
     const interval = window.setInterval(() => {
+      if (pollInFlightRef.current) return;
+      pollInFlightRef.current = true;
       // Poll silently: the per-card animated border already signals progress,
       // and toggling a "Refreshing" banner every few seconds shifts the list
       // layout and makes it flicker.
-      void loadMemories({ cursors: loadedCursors, showRefreshing: false });
+      void loadMemories({
+        cursors: loadedCursorsRef.current,
+        showRefreshing: false,
+      }).finally(() => {
+        pollInFlightRef.current = false;
+      });
     }, POLL_INTERVAL_MS);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [loadMemories, loadedCursors, memories]);
+  }, [hasActiveMemory, loadMemories]);
 
   async function handleLoadMore() {
     if (!nextCursor || loadingMore) return;
@@ -182,7 +197,9 @@ export function MemoriesTab() {
           }),
         ];
       });
-      setLoadedCursors((current) => [...current, cursor]);
+      const nextLoadedCursors = [...loadedCursorsRef.current, cursor];
+      loadedCursorsRef.current = nextLoadedCursors;
+      setLoadedCursors(nextLoadedCursors);
       setNextCursor(page.nextCursor);
     } catch (err) {
       setError(getTripMemoryErrorMessage(err, LOAD_ERROR));

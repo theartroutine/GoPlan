@@ -62,14 +62,6 @@ function formatDuration(seconds: number | null): string | null {
   return `${minutes}:${remaining.toString().padStart(2, "0")}`;
 }
 
-function memoryAssetPath(
-  tripId: string,
-  memoryId: string,
-  variant: "poster" | "video",
-): string {
-  return `/api/trips/${encodeURIComponent(tripId)}/memories/${encodeURIComponent(memoryId)}/${variant}`;
-}
-
 export function MemoryVideoCard({
   memory,
   onDelete,
@@ -86,7 +78,6 @@ export function MemoryVideoCard({
   const posterUrl = posterPreview?.assetKey === posterAssetKey ? posterPreview.url : null;
   const posterFailed =
     posterPreview?.assetKey === posterAssetKey ? posterPreview.failed : false;
-  const videoPreviewSrc = isReady ? memoryAssetPath(memory.trip_id, memory.id, "video") : null;
 
   useEffect(() => {
     if (!posterAssetKey) return undefined;
@@ -146,16 +137,6 @@ export function MemoryVideoCard({
             );
           }}
           src={posterUrl}
-        />
-      ) : null}
-      {videoPreviewSrc && posterFailed ? (
-        <video
-          aria-hidden="true"
-          className="absolute inset-0 size-full object-cover"
-          muted
-          playsInline
-          preload="metadata"
-          src={`${videoPreviewSrc}#t=0.1`}
         />
       ) : null}
       <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />

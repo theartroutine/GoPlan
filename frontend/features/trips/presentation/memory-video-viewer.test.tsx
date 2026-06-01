@@ -54,11 +54,14 @@ describe("MemoryVideoViewer", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders authenticated BFF blob assets for ready memories", async () => {
+  it("streams ready memories through the BFF video route", async () => {
     render(<MemoryVideoViewer tripId="trip 1" memory={READY_MEMORY} onClose={() => {}} />);
 
     const video = await screen.findByLabelText("Da Nang recap video");
-    expect(video).toHaveAttribute("src", "blob:memory-video");
+    expect(video).toHaveAttribute(
+      "src",
+      "/api/trips/trip%201/memories/memory%201/video",
+    );
     expect(video).toHaveAttribute("poster", "blob:memory-poster");
     expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledWith(
       "trip 1",
@@ -66,12 +69,7 @@ describe("MemoryVideoViewer", () => {
       "poster",
       { signal: expect.any(AbortSignal), timeoutMs: undefined },
     );
-    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledWith(
-      "trip 1",
-      "memory 1",
-      "video",
-      { signal: expect.any(AbortSignal), timeoutMs: 60000 },
-    );
+    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledTimes(1);
   });
 
   it("shows the download link only when the memory can be downloaded", async () => {
@@ -82,7 +80,7 @@ describe("MemoryVideoViewer", () => {
     expect(await screen.findByLabelText("Da Nang recap video")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
       "href",
-      "blob:memory-video",
+      "/api/trips/trip%201/memories/memory%201/download",
     );
     expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
       "download",

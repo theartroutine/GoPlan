@@ -20,12 +20,15 @@ type MemoryAssetBlobState = {
   url: string | null;
 };
 
-const VIDEO_ASSET_TIMEOUT_MS = 60_000;
+type VideoStreamState = {
+  assetKey: string;
+  status: "error" | "loading" | "ready";
+};
 
 function memoryAssetPath(
   tripId: string,
   memoryId: string,
-  variant: "download",
+  variant: "download" | "video",
 ): string {
   return `/api/trips/${encodeURIComponent(tripId)}/memories/${encodeURIComponent(memoryId)}/${variant}`;
 }
@@ -51,7 +54,7 @@ function useMemoryAssetBlobUrl({
   timeoutMs?: number;
   tripId: string;
   updatedAt: string;
-  variant: "poster" | "video";
+  variant: "poster";
 }) {
   const assetKey = enabled ? `${tripId}:${memoryId}:${updatedAt}:${variant}` : null;
   const [asset, setAsset] = useState<MemoryAssetBlobState | null>(null);
@@ -101,16 +104,15 @@ export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewer
     updatedAt: memory.updated_at,
     variant: "poster",
   });
-  const videoAsset = useMemoryAssetBlobUrl({
-    enabled: isReady,
-    memoryId: memory.id,
-    timeoutMs: VIDEO_ASSET_TIMEOUT_MS,
-    tripId,
-    updatedAt: memory.updated_at,
-    variant: "video",
-  });
+  const videoAssetKey = isReady
+    ? `${tripId}:${memory.id}:${memory.updated_at}:video`
+    : null;
+  const [videoStream, setVideoStream] = useState<VideoStreamState | null>(null);
+  const currentVideoStream =
+    videoStream?.assetKey === videoAssetKey ? videoStream : null;
+  const videoHref = isReady ? memoryAssetPath(tripId, memory.id, "video") : null;
+  const videoStatus = currentVideoStream?.status ?? (videoHref ? "loading" : null);
   const downloadHref = memoryAssetPath(tripId, memory.id, "download");
-  const downloadUrl = videoAsset.url ?? downloadHref;
   const downloadFileName = formatDownloadFileName(title);
 
   return (
@@ -130,26 +132,34 @@ export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewer
 
       {isReady ? (
         <div className="relative aspect-video w-full overflow-hidden rounded-md bg-black">
-          {videoAsset.loading ? (
+          {videoStatus === "loading" ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-sm text-white/80">
               <Loader2 className="size-5 animate-spin" />
               Loading video...
             </div>
           ) : null}
-          {videoAsset.error ? (
+          {videoStatus === "error" ? (
             <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-white/80">
               Could not load this video.
             </div>
           ) : null}
-          {videoAsset.url ? (
+          {videoHref ? (
             <video
               aria-label={`${title} video`}
               className="size-full"
               controls
+              onError={() => {
+                if (!videoAssetKey) return;
+                setVideoStream({ assetKey: videoAssetKey, status: "error" });
+              }}
+              onLoadedMetadata={() => {
+                if (!videoAssetKey) return;
+                setVideoStream({ assetKey: videoAssetKey, status: "ready" });
+              }}
               playsInline
               poster={posterAsset.url ?? undefined}
               preload="metadata"
-              src={videoAsset.url}
+              src={videoHref}
             />
           ) : null}
         </div>
@@ -167,7 +177,7 @@ export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewer
 
       {memory.can_download ? (
         <Button asChild type="button" variant="outline">
-          <a href={downloadUrl} download={videoAsset.url ? downloadFileName : undefined}>
+          <a href={downloadHref} download={downloadFileName}>
             <Download />
             Download
           </a>

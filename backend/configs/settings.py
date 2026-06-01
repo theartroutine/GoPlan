@@ -5,8 +5,9 @@ from pathlib import Path
 
 from PIL import Image as _PILImage
 
-# Process-wide hard guard for extreme decompression bombs. Individual upload
-# endpoints enforce their own lower source-pixel limits before storing files.
+# Process-wide hard guard for extreme decompression bombs. Every Image.open path
+# that accepts user-controlled files must enforce a local pixel/dimension cap
+# before storing files; do not rely on this global ceiling as feature validation.
 _PILImage.MAX_IMAGE_PIXELS = 50_000_000
 
 
@@ -35,7 +36,10 @@ if not DEBUG and not (_RAW_FRONTEND_BASE_URL or _RAW_PUBLIC_APP_BASE_URL):
     raise RuntimeError("Set PUBLIC_APP_BASE_URL or FRONTEND_BASE_URL in production.")
 FRONTEND_BASE_URL = _RAW_FRONTEND_BASE_URL or 'http://localhost:3000'
 PUBLIC_APP_BASE_URL = (_RAW_PUBLIC_APP_BASE_URL or FRONTEND_BASE_URL).rstrip('/')
-DEV_THROTTLE_BYPASS_EMAILS = env_list("DEV_THROTTLE_BYPASS_EMAILS") if DEBUG else ()
+DEV_THROTTLE_BYPASS_ENABLED = DEBUG and env_bool("DEV_THROTTLE_BYPASS_ENABLED", False)
+DEV_THROTTLE_BYPASS_EMAILS = (
+    env_list("DEV_THROTTLE_BYPASS_EMAILS") if DEV_THROTTLE_BYPASS_ENABLED else ()
+)
 
 # -------- Installed Apps --------
 INSTALLED_APPS = [

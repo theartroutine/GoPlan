@@ -414,6 +414,7 @@ class MemoryVideoRenderingHelperTests(TestCase):
         self.assertIn("-t", final_args)
         self.assertIn("aac", final_args)
         self.assertIn("yuv420p", final_args)
+        self.assertIn("afade=t=in:st=0:d=2", final_joined)
         self.assertIn("afade=t=out", final_joined)
         self.assertNotIn("anullsrc", final_joined)
         self.assertIn(str(output_video), final_args)
@@ -422,8 +423,25 @@ class MemoryVideoRenderingHelperTests(TestCase):
         # Every ffmpeg call is silenced and bounded by the configured timeout.
         for call in run.call_args_list:
             self.assertEqual(call.kwargs["stdout"], subprocess.DEVNULL)
-            self.assertEqual(call.kwargs["stderr"], subprocess.DEVNULL)
+            self.assertEqual(call.kwargs["stderr"], subprocess.PIPE)
+            self.assertTrue(call.kwargs["text"])
             self.assertEqual(call.kwargs["timeout"], 540)
+
+    @patch("memories.memory_video_rendering.subprocess.run")
+    def test_ffmpeg_failure_logs_stderr_excerpt(self, run):
+        from memories.memory_video_rendering import _run_ffmpeg
+
+        run.side_effect = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["ffmpeg", "-bad-filter"],
+            stderr="bad filtergraph\nsource image decode failed",
+        )
+
+        with self.assertLogs("memories.memory_video_rendering", level="ERROR") as captured:
+            with self.assertRaises(subprocess.CalledProcessError):
+                _run_ffmpeg(["ffmpeg", "-bad-filter"], timeout=5)
+
+        self.assertIn("bad filtergraph", "\n".join(captured.output))
 
     @patch("memories.memory_video_rendering.resolve_music_asset_path", return_value=None)
     @patch("memories.memory_video_rendering.subprocess.run")
@@ -530,6 +548,34 @@ class MemoryVideoRenderingHelperTests(TestCase):
         self.assertIn("inpoint 0.8", text)
         # Total duration = 3*4 - 2*0.8 = 10.4 seconds.
         self.assertAlmostEqual(profile.total_duration(3), 10.4, places=6)
+
+    def test_zero_transition_concat_uses_full_clips_without_xfade_segments(self) -> None:
+        from memories.memory_video_rendering import (
+            _build_concat_lines,
+            _load_profile,
+        )
+
+        clips = [Path(f"/tmp/clip-{i}.mp4") for i in range(3)]
+        with self.settings(
+            TRIP_MEMORY_SECONDS_PER_PHOTO=4,
+            TRIP_MEMORY_TRANSITION_SECONDS=0,
+        ):
+            profile = _load_profile()
+            lines = _build_concat_lines(
+                clip_paths=clips,
+                transition_paths=[],
+                profile=profile,
+            )
+
+        text = "\n".join(lines)
+        self.assertEqual([line for line in lines if line.startswith("file ")], [
+            "file '/tmp/clip-0.mp4'",
+            "file '/tmp/clip-1.mp4'",
+            "file '/tmp/clip-2.mp4'",
+        ])
+        self.assertNotIn("inpoint", text)
+        self.assertNotIn("outpoint", text)
+        self.assertAlmostEqual(profile.total_duration(3), 12, places=6)
 
     def test_single_photo_concat_has_only_the_clip(self) -> None:
         from memories.memory_video_rendering import (

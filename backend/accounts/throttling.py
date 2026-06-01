@@ -11,7 +11,10 @@ def _normalized_email(value: object) -> str:
 
 
 def _dev_bypass_emails() -> set[str]:
-    if not getattr(settings, "DEBUG", False):
+    if not (
+        getattr(settings, "DEBUG", False)
+        and getattr(settings, "DEV_THROTTLE_BYPASS_ENABLED", False)
+    ):
         return set()
     return {
         _normalized_email(email)

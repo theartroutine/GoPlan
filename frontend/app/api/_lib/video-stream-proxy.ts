@@ -1,14 +1,12 @@
-import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { refreshWithSingleFlight } from "@/app/api/auth/_lib/refresh";
 import {
-  REFRESH_COOKIE_NAME,
-  handleRefreshFailure,
-  setNoStoreHeaders,
-  setRefreshToken,
-} from "@/app/api/auth/_lib/session-state";
+  extractRangeHeader,
+  jsonErrorResponse,
+  proxyProtectedAsset,
+} from "@/app/api/_lib/protected-asset-proxy";
+import { setNoStoreHeaders } from "@/app/api/auth/_lib/session-state";
 import { API_BASE_URL } from "@/shared/http/config";
 
 type ProxyProtectedVideoStreamOptions = {
@@ -23,10 +21,6 @@ type ProxyPublicVideoStreamOptions = {
   fallbackDetail: string;
 };
 
-type AuthResult =
-  | { ok: true; bearer: string; refreshedAccessToken: string | null }
-  | { ok: false; response: NextResponse };
-
 const STREAM_HEADER_NAMES = [
   "Accept-Ranges",
   "Content-Range",
@@ -35,50 +29,6 @@ const STREAM_HEADER_NAMES = [
   "Content-Disposition",
   "Cache-Control",
 ] as const;
-
-function extractRangeHeader(request: Pick<NextRequest, "headers">): string | null {
-  return (
-    request.headers.get("Range") ??
-    Array.from(request.headers.entries()).find(
-      ([name]) => name.toLowerCase() === "range",
-    )?.[1] ??
-    null
-  );
-}
-
-async function resolveBearer(
-  jar: Awaited<ReturnType<typeof cookies>>,
-  incomingAuth: string | null,
-): Promise<AuthResult> {
-  if (incomingAuth) {
-    return { ok: true, bearer: incomingAuth, refreshedAccessToken: null };
-  }
-
-  const refreshToken = jar.get(REFRESH_COOKIE_NAME)?.value;
-  if (!refreshToken) {
-    return {
-      ok: false,
-      response: NextResponse.json({ detail: "Not authenticated." }, { status: 401 }),
-    };
-  }
-
-  const refreshResult = await refreshWithSingleFlight(refreshToken);
-  const failureResponse = handleRefreshFailure(jar, refreshResult);
-  if (failureResponse) return { ok: false, response: failureResponse };
-  if (refreshResult.kind !== "success") {
-    return {
-      ok: false,
-      response: NextResponse.json({ detail: "Auth failed." }, { status: 401 }),
-    };
-  }
-
-  setRefreshToken(jar, refreshResult.refreshToken);
-  return {
-    ok: true,
-    bearer: `Bearer ${refreshResult.accessToken}`,
-    refreshedAccessToken: refreshResult.accessToken,
-  };
-}
 
 function buildProtectedUpstreamHeaders(
   request: Pick<NextRequest, "headers">,
@@ -97,17 +47,6 @@ function buildPublicUpstreamHeaders(request: Pick<NextRequest, "headers">) {
   return headers;
 }
 
-async function fetchProtectedStream(
-  request: Pick<NextRequest, "headers">,
-  upstreamPath: string,
-  bearer: string,
-): Promise<Response> {
-  return fetch(`${API_BASE_URL}${upstreamPath}`, {
-    method: "GET",
-    headers: buildProtectedUpstreamHeaders(request, bearer),
-  });
-}
-
 async function fetchPublicStream(
   request: Pick<NextRequest, "headers">,
   upstreamPath: string,
@@ -116,24 +55,6 @@ async function fetchPublicStream(
     method: "GET",
     headers: buildPublicUpstreamHeaders(request),
   });
-}
-
-async function jsonErrorResponse(
-  upstream: Response,
-  fallbackDetail: string,
-): Promise<NextResponse> {
-  const text = await upstream.text();
-  let data: unknown;
-  try {
-    data = text ? JSON.parse(text) : { detail: fallbackDetail };
-  } catch {
-    data = { detail: text || fallbackDetail };
-  }
-
-  const response = NextResponse.json(data, { status: upstream.status });
-  const retryAfter = upstream.headers.get("Retry-After");
-  if (retryAfter) response.headers.set("Retry-After", retryAfter);
-  return response;
 }
 
 function isStreamableMediaResponse(upstream: Response): boolean {
@@ -206,37 +127,14 @@ export async function proxyProtectedVideoStream({
   upstreamPath,
   fallbackDetail,
 }: ProxyProtectedVideoStreamOptions): Promise<NextResponse> {
-  const jar = await cookies();
-  const incomingAuth = request.headers.get("Authorization");
-  const auth = await resolveBearer(jar, incomingAuth);
-  if (!auth.ok) return auth.response;
-
-  let upstream: Response;
-  try {
-    upstream = await fetchProtectedStream(request, upstreamPath, auth.bearer);
-  } catch {
-    return NextResponse.json(
-      { detail: "Video stream service unavailable." },
-      { status: 503 },
-    );
-  }
-
-  let refreshedAccessToken = auth.refreshedAccessToken;
-  if (upstream.status === 401 && incomingAuth && refreshedAccessToken === null) {
-    const retry = await resolveBearer(jar, null);
-    if (!retry.ok) return retry.response;
-    refreshedAccessToken = retry.refreshedAccessToken;
-    try {
-      upstream = await fetchProtectedStream(request, upstreamPath, retry.bearer);
-    } catch {
-      return NextResponse.json(
-        { detail: "Video stream service unavailable." },
-        { status: 503 },
-      );
-    }
-  }
-
-  return finalizeStreamResponse(upstream, fallbackDetail, refreshedAccessToken);
+  return proxyProtectedAsset({
+    request,
+    upstreamPath,
+    fallbackDetail,
+    serviceUnavailableDetail: "Video stream service unavailable.",
+    buildUpstreamHeaders: buildProtectedUpstreamHeaders,
+    finalizeResponse: finalizeStreamResponse,
+  });
 }
 
 export async function proxyPublicVideoStream({
