@@ -39,7 +39,7 @@ import {
 const LOAD_ERROR = "Could not load trip memories.";
 const DELETE_ERROR = "Could not delete this memory video.";
 const POLL_INTERVAL_MS = 15_000;
-const LOADING_SKELETON_KEYS = ["primary", "secondary"] as const;
+const LOADING_SKELETON_KEYS = ["primary", "secondary", "tertiary"] as const;
 
 function hasInProgressMemory(memories: TripMemoryVideo[]): boolean {
   return memories.some(
@@ -55,26 +55,22 @@ function inProgressMemoryIds(memories: TripMemoryVideo[]): string[] {
 
 function MemoryLoadingSkeleton() {
   return (
-    <div className="space-y-3" role="status">
+    <div
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      role="status"
+    >
       <span className="sr-only">Loading memories</span>
       {LOADING_SKELETON_KEYS.map((key) => (
         <div
-          className="memory-progress-border relative isolate overflow-hidden rounded-md border border-transparent p-[3px] shadow-md"
+          className="overflow-hidden rounded-lg border border-border bg-card shadow-xs"
           key={key}
         >
-          <div className="relative z-10 flex flex-col gap-3 rounded-[4px] bg-card p-3 sm:flex-row sm:p-4">
-            <div className="aspect-video w-full animate-pulse rounded-md bg-muted sm:w-48 sm:shrink-0 lg:w-56" />
-            <div className="flex-1 space-y-3 py-1">
-              <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-              <div className="flex flex-wrap gap-2">
-                <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-16 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-28 animate-pulse rounded bg-muted" />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <div className="h-8 w-28 animate-pulse rounded-md bg-muted" />
-                <div className="h-8 w-20 animate-pulse rounded-md bg-muted" />
-              </div>
+          <div className="aspect-video w-full animate-pulse bg-muted" />
+          <div className="space-y-2 p-3">
+            <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+            <div className="flex gap-2">
+              <div className="h-3 w-20 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-24 animate-pulse rounded bg-muted" />
             </div>
           </div>
         </div>
@@ -292,6 +288,14 @@ export function MemoriesTab() {
 
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
+          <h2 className="flex items-baseline gap-2 text-base font-semibold">
+            Memories
+            {memories.length > 0 ? (
+              <span className="text-sm font-normal text-muted-foreground">
+                {memories.length} {memories.length === 1 ? "video" : "videos"}
+              </span>
+            ) : null}
+          </h2>
           <p className="text-sm text-muted-foreground">
             Create and manage private videos for this trip.
           </p>
@@ -308,10 +312,12 @@ export function MemoriesTab() {
 
       {!loading && memories.length === 0 ? (
         <div className="flex min-h-72 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 px-6 py-12 text-center">
-          <Film className="mb-3 size-10 text-muted-foreground" />
+          <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <Film className="size-7" />
+          </div>
           <h2 className="text-base font-semibold">No memories yet.</h2>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Create the first memory video from this trip.
+            Turn this trip&apos;s photos into a private highlight video you can share.
           </p>
           <Button type="button" className="mt-4" onClick={() => setCreateOpen(true)}>
             <Plus />
@@ -321,22 +327,24 @@ export function MemoriesTab() {
       ) : null}
 
       {!loading && memories.length > 0 ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {refreshing ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               Refreshing
             </div>
           ) : null}
-          {memories.map((memory) => (
-            <MemoryVideoCard
-              key={memory.id}
-              memory={memory}
-              onDelete={setMemoryPendingDelete}
-              onPlay={setViewerMemory}
-              onShare={setShareMemory}
-            />
-          ))}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {memories.map((memory) => (
+              <MemoryVideoCard
+                key={memory.id}
+                memory={memory}
+                onDelete={setMemoryPendingDelete}
+                onPlay={setViewerMemory}
+                onShare={setShareMemory}
+              />
+            ))}
+          </div>
           {nextCursor ? (
             <div className="flex justify-center pt-2">
               <Button
