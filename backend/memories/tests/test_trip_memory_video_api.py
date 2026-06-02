@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.core.files.base import ContentFile
 from django.db import connection
@@ -9,6 +10,7 @@ from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from accounts.tokens import AccessToken
+from memories.memory_video_services import get_memory_music_track
 from memories.models import (
     TripMemoryVideo,
     TripMemoryVideoSourceMode,
@@ -79,10 +81,6 @@ def _memory_detail_url(trip_id, memory_id) -> str:
 
 def _share_link_url(trip_id, memory_id) -> str:
     return f"/api/trips/{trip_id}/memories/{memory_id}/share-link"
-
-
-def _music_tracks_url(trip_id) -> str:
-    return f"/api/trips/{trip_id}/memories/music-tracks"
 
 
 def _status_url(trip_id) -> str:
@@ -165,7 +163,6 @@ class TripMemoryVideoAPITests(APITestCase):
                 "title": "Shape recap",
                 "source_mode": "manual",
                 "photo_ids": [str(photo.id) for photo in photos],
-                "music_key": MUSIC_KEY,
             },
             format="json",
             **_auth(self.member),
@@ -307,13 +304,17 @@ class TripMemoryVideoAPITests(APITestCase):
         self.assertEqual(response.data["memory"]["source_mode"], "auto")
         self.assertEqual(response.data["memory"]["source_photo_count"], 8)
 
-    def test_invalid_music_returns_400_memory_invalid_music(self):
+    @patch("memories.memory_video_services.secrets.choice")
+    def test_create_ignores_client_supplied_music_key_and_randomly_assigns_music(self, choice):
+        selected_track = get_memory_music_track("carefree")
+        self.assertIsNotNone(selected_track)
+        choice.return_value = selected_track
         photos = self._photos(5)
 
         response = self.client.post(
             _memories_url(self.trip.id),
             {
-                "title": "Invalid music",
+                "title": "Client music ignored",
                 "source_mode": "manual",
                 "photo_ids": [str(photo.id) for photo in photos],
                 "music_key": "unknown-track",
@@ -322,15 +323,15 @@ class TripMemoryVideoAPITests(APITestCase):
             **_auth(self.member),
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data["error_code"], "MEMORY_INVALID_MUSIC")
+        self.assertEqual(response.status_code, 201)
+        choice.assert_called_once()
+        self.assertEqual(response.data["memory"]["music"]["key"], "carefree")
 
     def test_serializer_validation_errors_return_memory_error_envelope(self):
         create_response = self.client.post(
             _memories_url(self.trip.id),
             {
                 "title": "Missing source mode",
-                "music_key": MUSIC_KEY,
             },
             format="json",
             **_auth(self.member),
@@ -341,7 +342,6 @@ class TripMemoryVideoAPITests(APITestCase):
                 "title": "Invalid UUID",
                 "source_mode": "manual",
                 "photo_ids": ["not-a-uuid"],
-                "music_key": MUSIC_KEY,
             },
             format="json",
             **_auth(self.member),
@@ -381,7 +381,6 @@ class TripMemoryVideoAPITests(APITestCase):
                 "title": "Cancelled recap",
                 "source_mode": "manual",
                 "photo_ids": [str(photo.id) for photo in photos],
-                "music_key": MUSIC_KEY,
             },
             format="json",
             **_auth(self.member),
@@ -551,23 +550,6 @@ class TripMemoryVideoAPITests(APITestCase):
         self.assertFalse(memory.share_enabled)
         self.assertIsNone(memory.share_slug)
         self.assertIsNone(memory.share_created_at)
-
-    def test_music_tracks_route_returns_audible_catalog(self):
-        response = self.client.get(_music_tracks_url(self.trip.id), **_auth(self.member))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertGreaterEqual(len(response.data["tracks"]), 7)
-        self.assertNotIn(
-            "silent-placeholder",
-            {track["key"] for track in response.data["tracks"]},
-        )
-        for track in response.data["tracks"]:
-            self.assertIn(track["license"], {"CC0 1.0", "CC-BY 4.0"})
-            if track["license"] == "CC-BY 4.0":
-                # CC-BY tracks must expose attribution to listeners.
-                self.assertTrue(track["artist"])
-                self.assertTrue(track["license_url"])
-                self.assertTrue(track["source_url"])
 
     def test_create_options_route_returns_photo_limits_only(self):
         response = self.client.get(_create_options_url(self.trip.id), **_auth(self.member))

@@ -86,18 +86,11 @@ class TripMemoryVideoCreateSerializer(serializers.Serializer):
         allow_empty=True,
         default=list,
     )
-    music_key = serializers.CharField(
-        max_length=80,
-        required=False,
-        allow_blank=True,
-        default="",
-    )
 
 
 MEMORY_VIDEO_VALIDATION_ERROR_CODES_BY_FIELD = {
     "source_mode": "MEMORY_INVALID_SOURCE_MODE",
     "photo_ids": "MEMORY_INVALID_PHOTO_SELECTION",
-    "music_key": "MEMORY_INVALID_MUSIC",
 }
 
 

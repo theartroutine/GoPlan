@@ -153,15 +153,6 @@ def _render_task_time_limits(source_photo_count: int) -> dict[str, int]:
     }
 
 
-def _validate_music_key(music_key: str) -> None:
-    track = get_memory_music_track(music_key)
-    if track is None or not track.enabled or track.placeholder:
-        raise MemoryVideoValidationError(
-            "MEMORY_INVALID_MUSIC",
-            "Selected music track is not available.",
-        )
-
-
 def _select_random_music_key() -> str:
     tracks = list_memory_music_tracks()
     if not tracks:
@@ -172,10 +163,7 @@ def _select_random_music_key() -> str:
     return secrets.choice(tracks).key
 
 
-def _resolve_music_key(music_key: str | None) -> str:
-    if music_key:
-        _validate_music_key(music_key)
-        return music_key
+def _resolve_music_key() -> str:
     return _select_random_music_key()
 
 
@@ -466,12 +454,11 @@ def create_trip_memory_video(
     title: str,
     source_mode: str,
     photo_ids: list,
-    music_key: str | None = None,
 ) -> TripMemoryVideo:
     membership = _get_active_membership(trip_id, actor)
     trip = membership.trip
     _assert_trip_accepts_memory_mutation(trip.status)
-    resolved_music_key = _resolve_music_key(music_key)
+    resolved_music_key = _resolve_music_key()
 
     if source_mode == TripMemoryVideoSourceMode.MANUAL:
         selected_photos = _resolve_manual_photos(trip_id=trip_id, photo_ids=photo_ids)

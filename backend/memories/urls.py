@@ -5,7 +5,6 @@ from django.urls import path
 from memories.views import (
     PublicTripMemoryVideoAssetAPIView,
     PublicTripMemoryVideoDetailAPIView,
-    TripMemoryMusicTracksAPIView,
     TripMemoryVideoCreateOptionsAPIView,
     TripMemoryVideoAssetAPIView,
     TripMemoryVideoDetailAPIView,
@@ -28,7 +27,6 @@ urlpatterns = [
     path("<uuid:trip_id>/memories", TripMemoryVideoListCreateAPIView.as_view(), name="trip-memories"),
     path("<uuid:trip_id>/memories/status", TripMemoryVideoStatusAPIView.as_view(), name="trip-memory-status"),
     path("<uuid:trip_id>/memories/create-options", TripMemoryVideoCreateOptionsAPIView.as_view(), name="trip-memory-create-options"),
-    path("<uuid:trip_id>/memories/music-tracks", TripMemoryMusicTracksAPIView.as_view(), name="trip-memory-music-tracks"),
     path("<uuid:trip_id>/memories/<uuid:memory_id>", TripMemoryVideoDetailAPIView.as_view(), name="trip-memory-detail"),
     path(
         "<uuid:trip_id>/memories/<uuid:memory_id>/share-link",

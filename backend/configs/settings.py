@@ -261,7 +261,6 @@ REST_FRAMEWORK = {
         'trip_memories_status': '600/hour',
         'trip_memory_assets': '600/hour',
         'trip_memory_share_link': '60/hour',
-        'trip_memories_music': '120/hour',
         'public_memory_detail': '600/hour',
         'public_memory_assets': '600/hour',
         'trips_list_create': '60/hour',

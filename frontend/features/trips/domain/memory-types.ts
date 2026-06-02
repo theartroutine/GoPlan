@@ -75,7 +75,6 @@ export type CreateTripMemoryPayload = {
   title?: string;
   source_mode: TripMemorySourceMode;
   photo_ids?: string[];
-  music_key?: string;
 };
 
 export type UpdateTripMemoryPayload = {
@@ -88,18 +87,4 @@ export type TripMemoryResponse = {
 
 export type TripMemoryShareResponse = {
   share: TripMemoryShare;
-};
-
-export type MemoryMusicTrack = {
-  key: string;
-  title: string;
-  artist: string;
-  enabled: boolean;
-  license?: string;
-  license_url?: string;
-  source_url?: string;
-};
-
-export type MemoryMusicTracksResponse = {
-  tracks: MemoryMusicTrack[];
 };

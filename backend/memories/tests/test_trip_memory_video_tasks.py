@@ -119,7 +119,6 @@ class TripMemoryVideoTaskTests(TestCase):
                 title="Render me",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos],
-                music_key=MUSIC_KEY,
             )
 
         apply_async.assert_called_once_with(
@@ -144,7 +143,6 @@ class TripMemoryVideoTaskTests(TestCase):
                     title="Large render",
                     source_mode=TripMemoryVideoSourceMode.MANUAL,
                     photo_ids=[photo.id for photo in photos],
-                    music_key=MUSIC_KEY,
                 )
 
         apply_async.assert_called_once_with(
@@ -166,7 +164,6 @@ class TripMemoryVideoTaskTests(TestCase):
                 title="No task",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos],
-                music_key=MUSIC_KEY,
             )
 
         memory.refresh_from_db()

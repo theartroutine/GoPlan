@@ -113,7 +113,6 @@ class TripMemoryVideoServiceTests(TestCase):
             title="Summer recap",
             source_mode=TripMemoryVideoSourceMode.MANUAL,
             photo_ids=[photo.id for photo in photos],
-            music_key=MUSIC_KEY,
         )
 
         self.assertEqual(memory.trip_id, self.trip.id)
@@ -123,7 +122,7 @@ class TripMemoryVideoServiceTests(TestCase):
         self.assertEqual(memory.source_mode, TripMemoryVideoSourceMode.MANUAL)
         self.assertEqual(memory.source_photo_ids, [str(photo.id) for photo in photos])
         self.assertEqual(memory.source_photo_count, 5)
-        self.assertEqual(memory.music_key, MUSIC_KEY)
+        self.assertIsNotNone(get_memory_music_track(memory.music_key))
 
     def test_music_catalog_exposes_audible_tracks_not_silent_placeholder(self):
         tracks = list_memory_music_tracks()
@@ -169,7 +168,6 @@ class TripMemoryVideoServiceTests(TestCase):
                 title="Too short",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos],
-                music_key=MUSIC_KEY,
             )
 
         self.assertEqual(ctx.exception.error_code, "MEMORY_INVALID_PHOTO_SELECTION")
@@ -184,7 +182,6 @@ class TripMemoryVideoServiceTests(TestCase):
                 title="Too long",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos],
-                music_key=MUSIC_KEY,
             )
 
         self.assertEqual(ctx.exception.error_code, "MEMORY_INVALID_PHOTO_SELECTION")
@@ -201,7 +198,6 @@ class TripMemoryVideoServiceTests(TestCase):
                 title="Duplicate",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=photo_ids,
-                music_key=MUSIC_KEY,
             )
 
         self.assertEqual(ctx.exception.error_code, "MEMORY_INVALID_PHOTO_SELECTION")
@@ -218,7 +214,6 @@ class TripMemoryVideoServiceTests(TestCase):
                 title="Mixed trip",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos] + [other_photo.id],
-                music_key=MUSIC_KEY,
             )
 
         self.assertEqual(ctx.exception.error_code, "MEMORY_INVALID_PHOTO_SELECTION")
@@ -234,7 +229,6 @@ class TripMemoryVideoServiceTests(TestCase):
                 title="Unusable photo",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos] + [unusable_photo.id],
-                music_key=MUSIC_KEY,
             )
 
         self.assertEqual(ctx.exception.error_code, "MEMORY_INVALID_PHOTO_SELECTION")
@@ -275,7 +269,6 @@ class TripMemoryVideoServiceTests(TestCase):
             title="Completed recap",
             source_mode=TripMemoryVideoSourceMode.MANUAL,
             photo_ids=[photo.id for photo in photos],
-            music_key=MUSIC_KEY,
         )
 
         self.assertEqual(memory.status, TripMemoryVideoStatus.QUEUED)
@@ -292,7 +285,6 @@ class TripMemoryVideoServiceTests(TestCase):
                 title="Cancelled recap",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos],
-                music_key=MUSIC_KEY,
             )
 
         self.assertEqual(ctx.exception.error_code, "TRIP_TERMINAL")
@@ -307,7 +299,6 @@ class TripMemoryVideoServiceTests(TestCase):
                 title="Outsider recap",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos],
-                music_key="unknown-track",
             )
 
         self.assertEqual(ctx.exception.error_code, "TRIP_NOT_FOUND")
@@ -320,7 +311,6 @@ class TripMemoryVideoServiceTests(TestCase):
             title="First recap",
             source_mode=TripMemoryVideoSourceMode.MANUAL,
             photo_ids=[photo.id for photo in photos],
-            music_key=MUSIC_KEY,
         )
 
         with self.assertRaises(MemoryVideoValidationError) as ctx:
@@ -330,7 +320,6 @@ class TripMemoryVideoServiceTests(TestCase):
                 title="Second recap",
                 source_mode=TripMemoryVideoSourceMode.MANUAL,
                 photo_ids=[photo.id for photo in photos],
-                music_key=MUSIC_KEY,
             )
 
         self.assertEqual(ctx.exception.error_code, "MEMORY_RENDER_ALREADY_RUNNING")
@@ -349,7 +338,6 @@ class TripMemoryVideoServiceTests(TestCase):
                         title=f"{actor.display_name} recap",
                         source_mode=TripMemoryVideoSourceMode.MANUAL,
                         photo_ids=[photo.id for photo in photos],
-                        music_key=MUSIC_KEY,
                     )
 
             with self.assertRaises(MemoryVideoValidationError) as ctx:
@@ -359,7 +347,6 @@ class TripMemoryVideoServiceTests(TestCase):
                     title="Fourth recap",
                     source_mode=TripMemoryVideoSourceMode.MANUAL,
                     photo_ids=[photo.id for photo in photos],
-                    music_key=MUSIC_KEY,
                 )
 
         self.assertEqual(ctx.exception.error_code, "MEMORY_RENDER_TRIP_LIMIT_REACHED")
@@ -561,21 +548,6 @@ class TripMemoryVideoServiceTests(TestCase):
         memory.refresh_from_db()
         self.assertEqual(memory.share_slug, "retry-slug")
         self.assertTrue(memory.share_enabled)
-
-    def test_create_rejects_silent_placeholder_for_new_memory(self):
-        photos = self._photos(5)
-
-        with self.assertRaises(MemoryVideoValidationError) as ctx:
-            create_trip_memory_video(
-                trip_id=self.trip.id,
-                actor=self.member,
-                title="Silent recap",
-                source_mode=TripMemoryVideoSourceMode.MANUAL,
-                photo_ids=[photo.id for photo in photos],
-                music_key="silent-placeholder",
-            )
-
-        self.assertEqual(ctx.exception.error_code, "MEMORY_INVALID_MUSIC")
 
     def test_enable_share_link_requires_ready_memory_with_files(self):
         for video_status in [TripMemoryVideoStatus.QUEUED, TripMemoryVideoStatus.RENDERING, TripMemoryVideoStatus.FAILED]:

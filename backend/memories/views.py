@@ -28,7 +28,6 @@ from memories.memory_video_services import (
     get_public_memory_video,
     get_public_memory_video_file,
     get_trip_memory_video,
-    list_memory_music_tracks,
     list_trip_memory_video_statuses,
     list_trip_memory_videos,
     memory_photo_limits,
@@ -393,7 +392,6 @@ class TripMemoryVideoListCreateAPIView(APIView):
                 title=serializer.validated_data["title"],
                 source_mode=serializer.validated_data["source_mode"],
                 photo_ids=serializer.validated_data["photo_ids"],
-                music_key=serializer.validated_data["music_key"],
             )
         except Exception as exc:
             response = _map_service_error(exc)
@@ -642,37 +640,6 @@ class TripMemoryVideoShareLinkAPIView(APIView):
             context=_memory_serializer_context(request, membership),
         ).data
         return Response({"share": payload["share"]})
-
-
-class TripMemoryMusicTracksAPIView(APIView):
-    permission_classes = TRIP_MEMORY_PERMISSIONS
-    throttle_scope = "trip_memories_music"
-
-    def get(self, request, trip_id):
-        try:
-            _get_active_membership(trip_id, request.user)
-        except Exception as exc:
-            response = _map_service_error(exc)
-            if response is None:
-                raise
-            return response
-
-        return Response(
-            {
-                "tracks": [
-                    {
-                        "key": track.key,
-                        "title": track.title,
-                        "artist": track.artist,
-                        "enabled": track.enabled,
-                        "license": track.license,
-                        "license_url": track.license_url,
-                        "source_url": track.source_url,
-                    }
-                    for track in list_memory_music_tracks()
-                ]
-            }
-        )
 
 
 class PublicTripMemoryVideoDetailAPIView(APIView):

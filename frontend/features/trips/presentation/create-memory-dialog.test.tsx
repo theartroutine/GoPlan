@@ -7,7 +7,6 @@ import type { TripPhoto } from "@/features/trips/domain/photo-types";
 const memoriesApiMock = vi.hoisted(() => ({
   bffCreateTripMemory: vi.fn(),
   bffGetTripMemoryCreateOptions: vi.fn(),
-  bffListMemoryMusicTracks: vi.fn(),
 }));
 
 const photosApiMock = vi.hoisted(() => ({
@@ -92,14 +91,6 @@ describe("CreateMemoryDialog", () => {
     photosApiMock.bffFetchTripPhotoAssetBlob.mockResolvedValue(
       new Blob(["image"], { type: "image/webp" }),
     );
-    memoriesApiMock.bffListMemoryMusicTracks.mockResolvedValue([
-      {
-        key: "sunrise-road",
-        title: "Sunrise Road",
-        artist: "GoPlan",
-        enabled: true,
-      },
-    ]);
     memoriesApiMock.bffGetTripMemoryCreateOptions.mockResolvedValue({
       photo_limits: {
         min: 5,
@@ -193,7 +184,6 @@ describe("CreateMemoryDialog", () => {
         title: "",
       });
       expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ source_mode: "auto" }));
-      expect(memoriesApiMock.bffListMemoryMusicTracks).not.toHaveBeenCalled();
     });
   });
 
@@ -201,7 +191,6 @@ describe("CreateMemoryDialog", () => {
     renderDialog();
 
     expect(screen.queryByText("Music")).not.toBeInTheDocument();
-    expect(memoriesApiMock.bffListMemoryMusicTracks).not.toHaveBeenCalled();
   });
 
   it("loads later photo pages and can submit selected photos from them", async () => {

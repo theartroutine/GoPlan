@@ -19,7 +19,6 @@ import {
   bffEnableTripMemoryShareLink,
   bffFetchTripMemoryAssetBlob,
   bffGetTripMemoryCreateOptions,
-  bffListMemoryMusicTracks,
   bffListTripMemories,
   bffListTripMemoryStatuses,
   bffUpdateTripMemory,
@@ -137,28 +136,22 @@ describe("memories-api", () => {
     );
   });
 
-  it("enables and disables share links and lists music tracks", async () => {
+  it("enables and disables share links", async () => {
     const share = { enabled: true, url: "https://goplan.test/memories/share-1" };
-    const tracks = [{ key: "track_1", title: "Road", artist: "GoPlan", enabled: true }];
     bffMock.post.mockResolvedValueOnce({ data: { share } });
     bffMock.delete.mockResolvedValueOnce({ data: { share: { enabled: false, url: null } } });
-    bffMock.get.mockResolvedValueOnce({ data: { tracks } });
 
     await expect(bffEnableTripMemoryShareLink("trip 1", "memory 1")).resolves.toBe(share);
     await expect(bffDisableTripMemoryShareLink("trip 1", "memory 1")).resolves.toEqual({
       enabled: false,
       url: null,
     });
-    await expect(bffListMemoryMusicTracks("trip 1")).resolves.toEqual(tracks);
 
     expect(bffMock.post).toHaveBeenCalledWith(
       "/api/trips/trip%201/memories/memory%201/share-link",
     );
     expect(bffMock.delete).toHaveBeenCalledWith(
       "/api/trips/trip%201/memories/memory%201/share-link",
-    );
-    expect(bffMock.get).toHaveBeenCalledWith(
-      "/api/trips/trip%201/memories/music-tracks",
     );
   });
 

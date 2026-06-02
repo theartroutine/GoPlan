@@ -1,8 +1,6 @@
 import type {
   CreateTripMemoryPayload,
   TripMemoryCreateOptionsResponse,
-  MemoryMusicTracksResponse,
-  MemoryMusicTrack,
   TripMemoryListResponse,
   TripMemoryPage,
   TripMemoryResponse,
@@ -194,15 +192,4 @@ export async function bffFetchTripMemoryAssetBlob(
   } catch (error) {
     return throwWithParsedBlobJsonError(error);
   }
-}
-
-export async function bffListMemoryMusicTracks(
-  tripId: string,
-  options: RequestOptions = {},
-): Promise<MemoryMusicTrack[]> {
-  const path = `${tripMemoriesPath(tripId)}/music-tracks`;
-  const res = options.signal
-    ? await bff.get<MemoryMusicTracksResponse>(path, { signal: options.signal })
-    : await bff.get<MemoryMusicTracksResponse>(path);
-  return res.data.tracks;
 }

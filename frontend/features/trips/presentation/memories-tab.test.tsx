@@ -8,7 +8,6 @@ const memoriesApiMock = vi.hoisted(() => ({
   bffDeleteTripMemory: vi.fn(),
   bffFetchTripMemoryAssetBlob: vi.fn(),
   bffGetTripMemoryCreateOptions: vi.fn(),
-  bffListMemoryMusicTracks: vi.fn(),
   bffListTripMemories: vi.fn(),
   bffListTripMemoryStatuses: vi.fn(),
 }));
@@ -67,14 +66,6 @@ describe("MemoriesTab", () => {
       configurable: true,
       value: vi.fn(),
     });
-    memoriesApiMock.bffListMemoryMusicTracks.mockResolvedValue([
-      {
-        key: "sunrise-road",
-        title: "Sunrise Road",
-        artist: "GoPlan",
-        enabled: true,
-      },
-    ]);
     memoriesApiMock.bffFetchTripMemoryAssetBlob.mockResolvedValue(
       new Blob(["poster"], { type: "image/webp" }),
     );
@@ -360,7 +351,6 @@ describe("MemoriesTab", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Create memory" }).at(-1)!);
 
     expect(await screen.findByText("Created memory")).toBeInTheDocument();
-    expect(memoriesApiMock.bffListMemoryMusicTracks).not.toHaveBeenCalled();
   });
 
   it("loads additional memory pages", async () => {
