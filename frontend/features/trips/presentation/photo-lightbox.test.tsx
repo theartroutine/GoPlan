@@ -30,8 +30,10 @@ function renderLightbox(overrides: Partial<React.ComponentProps<typeof PhotoLigh
     error: null,
     canNavigatePrevious: false,
     canNavigateNext: false,
+    downloading: false,
     onClose: vi.fn(),
     onRequestDelete: vi.fn(),
+    onRequestDownload: vi.fn(),
     onNavigatePrevious: vi.fn(),
     onNavigateNext: vi.fn(),
     ...overrides,
@@ -128,6 +130,34 @@ describe("PhotoLightbox", () => {
     fireEvent.mouseEnter(stage);
     fireEvent.click(screen.getByRole("button", { name: "Delete photo uploaded by Minh" }));
     expect(onRequestDelete).toHaveBeenCalledWith(PHOTO);
+  });
+
+  it("calls onRequestDownload when the download button is clicked", () => {
+    const onRequestDownload = vi.fn();
+    renderLightbox({ onRequestDownload });
+
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
+    fireEvent.click(screen.getByRole("button", { name: "Download photo uploaded by Minh" }));
+    expect(onRequestDownload).toHaveBeenCalledWith(PHOTO);
+  });
+
+  it("shows the download button even when the photo cannot be deleted", () => {
+    renderLightbox({ photo: { ...PHOTO, can_delete: false } });
+
+    const dialog = screen.getByRole("dialog", { name: "Photo detail" });
+    const stage = dialog.querySelector("[data-photo-lightbox-stage]");
+    if (!(stage instanceof HTMLElement)) {
+      throw new Error("Photo lightbox stage was not rendered.");
+    }
+    fireEvent.mouseEnter(stage);
+    expect(
+      screen.getByRole("button", { name: "Download photo uploaded by Minh" }),
+    ).toBeInTheDocument();
   });
 
   it("calls onClose when the close button is clicked", () => {
@@ -250,8 +280,10 @@ describe("PhotoLightbox", () => {
         error={null}
         canNavigatePrevious={false}
         canNavigateNext={false}
+        downloading={false}
         onClose={vi.fn()}
         onRequestDelete={vi.fn()}
+        onRequestDownload={vi.fn()}
         onNavigatePrevious={vi.fn()}
         onNavigateNext={vi.fn()}
       />,
@@ -265,8 +297,10 @@ describe("PhotoLightbox", () => {
         error={null}
         canNavigatePrevious={false}
         canNavigateNext={false}
+        downloading={false}
         onClose={vi.fn()}
         onRequestDelete={vi.fn()}
+        onRequestDownload={vi.fn()}
         onNavigatePrevious={vi.fn()}
         onNavigateNext={vi.fn()}
       />,

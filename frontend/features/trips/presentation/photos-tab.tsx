@@ -15,12 +15,16 @@ import {
 } from "@/features/trips/domain/photo-errors";
 import {
   bffDeleteTripPhoto,
+  bffDownloadTripPhoto,
+  bffDownloadTripPhotosZip,
   bffFetchTripPhotoAssetBlob,
   bffListTripPhotos,
   bffUploadTripPhotos,
 } from "@/features/trips/infrastructure/photos-api";
+import { triggerBrowserDownload } from "@/features/trips/infrastructure/download-file";
 import { PhotoGrid } from "@/features/trips/presentation/photo-grid";
 import { PhotoLightbox } from "@/features/trips/presentation/photo-lightbox";
+import { PhotoSelectionBar } from "@/features/trips/presentation/photo-selection-bar";
 import { calculateInitialPhotoPageSizeFromElement } from "@/features/trips/presentation/photo-page-size";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
 import {
@@ -45,6 +49,7 @@ import { Spinner } from "@/shared/ui/spinner";
 const LOAD_ERROR = "Could not load trip photos.";
 const UPLOAD_ERROR = "Could not upload photos.";
 const DELETE_ERROR = "Could not delete this photo.";
+const DOWNLOAD_ERROR = "Could not download photos.";
 
 export function PhotosTab() {
   const { tripId } = useTripContext();
@@ -63,6 +68,11 @@ export function PhotosTab() {
   const [stagedFiles, setStagedFiles] = useState<File[] | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<TripPhoto | null>(null);
   const [photoPendingDelete, setPhotoPendingDelete] = useState<TripPhoto | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [downloadingPhotoId, setDownloadingPhotoId] = useState<string | null>(null);
+  const [downloadingZip, setDownloadingZip] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const selectedPhotoId = selectedPhoto?.id ?? null;
   const selectedPhotoIndex = selectedPhoto
     ? photos.findIndex((photo) => photo.id === selectedPhoto.id)
@@ -229,6 +239,12 @@ export function PhotosTab() {
       await bffDeleteTripPhoto(tripId, photo.id);
       setPhotos((current) => current.filter((item) => item.id !== photo.id));
       if (selectedPhoto?.id === photo.id) setSelectedPhoto(null);
+      setSelectedIds((current) => {
+        if (!current.has(photo.id)) return current;
+        const next = new Set(current);
+        next.delete(photo.id);
+        return next;
+      });
       setPhotoPendingDelete(null);
     } catch (err) {
       setDeleteError(getTripPhotoErrorMessage(err, DELETE_ERROR));
@@ -247,6 +263,70 @@ export function PhotosTab() {
     setSelectedPhoto(photos[selectedPhotoIndex + 1] ?? null);
   }
 
+  async function handleDownloadSingle(photo: TripPhoto) {
+    if (downloadingPhotoId === photo.id) return;
+    setDownloadError(null);
+    setDownloadingPhotoId(photo.id);
+
+    try {
+      const { blob, filename } = await bffDownloadTripPhoto(tripId, photo.id);
+      triggerBrowserDownload(blob, filename);
+    } catch (err) {
+      setDownloadError(getTripPhotoErrorMessage(err, DOWNLOAD_ERROR));
+    } finally {
+      setDownloadingPhotoId((current) => (current === photo.id ? null : current));
+    }
+  }
+
+  function handleEnterSelection(photo: TripPhoto) {
+    setDownloadError(null);
+    setSelectionMode(true);
+    setSelectedIds(new Set([photo.id]));
+  }
+
+  function handleToggleSelect(photo: TripPhoto) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(photo.id)) next.delete(photo.id);
+      else next.add(photo.id);
+      return next;
+    });
+  }
+
+  function handleSelectAll() {
+    setSelectedIds(new Set(photos.map((photo) => photo.id)));
+  }
+
+  function handleClearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function handleExitSelection() {
+    if (downloadingZip) return;
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function handleDownloadSelected() {
+    if (selectedIds.size === 0 || downloadingZip) return;
+    setDownloadError(null);
+    setDownloadingZip(true);
+
+    try {
+      const ids = photos
+        .filter((photo) => selectedIds.has(photo.id))
+        .map((photo) => photo.id);
+      const { blob, filename } = await bffDownloadTripPhotosZip(tripId, ids);
+      triggerBrowserDownload(blob, filename);
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    } catch (err) {
+      setDownloadError(getTripPhotoErrorMessage(err, DOWNLOAD_ERROR));
+    } finally {
+      setDownloadingZip(false);
+    }
+  }
+
   return (
     <div ref={galleryRootRef} className="space-y-4">
       {uploadError && stagedFiles === null ? (
@@ -257,6 +337,11 @@ export function PhotosTab() {
       {deleteError ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {deleteError}
+        </div>
+      ) : null}
+      {downloadError ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {downloadError}
         </div>
       ) : null}
       {error ? (
@@ -318,7 +403,12 @@ export function PhotosTab() {
           photos={photos}
           thumbnailErrors={thumbnailErrors}
           thumbnailUrls={thumbnailUrls}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
           onOpen={setSelectedPhoto}
+          onToggleSelect={handleToggleSelect}
+          onRequestDownload={(photo) => void handleDownloadSingle(photo)}
+          onEnterSelection={handleEnterSelection}
         />
       ) : null}
 
@@ -343,8 +433,12 @@ export function PhotosTab() {
         error={mediumError}
         canNavigatePrevious={canNavigatePreviousPhoto}
         canNavigateNext={canNavigateNextPhoto}
+        downloading={
+          selectedPhotoId !== null && downloadingPhotoId === selectedPhotoId
+        }
         onClose={() => setSelectedPhoto(null)}
         onRequestDelete={setPhotoPendingDelete}
+        onRequestDownload={(photo) => void handleDownloadSingle(photo)}
         onNavigatePrevious={handleNavigatePreviousPhoto}
         onNavigateNext={handleNavigateNextPhoto}
       />
@@ -379,7 +473,19 @@ export function PhotosTab() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <UploadFab onFilesSelected={handleFilesSelected} uploading={uploading} />
+      {selectionMode ? (
+        <PhotoSelectionBar
+          selectedCount={selectedIds.size}
+          totalCount={photos.length}
+          downloading={downloadingZip}
+          onDownload={() => void handleDownloadSelected()}
+          onSelectAll={handleSelectAll}
+          onClear={handleClearSelection}
+          onCancel={handleExitSelection}
+        />
+      ) : (
+        <UploadFab onFilesSelected={handleFilesSelected} uploading={uploading} />
+      )}
 
       <UploadReviewDialog
         open={stagedFiles !== null}

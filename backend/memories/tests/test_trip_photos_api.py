@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import uuid
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -56,6 +58,10 @@ def _photo_detail_url(trip_id, photo_id) -> str:
 
 def _photo_asset_url(trip_id, photo_id, variant: str) -> str:
     return f"/api/trips/{trip_id}/photos/{photo_id}/{variant}"
+
+
+def _photos_bulk_download_url(trip_id) -> str:
+    return f"/api/trips/{trip_id}/photos/download"
 
 
 def _make_upload(
@@ -367,3 +373,145 @@ class TripPhotosAPITests(APITestCase):
             [path for path in Path(self.tempdir.name).rglob("*") if path.is_file()],
             [],
         )
+
+    # -------- Single photo download --------
+
+    def _upload_photo(self, *, filename="photo.jpg", color="navy"):
+        response = self.client.post(
+            _photos_url(self.trip.id),
+            {"files": [_make_upload(filename=filename, color=color)]},
+            format="multipart",
+            **_auth(self.member),
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.data["photos"][0]["id"]
+
+    def test_member_downloads_single_photo_as_webp_attachment(self):
+        photo_id = self._upload_photo(filename="Hạ Long Bay.jpg")
+
+        response = self.client.get(
+            _photo_asset_url(self.trip.id, photo_id, "download"),
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/webp")
+        self.assertEqual(response["Cache-Control"], "private, no-store")
+        self.assertIn("attachment;", response["Content-Disposition"])
+        self.assertTrue(response["Content-Disposition"].endswith('.webp"'))
+        self.assertGreater(len(b"".join(response.streaming_content)), 0)
+
+    def test_non_member_cannot_download_single_photo(self):
+        photo_id = self._upload_photo()
+
+        response = self.client.get(
+            _photo_asset_url(self.trip.id, photo_id, "download"),
+            **_auth(self.other),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "TRIP_NOT_FOUND")
+
+    def test_download_unknown_photo_returns_404(self):
+        response = self.client.get(
+            _photo_asset_url(self.trip.id, uuid.uuid4(), "download"),
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "PHOTO_NOT_FOUND")
+
+    # -------- Bulk ZIP download --------
+
+    def test_member_bulk_downloads_selected_photos_as_zip(self):
+        first = self._upload_photo(filename="alpha.jpg", color="red")
+        second = self._upload_photo(filename="beta.png", color="green")
+
+        response = self.client.post(
+            _photos_bulk_download_url(self.trip.id),
+            {"photo_ids": [first, second]},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn("attachment;", response["Content-Disposition"])
+        self.assertTrue(response["Content-Disposition"].endswith('.zip"'))
+
+        payload = b"".join(response.streaming_content)
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            names = archive.namelist()
+            self.assertEqual(len(names), 2)
+            for name in names:
+                self.assertTrue(name.endswith(".webp"))
+                self.assertGreater(len(archive.read(name)), 0)
+
+    def test_bulk_download_de_duplicates_colliding_entry_names(self):
+        first = self._upload_photo(filename="same.jpg", color="red")
+        second = self._upload_photo(filename="same.png", color="green")
+
+        response = self.client.post(
+            _photos_bulk_download_url(self.trip.id),
+            {"photo_ids": [first, second]},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = b"".join(response.streaming_content)
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            names = archive.namelist()
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_bulk_download_rejects_empty_selection(self):
+        response = self.client.post(
+            _photos_bulk_download_url(self.trip.id),
+            {"photo_ids": []},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_bulk_download_rejects_photo_from_another_trip(self):
+        photo_id = self._upload_photo()
+        other_trip = _make_trip(self.other)
+
+        response = self.client.post(
+            _photos_bulk_download_url(other_trip.id),
+            {"photo_ids": [photo_id]},
+            format="json",
+            **_auth(self.other),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "PHOTO_NOT_FOUND")
+
+    def test_non_member_cannot_bulk_download(self):
+        photo_id = self._upload_photo()
+
+        response = self.client.post(
+            _photos_bulk_download_url(self.trip.id),
+            {"photo_ids": [photo_id]},
+            format="json",
+            **_auth(self.other),
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "TRIP_NOT_FOUND")
+
+    @override_settings(TRIP_PHOTO_MAX_DOWNLOAD_FILES=1)
+    def test_bulk_download_rejects_too_many_photos(self):
+        first = self._upload_photo(filename="one.jpg", color="red")
+        second = self._upload_photo(filename="two.png", color="green")
+
+        response = self.client.post(
+            _photos_bulk_download_url(self.trip.id),
+            {"photo_ids": [first, second]},
+            format="json",
+            **_auth(self.member),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error_code"], "PHOTO_DOWNLOAD_TOO_MANY")

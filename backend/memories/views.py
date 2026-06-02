@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from django.conf import settings
-from django.http import FileResponse
+from django.http import FileResponse, StreamingHttpResponse
 from rest_framework import permissions, status
 from rest_framework.pagination import CursorPagination
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -35,11 +35,13 @@ from memories.memory_video_services import (
     update_trip_memory_video,
 )
 from memories.memory_video_streaming import range_streaming_response, safe_mp4_filename
+from memories.photo_zip import iter_trip_photos_zip
 from memories.serializers import (
     PublicTripMemoryVideoSerializer,
     TripMemoryVideoCreateSerializer,
     TripMemoryVideoSerializer,
     TripMemoryVideoUpdateSerializer,
+    TripPhotoBulkDownloadSerializer,
     TripPhotoSerializer,
     TripPhotoUploadSerializer,
     memory_video_validation_error_code,
@@ -53,7 +55,10 @@ from memories.services import (
     create_trip_photos,
     delete_trip_photo,
     get_trip_photo_asset,
+    get_trip_photo_download,
+    get_trip_photos_for_download,
     list_trip_photos,
+    safe_trip_photos_zip_filename,
     _get_active_membership,
 )
 from trips.permissions import IsProfileCompleted
@@ -254,7 +259,18 @@ class TripPhotoAssetAPIView(APIView):
     permission_classes = TRIP_PHOTO_PERMISSIONS
     throttle_scope = "trip_photo_assets"
 
+    def get_throttles(self):
+        self.throttle_scope = (
+            "trip_photos_download"
+            if self.kwargs.get("variant") == "download"
+            else "trip_photo_assets"
+        )
+        return super().get_throttles()
+
     def get(self, request, trip_id, photo_id, variant: str):
+        if variant == "download":
+            return self._download(request, trip_id, photo_id)
+
         try:
             field = get_trip_photo_asset(
                 trip_id=trip_id,
@@ -269,6 +285,58 @@ class TripPhotoAssetAPIView(APIView):
             return response
 
         response = FileResponse(field.storage.open(field.name, "rb"), content_type="image/webp")
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
+    def _download(self, request, trip_id, photo_id):
+        try:
+            field, filename = get_trip_photo_download(
+                trip_id=trip_id,
+                photo_id=photo_id,
+                actor=request.user,
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        response = range_streaming_response(
+            field=field,
+            range_header=request.headers.get("Range"),
+            content_type="image/webp",
+            content_disposition=f'attachment; filename="{filename}"',
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
+
+class TripPhotoBulkDownloadAPIView(APIView):
+    permission_classes = TRIP_PHOTO_PERMISSIONS
+    throttle_scope = "trip_photos_bulk_download"
+
+    def post(self, request, trip_id):
+        serializer = TripPhotoBulkDownloadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            membership, entries = get_trip_photos_for_download(
+                trip_id=trip_id,
+                photo_ids=serializer.validated_data["photo_ids"],
+                actor=request.user,
+            )
+        except Exception as exc:
+            response = _map_service_error(exc)
+            if response is None:
+                raise
+            return response
+
+        filename = safe_trip_photos_zip_filename(membership.trip.name)
+        response = StreamingHttpResponse(
+            iter_trip_photos_zip(entries),
+            content_type="application/zip",
+        )
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
         response.headers["Cache-Control"] = "private, no-store"
         return response
 

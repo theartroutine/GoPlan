@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Blob object URLs cannot be optimized by next/image. */
 
-import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 
 import type { TripPhoto } from "@/features/trips/domain/photo-types";
@@ -34,8 +34,10 @@ export type PhotoLightboxProps = {
   error: string | null;
   canNavigatePrevious: boolean;
   canNavigateNext: boolean;
+  downloading: boolean;
   onClose: () => void;
   onRequestDelete: (photo: TripPhoto) => void;
+  onRequestDownload: (photo: TripPhoto) => void;
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
 };
@@ -47,8 +49,10 @@ export function PhotoLightbox({
   error,
   canNavigatePrevious,
   canNavigateNext,
+  downloading,
   onClose,
   onRequestDelete,
+  onRequestDownload,
   onNavigatePrevious,
   onNavigateNext,
 }: PhotoLightboxProps) {
@@ -204,21 +208,37 @@ export function PhotoLightbox({
                   <p className="truncate text-sm font-medium">{photo.uploaded_by.display_name}</p>
                   <p className="text-xs text-white/70">{formatPhotoDate(photo.created_at)}</p>
                 </div>
-                {photo.can_delete ? (
+                <div className="flex shrink-0 items-center gap-2">
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Delete ${photoDescription(photo)}`}
+                    aria-label={`Download ${photoDescription(photo)}`}
                     tabIndex={controlsVisible ? 0 : -1}
+                    disabled={downloading}
                     onClick={() => {
-                      onRequestDelete(photo);
+                      onRequestDownload(photo);
                     }}
                     className="rounded-full bg-black/40 text-white hover:bg-black/60 hover:text-white"
                   >
-                    <Trash2 />
+                    {downloading ? <Loader2 className="animate-spin" /> : <Download />}
                   </Button>
-                ) : null}
+                  {photo.can_delete ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Delete ${photoDescription(photo)}`}
+                      tabIndex={controlsVisible ? 0 : -1}
+                      onClick={() => {
+                        onRequestDelete(photo);
+                      }}
+                      className="rounded-full bg-black/40 text-white hover:bg-black/60 hover:text-white"
+                    >
+                      <Trash2 />
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

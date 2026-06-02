@@ -26,6 +26,13 @@ class TripPhotoUploadSerializer(serializers.Serializer):
     )
 
 
+class TripPhotoBulkDownloadSerializer(serializers.Serializer):
+    photo_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=False,
+    )
+
+
 class TripPhotoSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.SerializerMethodField()
     width = serializers.IntegerField(source="original_width")

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const bffMock = vi.hoisted(() => ({
   delete: vi.fn(),
   get: vi.fn(),
+  post: vi.fn(),
   postForm: vi.fn(),
 }));
 
@@ -12,6 +13,8 @@ vi.mock("@/shared/http/bff-client", () => ({
 
 import {
   bffDeleteTripPhoto,
+  bffDownloadTripPhoto,
+  bffDownloadTripPhotosZip,
   bffFetchTripPhotoAssetBlob,
   bffListTripPhotos,
   bffUploadTripPhotos,
@@ -103,6 +106,52 @@ describe("photos-api", () => {
         responseType: "blob",
         signal,
       },
+    );
+  });
+
+  it("downloads a single photo and reads the filename from Content-Disposition", async () => {
+    const blob = new Blob(["image"], { type: "image/webp" });
+    bffMock.get.mockResolvedValue({
+      data: blob,
+      headers: { "content-disposition": 'attachment; filename="ha-long.webp"' },
+    });
+
+    await expect(bffDownloadTripPhoto("trip 1", "photo/1")).resolves.toEqual({
+      blob,
+      filename: "ha-long.webp",
+    });
+
+    expect(bffMock.get).toHaveBeenCalledWith(
+      "/api/trips/trip%201/photos/photo%2F1/download",
+      { responseType: "blob" },
+    );
+  });
+
+  it("falls back to a default filename when Content-Disposition is missing", async () => {
+    const blob = new Blob(["image"], { type: "image/webp" });
+    bffMock.get.mockResolvedValue({ data: blob, headers: {} });
+
+    await expect(bffDownloadTripPhoto("trip_1", "photo_1")).resolves.toEqual({
+      blob,
+      filename: "photo.webp",
+    });
+  });
+
+  it("posts selected photo ids and returns the zip blob with its filename", async () => {
+    const blob = new Blob(["zip"], { type: "application/zip" });
+    bffMock.post.mockResolvedValue({
+      data: blob,
+      headers: { "content-disposition": 'attachment; filename="trip-photos.zip"' },
+    });
+
+    await expect(
+      bffDownloadTripPhotosZip("trip_1", ["photo_1", "photo_2"]),
+    ).resolves.toEqual({ blob, filename: "trip-photos.zip" });
+
+    expect(bffMock.post).toHaveBeenCalledWith(
+      "/api/trips/trip_1/photos/download",
+      { photo_ids: ["photo_1", "photo_2"] },
+      { responseType: "blob" },
     );
   });
 });

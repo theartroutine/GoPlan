@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import logging
+import re
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -109,6 +111,10 @@ def _medium_max_edge() -> int:
 
 def _webp_quality() -> int:
     return _setting("TRIP_PHOTO_WEBP_QUALITY", 84)
+
+
+def _max_download_files() -> int:
+    return _setting("TRIP_PHOTO_MAX_DOWNLOAD_FILES", 100)
 
 
 def _get_active_membership(trip_id, actor, *, for_update: bool = False):
@@ -456,3 +462,115 @@ def get_trip_photo_asset(*, trip_id, photo_id, actor, variant: str):
     if variant == "medium":
         return photo.medium
     raise TripPhotoNotFoundError("PHOTO_NOT_FOUND", "Photo not found.")
+
+
+# -------- Photo download --------
+
+
+def safe_photo_filename(original_filename: str, photo_id) -> str:
+    """Build an ASCII-safe ``.webp`` download filename from the original name.
+
+    Stored photos are always WebP, so the extension is forced to ``.webp``
+    regardless of the original upload extension.
+    """
+    ascii_name = (
+        unicodedata.normalize("NFKD", original_filename or "")
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", PurePath(ascii_name).stem).strip("._-")
+    if not stem:
+        stem = f"photo-{photo_id.hex if hasattr(photo_id, 'hex') else str(photo_id)}"
+    return f"{stem}.webp"
+
+
+def safe_trip_photos_zip_filename(trip_name: str) -> str:
+    """Build an ASCII-safe ``.zip`` filename for a bulk photo download."""
+    ascii_name = (
+        unicodedata.normalize("NFKD", trip_name or "")
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", ascii_name).strip("._-")
+    if not stem:
+        stem = "trip"
+    return f"{stem}-photos.zip"
+
+
+def get_trip_photo_download(*, trip_id, photo_id, actor):
+    """Return ``(field, filename)`` for a single photo download (medium WebP)."""
+    _membership, photo = _get_photo_for_member(
+        trip_id=trip_id,
+        photo_id=photo_id,
+        actor=actor,
+    )
+    return photo.medium, safe_photo_filename(photo.original_filename, photo.id)
+
+
+def _unique_zip_name(name: str, seen: set[str]) -> str:
+    if name not in seen:
+        return name
+    stem, dot, ext = name.rpartition(".")
+    if not dot:
+        stem, ext = name, ""
+    suffix = 2
+    while True:
+        candidate = f"{stem} ({suffix}).{ext}" if ext else f"{stem} ({suffix})"
+        if candidate not in seen:
+            return candidate
+        suffix += 1
+
+
+def _build_download_entries(photos) -> list[tuple[str, object]]:
+    entries: list[tuple[str, object]] = []
+    seen: set[str] = set()
+    for photo in photos:
+        name = _unique_zip_name(
+            safe_photo_filename(photo.original_filename, photo.id), seen
+        )
+        seen.add(name)
+        entries.append((name, photo.medium))
+    return entries
+
+
+def get_trip_photos_for_download(*, trip_id, photo_ids, actor):
+    """Validate access and resolve the requested photos for a bulk download.
+
+    Returns ``(membership, entries)`` where ``entries`` is an ordered list of
+    ``(zip_entry_name, medium_field)`` pairs with de-duplicated entry names.
+    Raises ``TripPhotoNotFoundError`` if any id does not belong to the trip.
+    """
+    membership = _get_active_membership(trip_id, actor)
+
+    # De-duplicate while preserving the requested order.
+    ordered_ids: list = []
+    seen_ids: set = set()
+    for photo_id in photo_ids:
+        if photo_id not in seen_ids:
+            seen_ids.add(photo_id)
+            ordered_ids.append(photo_id)
+
+    if not ordered_ids:
+        raise TripPhotoValidationError(
+            "PHOTO_DOWNLOAD_EMPTY",
+            "Select at least one photo to download.",
+        )
+    if len(ordered_ids) > _max_download_files():
+        raise TripPhotoValidationError(
+            "PHOTO_DOWNLOAD_TOO_MANY",
+            "Too many photos selected for download.",
+        )
+
+    photos_by_id = {
+        photo.id: photo
+        for photo in TripPhoto.objects.filter(trip_id=trip_id, pk__in=ordered_ids)
+    }
+    missing = [photo_id for photo_id in ordered_ids if photo_id not in photos_by_id]
+    if missing:
+        raise TripPhotoNotFoundError(
+            "PHOTO_NOT_FOUND",
+            "One or more selected photos were not found.",
+        )
+
+    ordered_photos = [photos_by_id[photo_id] for photo_id in ordered_ids]
+    return membership, _build_download_entries(ordered_photos)

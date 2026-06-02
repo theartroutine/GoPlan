@@ -13,6 +13,7 @@ from memories.views import (
     TripMemoryVideoShareLinkAPIView,
     TripMemoryVideoStatusAPIView,
     TripPhotoAssetAPIView,
+    TripPhotoBulkDownloadAPIView,
     TripPhotoDetailAPIView,
     TripPhotoListCreateAPIView,
 )
@@ -21,6 +22,7 @@ app_name = "memories"
 
 urlpatterns = [
     path("<uuid:trip_id>/photos", TripPhotoListCreateAPIView.as_view(), name="trip-photos"),
+    path("<uuid:trip_id>/photos/download", TripPhotoBulkDownloadAPIView.as_view(), name="trip-photos-download"),
     path("<uuid:trip_id>/photos/<uuid:photo_id>", TripPhotoDetailAPIView.as_view(), name="trip-photo-detail"),
     path("<uuid:trip_id>/photos/<uuid:photo_id>/<str:variant>", TripPhotoAssetAPIView.as_view(), name="trip-photo-asset"),
     path("<uuid:trip_id>/memories", TripMemoryVideoListCreateAPIView.as_view(), name="trip-memories"),

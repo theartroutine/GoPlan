@@ -19,6 +19,8 @@ type ProxyProtectedAssetOptions = {
   upstreamPath: string;
   fallbackDetail: string;
   serviceUnavailableDetail: string;
+  method?: string;
+  body?: BodyInit | null;
   buildUpstreamHeaders?: (
     request: Pick<NextRequest, "headers">,
     bearer: string,
@@ -81,10 +83,13 @@ async function fetchProtectedAsset(
   upstreamPath: string,
   bearer: string,
   buildUpstreamHeaders: NonNullable<ProxyProtectedAssetOptions["buildUpstreamHeaders"]>,
+  method: string,
+  body: BodyInit | null,
 ): Promise<Response> {
   return fetch(`${API_BASE_URL}${upstreamPath}`, {
-    method: "GET",
+    method,
     headers: buildUpstreamHeaders(request, bearer),
+    body,
   });
 }
 
@@ -111,6 +116,8 @@ export async function proxyProtectedAsset({
   upstreamPath,
   fallbackDetail,
   serviceUnavailableDetail,
+  method = "GET",
+  body = null,
   buildUpstreamHeaders = (_request, bearer) => ({ Authorization: bearer }),
   finalizeResponse,
 }: ProxyProtectedAssetOptions): Promise<NextResponse> {
@@ -126,6 +133,8 @@ export async function proxyProtectedAsset({
       upstreamPath,
       auth.bearer,
       buildUpstreamHeaders,
+      method,
+      body,
     );
   } catch {
     return NextResponse.json(
@@ -145,6 +154,8 @@ export async function proxyProtectedAsset({
         upstreamPath,
         retry.bearer,
         buildUpstreamHeaders,
+        method,
+        body,
       );
     } catch {
       return NextResponse.json(

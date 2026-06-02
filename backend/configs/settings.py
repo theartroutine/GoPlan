@@ -253,6 +253,8 @@ REST_FRAMEWORK = {
         'trip_photos_upload': '30/hour',
         'trip_photos_detail': '120/hour',
         'trip_photo_assets': '600/hour',
+        'trip_photos_download': '300/hour',
+        'trip_photos_bulk_download': '30/hour',
         'trip_memories_list': '120/hour',
         'trip_memories_create': '30/hour',
         'trip_memories_detail': '120/hour',

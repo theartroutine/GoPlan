@@ -7,6 +7,15 @@ import type {
 } from "@/features/trips/domain/photo-types";
 import { bff } from "@/shared/http/bff-client";
 import { throwWithParsedBlobJsonError } from "@/shared/http/api-errors";
+import { parseContentDispositionFilename } from "@/features/trips/infrastructure/download-file";
+
+export type TripPhotoDownload = {
+  blob: Blob;
+  filename: string;
+};
+
+const SINGLE_DOWNLOAD_FALLBACK_FILENAME = "photo.webp";
+const BULK_DOWNLOAD_FALLBACK_FILENAME = "trip-photos.zip";
 
 type ListTripPhotosOptions = {
   cursor?: string;
@@ -75,6 +84,49 @@ export async function bffDeleteTripPhoto(
   photoId: string,
 ): Promise<void> {
   await bff.delete(`${tripPhotosPath(tripId)}/${encodeURIComponent(photoId)}`);
+}
+
+export async function bffDownloadTripPhoto(
+  tripId: string,
+  photoId: string,
+): Promise<TripPhotoDownload> {
+  try {
+    const res = await bff.get<Blob>(
+      `${tripPhotosPath(tripId)}/${encodeURIComponent(photoId)}/download`,
+      { responseType: "blob" },
+    );
+    return {
+      blob: res.data,
+      filename: parseContentDispositionFilename(
+        res.headers["content-disposition"],
+        SINGLE_DOWNLOAD_FALLBACK_FILENAME,
+      ),
+    };
+  } catch (error) {
+    return throwWithParsedBlobJsonError(error);
+  }
+}
+
+export async function bffDownloadTripPhotosZip(
+  tripId: string,
+  photoIds: string[],
+): Promise<TripPhotoDownload> {
+  try {
+    const res = await bff.post<Blob>(
+      `${tripPhotosPath(tripId)}/download`,
+      { photo_ids: photoIds },
+      { responseType: "blob" },
+    );
+    return {
+      blob: res.data,
+      filename: parseContentDispositionFilename(
+        res.headers["content-disposition"],
+        BULK_DOWNLOAD_FALLBACK_FILENAME,
+      ),
+    };
+  } catch (error) {
+    return throwWithParsedBlobJsonError(error);
+  }
 }
 
 export async function bffFetchTripPhotoAssetBlob(
