@@ -11,23 +11,19 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps
 
+from media.image_validation import (
+    ALLOWED_WEB_IMAGE_FORMATS,
+    ImageValidationError,
+    detect_image_format_from_header,
+    validate_pillow_image,
+)
 from memories.models import TripPhoto
 from trips.models import MemberStatus, TripMember, TripRole, TripStatus
 from trips.services import TripNotFoundError, TripTerminalError
 
 logger = logging.getLogger(__name__)
-
-ALLOWED_SOURCE_FORMATS = {"JPEG", "PNG", "WEBP"}
-IMAGE_PARSE_ERRORS = (
-    UnidentifiedImageError,
-    OSError,
-    ValueError,
-    SyntaxError,
-    Image.DecompressionBombError,
-)
-HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"}
 
 
 class TripPhotoServiceError(Exception):
@@ -80,6 +76,10 @@ def _max_bytes() -> int:
     return _setting("TRIP_PHOTO_MAX_BYTES", 10 * 1024 * 1024)
 
 
+def _max_upload_bytes() -> int:
+    return _setting("TRIP_PHOTO_MAX_UPLOAD_BYTES", 50 * 1024 * 1024)
+
+
 def _max_source_pixels() -> int:
     return _setting("TRIP_PHOTO_MAX_SOURCE_PIXELS", 45_000_000)
 
@@ -125,40 +125,14 @@ def list_trip_photos(*, trip_id, actor):
     )
 
 
-def _is_heic_header(header: bytes) -> bool:
-    if len(header) < 12 or header[4:8] != b"ftyp":
-        return False
-    brands = {header[8:12]}
-    brands.update(header[index:index + 4] for index in range(16, min(len(header), 64), 4))
-    return any(brand in HEIC_BRANDS for brand in brands)
-
-
 def _detect_source_format(image_file) -> str:
     image_file.seek(0)
     header = image_file.read(512)
     image_file.seek(0)
-
-    stripped = header.lstrip().lower()
-    if stripped.startswith(b"<svg") or b"<svg" in stripped[:128]:
-        raise TripPhotoValidationError(
-            "UNSUPPORTED_IMAGE_TYPE",
-            "SVG images are not supported. Use JPEG, PNG, or WebP.",
-        )
-    if _is_heic_header(header):
-        raise TripPhotoValidationError(
-            "HEIC_UNSUPPORTED",
-            "HEIC images are not supported yet. Please convert to JPEG, PNG, or WebP.",
-        )
-    if header.startswith(b"\xff\xd8\xff"):
-        return "JPEG"
-    if header.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "PNG"
-    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP":
-        return "WEBP"
-    raise TripPhotoValidationError(
-        "UNSUPPORTED_IMAGE_TYPE",
-        "Unsupported image format. Use JPEG, PNG, or WebP.",
-    )
+    try:
+        return detect_image_format_from_header(header)
+    except ImageValidationError as exc:
+        raise TripPhotoValidationError(exc.error_code, exc.detail) from exc
 
 
 def _validate_upload_count(files: list) -> None:
@@ -168,6 +142,22 @@ def _validate_upload_count(files: list) -> None:
         raise TripPhotoValidationError(
             "TOO_MANY_FILES",
             f"Upload at most {_max_files_per_upload()} photos at a time.",
+        )
+
+
+def _file_size_bytes(image_file) -> int:
+    try:
+        return max(0, int(getattr(image_file, "size", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _validate_upload_total_bytes(files: list) -> None:
+    total_bytes = sum(_file_size_bytes(image_file) for image_file in files)
+    if total_bytes > _max_upload_bytes():
+        raise TripPhotoValidationError(
+            "PHOTO_UPLOAD_TOO_LARGE",
+            f"Upload at most {_max_upload_bytes() // (1024 * 1024)} MiB of photos at a time.",
         )
 
 
@@ -186,31 +176,16 @@ def _validate_image_file(image_file) -> str:
 
     expected_format = _detect_source_format(image_file)
     try:
-        image_file.seek(0)
-        with Image.open(image_file) as probe:
-            if probe.format != expected_format or probe.format not in ALLOWED_SOURCE_FORMATS:
-                raise TripPhotoValidationError(
-                    "UNSUPPORTED_IMAGE_TYPE",
-                    "Unsupported image format. Use JPEG, PNG, or WebP.",
-                )
-            if getattr(probe, "is_animated", False):
-                raise TripPhotoValidationError(
-                    "PHOTO_INVALID_IMAGE",
-                    "Animated images are not supported.",
-                )
-            if probe.width * probe.height > _max_source_pixels():
-                raise TripPhotoValidationError(
-                    "PHOTO_DIMENSIONS_TOO_LARGE",
-                    "Photo dimensions are too large.",
-                )
-            probe.verify()
+        validate_pillow_image(
+            image_file,
+            expected_format=expected_format,
+            allowed_formats=ALLOWED_WEB_IMAGE_FORMATS,
+            max_source_pixels=_max_source_pixels(),
+        )
     except TripPhotoValidationError:
         raise
-    except IMAGE_PARSE_ERRORS as exc:
-        raise TripPhotoValidationError(
-            "PHOTO_INVALID_IMAGE",
-            "Photo could not be parsed safely.",
-        ) from exc
+    except ImageValidationError as exc:
+        raise TripPhotoValidationError(exc.error_code, exc.detail) from exc
     finally:
         image_file.seek(0)
     return expected_format
@@ -261,7 +236,14 @@ def _render_trip_photo_variants(image_file) -> PreparedTripPhoto:
             )
     except TripPhotoValidationError:
         raise
-    except IMAGE_PARSE_ERRORS as exc:
+    except ImageValidationError as exc:
+        raise TripPhotoValidationError(exc.error_code, exc.detail) from exc
+    except (
+        OSError,
+        ValueError,
+        SyntaxError,
+        Image.DecompressionBombError,
+    ) as exc:
         raise TripPhotoValidationError(
             "PHOTO_INVALID_IMAGE",
             "Photo could not be parsed safely.",
@@ -339,6 +321,7 @@ def _build_photo_records(*, trip, actor, prepared_items: list[PreparedTripPhoto]
 
 def create_trip_photos(*, trip_id, actor, files: list) -> list[TripPhoto]:
     _validate_upload_count(files)
+    _validate_upload_total_bytes(files)
     membership = _get_active_membership(trip_id, actor)
     trip = membership.trip
     _assert_trip_accepts_photo_mutation(trip.status)

@@ -179,4 +179,32 @@ describe("memories-api", () => {
       },
     );
   });
+
+  it("parses JSON error blobs from failed memory asset responses", async () => {
+    const error = {
+      response: {
+        status: 409,
+        headers: { "content-type": "application/json" },
+        data: new Blob(
+          [
+            JSON.stringify({
+              detail: "Memory video is not ready yet.",
+              error_code: "MEMORY_NOT_READY",
+            }),
+          ],
+          { type: "application/json" },
+        ),
+      },
+    };
+    bffMock.get.mockRejectedValueOnce(error);
+
+    await expect(
+      bffFetchTripMemoryAssetBlob("trip/1", "memory/1", "video"),
+    ).rejects.toBe(error);
+
+    expect(error.response.data).toEqual({
+      detail: "Memory video is not ready yet.",
+      error_code: "MEMORY_NOT_READY",
+    });
+  });
 });

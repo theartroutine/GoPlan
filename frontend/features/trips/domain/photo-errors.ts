@@ -1,9 +1,8 @@
-type ErrorResponse = {
-  response?: {
-    status?: unknown;
-    data?: unknown;
-  };
-};
+import {
+  extractApiErrorMessage,
+  getApiErrorCode,
+  getApiErrorData,
+} from "@/shared/http/api-errors";
 
 type PhotoValidationResult =
   | { ok: true }
@@ -32,19 +31,6 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Use JPEG, PNG, or WebP photos. SVG and other formats are not supported.",
 };
 
-function getErrorCode(error: unknown): string | null {
-  const data = (error as ErrorResponse | null)?.response?.data;
-  if (!data || typeof data !== "object") return null;
-  const code = (data as Record<string, unknown>).error_code;
-  return typeof code === "string" && code.trim() ? code : null;
-}
-
-function extractErrorMessage(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
-  const detail = (data as Record<string, unknown>).detail;
-  return typeof detail === "string" && detail.trim() ? detail : null;
-}
-
 function isHeicFile(file: File): boolean {
   const lowerName = file.name.toLowerCase();
   return (
@@ -67,10 +53,10 @@ function hasKnownUnsupportedMime(file: File): boolean {
 }
 
 export function getTripPhotoErrorMessage(error: unknown, fallback: string): string {
-  const code = getErrorCode(error);
+  const code = getApiErrorCode(error);
   if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
 
-  const detail = extractErrorMessage((error as ErrorResponse | null)?.response?.data);
+  const detail = extractApiErrorMessage(getApiErrorData(error));
   return detail ?? fallback;
 }
 

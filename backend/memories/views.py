@@ -42,6 +42,7 @@ from memories.serializers import (
     TripMemoryVideoUpdateSerializer,
     TripPhotoSerializer,
     TripPhotoUploadSerializer,
+    memory_video_validation_error_code,
 )
 from memories.services import (
     TripPhotoDeleteForbiddenError,
@@ -130,17 +131,9 @@ def _memory_serializer_context(request, membership) -> dict:
 
 
 def _memory_serializer_validation_error(errors) -> Response:
-    error_code = "MEMORY_INVALID_REQUEST"
-    if isinstance(errors, dict):
-        if "source_mode" in errors:
-            error_code = "MEMORY_INVALID_SOURCE_MODE"
-        elif "photo_ids" in errors:
-            error_code = "MEMORY_INVALID_PHOTO_SELECTION"
-        elif "music_key" in errors:
-            error_code = "MEMORY_INVALID_MUSIC"
     return _error_response(
         "Invalid memory video request.",
-        error_code,
+        memory_video_validation_error_code(errors),
         status.HTTP_400_BAD_REQUEST,
     )
 

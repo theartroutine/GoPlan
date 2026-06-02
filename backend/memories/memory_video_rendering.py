@@ -20,6 +20,10 @@ class MemoryVideoRenderResult:
     duration_seconds: int
 
 
+class MemoryVideoAudioSourceUnavailable(ValueError):
+    pass
+
+
 def _setting(name: str, default: int) -> int:
     return int(getattr(settings, name, default))
 
@@ -317,7 +321,7 @@ def _resolve_audio_input(
         return ["-stream_loop", "-1", "-i", str(resolved_music_path)]
     if audio_filter:
         return ["-f", "lavfi", "-i", audio_filter]
-    raise ValueError("Music track asset is not available.")
+    raise MemoryVideoAudioSourceUnavailable("Music track asset is not available.")
 
 
 def _build_final_args(

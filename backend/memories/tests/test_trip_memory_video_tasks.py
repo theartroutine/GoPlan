@@ -344,6 +344,27 @@ class TripMemoryVideoTaskTests(TestCase):
         self.assertIsNotNone(memory.render_finished_at)
 
     @patch("memories.memory_video_services.render_memory_video")
+    def test_render_task_marks_source_unavailable_when_music_asset_is_missing(
+        self,
+        render_memory_video,
+    ):
+        from memories.memory_video_rendering import MemoryVideoAudioSourceUnavailable
+        from memories.tasks import render_trip_memory_video_task
+
+        render_memory_video.side_effect = MemoryVideoAudioSourceUnavailable(
+            "Music track asset is not available."
+        )
+        photos = self._photos(2)
+        memory = self._memory(photos)
+
+        render_trip_memory_video_task(str(memory.id))
+
+        memory.refresh_from_db()
+        self.assertEqual(memory.status, TripMemoryVideoStatus.FAILED)
+        self.assertEqual(memory.render_error_code, "MEMORY_SOURCE_UNAVAILABLE")
+        self.assertIn("music track", memory.render_error_message.lower())
+
+    @patch("memories.memory_video_services.render_memory_video")
     def test_render_task_does_nothing_when_memory_was_deleted_before_claim(self, render_memory_video):
         from memories.tasks import render_trip_memory_video_task
 
@@ -494,6 +515,23 @@ class MemoryVideoRenderingHelperTests(TestCase):
         self.assertIn("lavfi", final_args)
         self.assertNotIn("-stream_loop", final_args)
         self.assertNotIn("anullsrc", " ".join(final_args))
+
+    @patch("memories.memory_video_rendering.resolve_music_asset_path", return_value=None)
+    @patch("memories.memory_video_rendering.get_memory_music_track")
+    def test_missing_music_without_asset_or_fallback_raises_source_error(
+        self,
+        get_track,
+        _resolve,
+    ):
+        from memories.memory_video_rendering import (
+            MemoryVideoAudioSourceUnavailable,
+            _resolve_audio_input,
+        )
+
+        get_track.return_value = SimpleNamespace(ffmpeg_audio_filter="")
+
+        with self.assertRaises(MemoryVideoAudioSourceUnavailable):
+            _resolve_audio_input(music_key="missing-track", music_path=None)
 
     def test_clip_render_args_have_no_crossfade(self) -> None:
         from memories.memory_video_rendering import (

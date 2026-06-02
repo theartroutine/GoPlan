@@ -30,7 +30,7 @@ from memories.models import (
 )
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
-from trips.services import TripTerminalError
+from trips.services import TripNotFoundError, TripTerminalError
 
 MUSIC_KEY = "life-of-riley"
 
@@ -296,6 +296,21 @@ class TripMemoryVideoServiceTests(TestCase):
             )
 
         self.assertEqual(ctx.exception.error_code, "TRIP_TERMINAL")
+
+    def test_non_member_create_checks_membership_before_music_validation(self):
+        photos = self._photos(5)
+
+        with self.assertRaises(TripNotFoundError) as ctx:
+            create_trip_memory_video(
+                trip_id=self.trip.id,
+                actor=self.outsider,
+                title="Outsider recap",
+                source_mode=TripMemoryVideoSourceMode.MANUAL,
+                photo_ids=[photo.id for photo in photos],
+                music_key="unknown-track",
+            )
+
+        self.assertEqual(ctx.exception.error_code, "TRIP_NOT_FOUND")
 
     def test_member_cannot_create_second_active_memory_for_same_trip(self):
         photos = self._photos(5)

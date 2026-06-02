@@ -51,12 +51,12 @@ describe("proxyTripPhotoAsset", () => {
     const { proxyTripPhotoAsset } = await import(
       "@/app/api/trips/[tripId]/photos/_lib/photo-asset-proxy"
     );
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(new Uint8Array([1, 2, 3]), {
-        status: 200,
-        headers: { "Content-Type": "image/webp" },
-      }),
-    );
+    const upstream = new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { "Content-Type": "image/webp" },
+    });
+    const upstreamArrayBuffer = vi.spyOn(upstream, "arrayBuffer");
+    vi.mocked(fetch).mockResolvedValue(upstream);
 
     const response = await proxyTripPhotoAsset({
       request: { headers: new Headers({ Authorization: "Bearer access-token" }) } as never,
@@ -75,6 +75,7 @@ describe("proxyTripPhotoAsset", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("image/webp");
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(upstreamArrayBuffer).not.toHaveBeenCalled();
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
   });
 

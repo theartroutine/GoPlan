@@ -205,6 +205,29 @@ class TripPhotoServiceTests(TestCase):
 
         self.assertEqual(ctx.exception.error_code, "PHOTO_TOO_LARGE")
 
+    @override_settings(TRIP_PHOTO_MAX_UPLOAD_BYTES=100)
+    def test_create_trip_photos_rejects_total_upload_bytes_above_cap(self):
+        with self.assertRaises(TripPhotoValidationError) as ctx:
+            create_trip_photos(
+                trip_id=self.trip.id,
+                actor=self.member,
+                files=[
+                    SimpleUploadedFile(
+                        "one.jpg",
+                        b"\xff\xd8\xff" + b"A" * 60,
+                        content_type="image/jpeg",
+                    ),
+                    SimpleUploadedFile(
+                        "two.jpg",
+                        b"\xff\xd8\xff" + b"B" * 60,
+                        content_type="image/jpeg",
+                    ),
+                ],
+            )
+
+        self.assertEqual(ctx.exception.error_code, "PHOTO_UPLOAD_TOO_LARGE")
+        self.assertEqual(TripPhoto.objects.count(), 0)
+
     @override_settings(TRIP_PHOTO_MAX_FILES_PER_UPLOAD=2)
     def test_create_trip_photos_rejects_too_many_files(self):
         with self.assertRaises(TripPhotoValidationError) as ctx:

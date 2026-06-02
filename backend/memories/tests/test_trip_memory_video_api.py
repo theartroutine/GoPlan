@@ -228,6 +228,7 @@ class TripMemoryVideoAPITests(APITestCase):
             "duration_seconds",
             "render_error_code",
             "render_error_message",
+            "video_file",
             "share_enabled",
             "share_slug",
             "created_at",
@@ -267,6 +268,26 @@ class TripMemoryVideoAPITests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["memory"]["can_download"])
         self.assertFalse(response.data["memory"]["can_manage"])
+
+    def test_ready_memory_without_stored_video_file_cannot_download(self):
+        memory = TripMemoryVideo.objects.create(
+            trip=self.trip,
+            created_by=self.member,
+            status=TripMemoryVideoStatus.READY,
+            source_mode=TripMemoryVideoSourceMode.MANUAL,
+            source_photo_ids=[],
+            source_photo_count=5,
+            music_key=MUSIC_KEY,
+            video_file="trip-memory-videos/missing/video.mp4",
+        )
+
+        response = self.client.get(
+            _memory_detail_url(self.trip.id, memory.id),
+            **_auth(self.other_member),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["memory"]["can_download"])
 
     def test_auto_create_returns_201_queued_with_selected_count(self):
         self._photos(8)

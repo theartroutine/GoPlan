@@ -8,6 +8,7 @@ from accounts.services import resolve_avatar_url
 from memories.memory_video_services import (
     build_memory_share_url,
     get_memory_music_track,
+    memory_video_can_download,
 )
 from memories.models import (
     TripMemoryVideo,
@@ -86,6 +87,22 @@ class TripMemoryVideoCreateSerializer(serializers.Serializer):
     )
 
 
+MEMORY_VIDEO_VALIDATION_ERROR_CODES_BY_FIELD = {
+    "source_mode": "MEMORY_INVALID_SOURCE_MODE",
+    "photo_ids": "MEMORY_INVALID_PHOTO_SELECTION",
+    "music_key": "MEMORY_INVALID_MUSIC",
+}
+
+
+def memory_video_validation_error_code(errors) -> str:
+    if not isinstance(errors, dict):
+        return "MEMORY_INVALID_REQUEST"
+    for field, error_code in MEMORY_VIDEO_VALIDATION_ERROR_CODES_BY_FIELD.items():
+        if field in errors:
+            return error_code
+    return "MEMORY_INVALID_REQUEST"
+
+
 class TripMemoryVideoUpdateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=120, allow_blank=True)
 
@@ -159,7 +176,7 @@ class TripMemoryVideoSerializer(serializers.ModelSerializer):
 
     def get_can_download(self, obj: TripMemoryVideo) -> bool:
         return (
-            obj.status == TripMemoryVideoStatus.READY
+            memory_video_can_download(obj)
             and self.context.get("membership") is not None
         )
 

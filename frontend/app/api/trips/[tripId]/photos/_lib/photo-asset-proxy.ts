@@ -52,12 +52,16 @@ async function finalizeAssetResponse(
     );
   }
 
-  const response = new NextResponse(await upstream.arrayBuffer(), {
+  const headers = new Headers({
+    "Cache-Control": PHOTO_ASSET_CACHE_CONTROL,
+    "Content-Type": contentType,
+  });
+  const contentLength = upstream.headers.get("Content-Length");
+  if (contentLength) headers.set("Content-Length", contentLength);
+
+  const response = new NextResponse(upstream.body, {
     status: upstream.status,
-    headers: {
-      "Cache-Control": PHOTO_ASSET_CACHE_CONTROL,
-      "Content-Type": contentType,
-    },
+    headers,
   });
   if (refreshedAccessToken) {
     response.headers.set("X-Access-Token", refreshedAccessToken);

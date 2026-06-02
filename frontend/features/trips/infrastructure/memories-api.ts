@@ -13,6 +13,7 @@ import type {
   UpdateTripMemoryPayload,
 } from "@/features/trips/domain/memory-types";
 import { bff } from "@/shared/http/bff-client";
+import { throwWithParsedBlobJsonError } from "@/shared/http/api-errors";
 
 type ListTripMemoriesOptions = {
   cursor?: string;
@@ -184,11 +185,15 @@ export async function bffFetchTripMemoryAssetBlob(
   if (options.signal) requestConfig.signal = options.signal;
   if (options.timeoutMs) requestConfig.timeout = options.timeoutMs;
 
-  const res = await bff.get<Blob>(
-    tripMemoryAssetPath(tripId, memoryId, variant),
-    requestConfig,
-  );
-  return res.data;
+  try {
+    const res = await bff.get<Blob>(
+      tripMemoryAssetPath(tripId, memoryId, variant),
+      requestConfig,
+    );
+    return res.data;
+  } catch (error) {
+    return throwWithParsedBlobJsonError(error);
+  }
 }
 
 export async function bffListMemoryMusicTracks(

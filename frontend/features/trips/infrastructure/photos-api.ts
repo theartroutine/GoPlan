@@ -6,6 +6,7 @@ import type {
   TripPhotoVariant,
 } from "@/features/trips/domain/photo-types";
 import { bff } from "@/shared/http/bff-client";
+import { throwWithParsedBlobJsonError } from "@/shared/http/api-errors";
 
 type ListTripPhotosOptions = {
   cursor?: string;
@@ -82,9 +83,13 @@ export async function bffFetchTripPhotoAssetBlob(
   variant: TripPhotoVariant,
   options: FetchTripPhotoAssetBlobOptions = {},
 ): Promise<Blob> {
-  const res = await bff.get<Blob>(tripPhotoAssetPath(tripId, photoId, variant), {
-    responseType: "blob",
-    signal: options.signal,
-  });
-  return res.data;
+  try {
+    const res = await bff.get<Blob>(tripPhotoAssetPath(tripId, photoId, variant), {
+      responseType: "blob",
+      signal: options.signal,
+    });
+    return res.data;
+  } catch (error) {
+    return throwWithParsedBlobJsonError(error);
+  }
 }

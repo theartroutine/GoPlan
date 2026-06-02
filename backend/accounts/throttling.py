@@ -33,14 +33,6 @@ def should_bypass_dev_throttle(request) -> bool:
         if _normalized_email(getattr(user, "email", "")) in bypass_emails:
             return True
 
-    try:
-        request_data = request.data
-    except Exception:
-        request_data = {}
-
-    if isinstance(request_data, dict):
-        return _normalized_email(request_data.get("email")) in bypass_emails
-
     return False
 
 

@@ -13,7 +13,10 @@ from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from memories.memory_video_rendering import render_memory_video
+from memories.memory_video_rendering import (
+    MemoryVideoAudioSourceUnavailable,
+    render_memory_video,
+)
 from memories.models import (
     TripMemoryVideo,
     TripMemoryVideoSourceMode,
@@ -355,6 +358,13 @@ def _memory_field_exists(memory: TripMemoryVideo, field_name: str) -> bool:
         return False
 
 
+def memory_video_can_download(memory: TripMemoryVideo) -> bool:
+    return (
+        memory.status == TripMemoryVideoStatus.READY
+        and _memory_field_exists(memory, "video_file")
+    )
+
+
 def _is_public_memory_viewable(memory: TripMemoryVideo) -> bool:
     return (
         memory.share_enabled
@@ -453,10 +463,10 @@ def create_trip_memory_video(
     photo_ids: list,
     music_key: str | None = None,
 ) -> TripMemoryVideo:
-    resolved_music_key = _resolve_music_key(music_key)
     membership = _get_active_membership(trip_id, actor)
     trip = membership.trip
     _assert_trip_accepts_memory_mutation(trip.status)
+    resolved_music_key = _resolve_music_key(music_key)
 
     if source_mode == TripMemoryVideoSourceMode.MANUAL:
         selected_photos = _resolve_manual_photos(trip_id=trip_id, photo_ids=photo_ids)
@@ -758,12 +768,12 @@ def render_trip_memory_video(memory_id: str) -> None:
                 duration_seconds=render_result.duration_seconds,
             )
             render_log_status = TripMemoryVideoStatus.READY
-    except MemoryVideoRenderSourceError as exc:
+    except (MemoryVideoRenderSourceError, MemoryVideoAudioSourceUnavailable) as exc:
         render_log_status = MEMORY_SOURCE_UNAVAILABLE
         _mark_memory_render_failed(
             memory_id=memory_id,
             error_code=MEMORY_SOURCE_UNAVAILABLE,
-            message=str(exc) or "A source photo is unavailable.",
+            message=str(exc) or "A source asset is unavailable.",
             expected_started_at=expected_started_at,
         )
     except MemoryVideoRenderStorageError as exc:
