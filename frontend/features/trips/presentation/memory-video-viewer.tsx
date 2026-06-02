@@ -5,7 +5,12 @@ import { useCallback, useState } from "react";
 import { Download, Loader2, X } from "lucide-react";
 
 import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
-import { bffFetchTripMemoryAssetBlob } from "@/features/trips/infrastructure/memories-api";
+import { getTripMemoryErrorMessage } from "@/features/trips/domain/memory-errors";
+import { triggerBrowserDownload } from "@/features/trips/infrastructure/download-file";
+import {
+  bffDownloadTripMemoryVideo,
+  bffFetchTripMemoryAssetBlob,
+} from "@/features/trips/infrastructure/memories-api";
 import { useAssetBlobUrl } from "@/features/trips/presentation/use-asset-blob-url";
 import { Button } from "@/shared/ui/button";
 
@@ -20,13 +25,8 @@ type VideoStreamState = {
   status: "error" | "loading" | "ready";
 };
 
-function memoryAssetPath(
-  tripId: string,
-  memoryId: string,
-  variant: "download" | "video",
-): string {
-  return `/api/trips/${encodeURIComponent(tripId)}/memories/${encodeURIComponent(memoryId)}/${variant}`;
-}
+const DOWNLOAD_ERROR = "Could not download this memory video.";
+const MEMORY_VIDEO_BLOB_TIMEOUT_MS = 120_000;
 
 function formatDuration(seconds: number | null): string | null {
   if (seconds === null) return null;
@@ -44,6 +44,9 @@ function formatDownloadFileName(title: string): string {
 }
 
 export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewerProps) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [videoStream, setVideoStream] = useState<VideoStreamState | null>(null);
   const title = memory.title.trim() || "Trip memory";
   const duration = formatDuration(memory.duration_seconds);
   const isReady = memory.status === "ready";
@@ -62,13 +65,48 @@ export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewer
   const videoAssetKey = isReady
     ? `${tripId}:${memory.id}:${memory.updated_at}:video`
     : null;
-  const [videoStream, setVideoStream] = useState<VideoStreamState | null>(null);
+  const fetchVideoBlob = useCallback(
+    (signal: AbortSignal) =>
+      bffFetchTripMemoryAssetBlob(tripId, memory.id, "video", {
+        signal,
+        timeoutMs: MEMORY_VIDEO_BLOB_TIMEOUT_MS,
+      }),
+    [memory.id, tripId],
+  );
+  const videoAsset = useAssetBlobUrl({
+    assetKey: videoAssetKey,
+    fetchBlob: fetchVideoBlob,
+  });
   const currentVideoStream =
     videoStream?.assetKey === videoAssetKey ? videoStream : null;
-  const videoHref = isReady ? memoryAssetPath(tripId, memory.id, "video") : null;
-  const videoStatus = currentVideoStream?.status ?? (videoHref ? "loading" : null);
-  const downloadHref = memoryAssetPath(tripId, memory.id, "download");
+  const videoSrc = videoAsset.url;
+  const videoStatus =
+    videoAsset.failed || currentVideoStream?.status === "error"
+      ? "error"
+      : videoAsset.loading || (videoSrc && currentVideoStream?.status !== "ready")
+        ? "loading"
+        : videoSrc
+          ? "ready"
+          : null;
   const downloadFileName = formatDownloadFileName(title);
+
+  async function handleDownload() {
+    if (downloading) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const download = await bffDownloadTripMemoryVideo(
+        tripId,
+        memory.id,
+        downloadFileName,
+      );
+      triggerBrowserDownload(download.blob, download.filename);
+    } catch (err) {
+      setDownloadError(getTripMemoryErrorMessage(err, DOWNLOAD_ERROR));
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -99,7 +137,7 @@ export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewer
               Could not load this video.
             </div>
           ) : null}
-          {videoHref ? (
+          {videoSrc ? (
             <video
               aria-label={`${title} video`}
               className="size-full"
@@ -115,7 +153,7 @@ export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewer
               playsInline
               poster={posterAsset.url ?? undefined}
               preload="metadata"
-              src={videoHref}
+              src={videoSrc}
             />
           ) : null}
         </div>
@@ -131,12 +169,21 @@ export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewer
         </p>
       ) : null}
 
+      {downloadError ? (
+        <p className="text-sm text-destructive" role="alert">
+          {downloadError}
+        </p>
+      ) : null}
+
       {memory.can_download ? (
-        <Button asChild type="button" variant="outline">
-          <a href={downloadHref} download={downloadFileName}>
-            <Download />
-            Download
-          </a>
+        <Button
+          disabled={downloading}
+          onClick={() => void handleDownload()}
+          type="button"
+          variant="outline"
+        >
+          {downloading ? <Loader2 className="animate-spin" /> : <Download />}
+          Download
         </Button>
       ) : null}
     </div>

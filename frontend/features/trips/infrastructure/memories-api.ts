@@ -10,6 +10,7 @@ import type {
   TripMemoryVideo,
   UpdateTripMemoryPayload,
 } from "@/features/trips/domain/memory-types";
+import { parseContentDispositionFilename } from "@/features/trips/infrastructure/download-file";
 import { bff } from "@/shared/http/bff-client";
 import { throwWithParsedBlobJsonError } from "@/shared/http/api-errors";
 
@@ -23,12 +24,19 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
-type TripMemoryAssetVariant = "poster" | "video";
+type TripMemoryAssetVariant = "download" | "poster" | "video";
+
+type TripMemoryDownload = {
+  blob: Blob;
+  filename: string;
+};
 
 type FetchTripMemoryAssetBlobOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
 };
+
+const MEMORY_DOWNLOAD_FALLBACK_FILENAME = "trip-memory.mp4";
 
 function tripMemoriesPath(tripId: string): string {
   return `/api/trips/${encodeURIComponent(tripId)}/memories`;
@@ -189,6 +197,28 @@ export async function bffFetchTripMemoryAssetBlob(
       requestConfig,
     );
     return res.data;
+  } catch (error) {
+    return throwWithParsedBlobJsonError(error);
+  }
+}
+
+export async function bffDownloadTripMemoryVideo(
+  tripId: string,
+  memoryId: string,
+  fallbackFilename = MEMORY_DOWNLOAD_FALLBACK_FILENAME,
+): Promise<TripMemoryDownload> {
+  try {
+    const res = await bff.get<Blob>(
+      tripMemoryAssetPath(tripId, memoryId, "download"),
+      { responseType: "blob" },
+    );
+    return {
+      blob: res.data,
+      filename: parseContentDispositionFilename(
+        res.headers["content-disposition"],
+        fallbackFilename,
+      ),
+    };
   } catch (error) {
     return throwWithParsedBlobJsonError(error);
   }

@@ -6,6 +6,7 @@ import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
 const memoriesApiMock = vi.hoisted(() => ({
   bffCreateTripMemory: vi.fn(),
   bffDeleteTripMemory: vi.fn(),
+  bffDownloadTripMemoryVideo: vi.fn(),
   bffFetchTripMemoryAssetBlob: vi.fn(),
   bffGetTripMemoryCreateOptions: vi.fn(),
   bffListTripMemories: vi.fn(),
@@ -128,15 +129,12 @@ describe("MemoriesTab", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Play Da Nang recap" }));
 
     const viewerVideo = await screen.findByLabelText("Da Nang recap video");
-    expect(viewerVideo).toHaveAttribute(
-      "src",
-      "/api/trips/trip_1/memories/memory_1/video",
-    );
-    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).not.toHaveBeenCalledWith(
+    expect(viewerVideo).toHaveAttribute("src", "blob:trip-memory-3");
+    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledWith(
       "trip_1",
       "memory_1",
       "video",
-      expect.anything(),
+      { signal: expect.any(AbortSignal), timeoutMs: 120_000 },
     );
     expect(screen.getByRole("button", { name: "Close viewer" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Close dialog" })).not.toBeInTheDocument();

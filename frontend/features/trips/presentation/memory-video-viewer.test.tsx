@@ -1,13 +1,20 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
 
 const memoriesApiMock = vi.hoisted(() => ({
+  bffDownloadTripMemoryVideo: vi.fn(),
   bffFetchTripMemoryAssetBlob: vi.fn(),
 }));
 
 vi.mock("@/features/trips/infrastructure/memories-api", () => memoriesApiMock);
+
+const downloadFileMock = vi.hoisted(() => ({
+  triggerBrowserDownload: vi.fn(),
+}));
+
+vi.mock("@/features/trips/infrastructure/download-file", () => downloadFileMock);
 
 import { MemoryVideoViewer } from "@/features/trips/presentation/memory-video-viewer";
 
@@ -48,20 +55,21 @@ describe("MemoryVideoViewer", () => {
           type: variant === "poster" ? "image/webp" : "video/mp4",
         }),
     );
+    memoriesApiMock.bffDownloadTripMemoryVideo.mockResolvedValue({
+      blob: new Blob(["video"], { type: "video/mp4" }),
+      filename: "da-nang-recap.mp4",
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("streams ready memories through the BFF video route", async () => {
+  it("loads ready memories through authenticated BFF blob assets", async () => {
     render(<MemoryVideoViewer tripId="trip 1" memory={READY_MEMORY} onClose={() => {}} />);
 
     const video = await screen.findByLabelText("Da Nang recap video");
-    expect(video).toHaveAttribute(
-      "src",
-      "/api/trips/trip%201/memories/memory%201/video",
-    );
+    expect(video).toHaveAttribute("src", "blob:memory-video");
     expect(video).toHaveAttribute("poster", "blob:memory-poster");
     expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledWith(
       "trip 1",
@@ -69,21 +77,33 @@ describe("MemoryVideoViewer", () => {
       "poster",
       { signal: expect.any(AbortSignal), timeoutMs: undefined },
     );
-    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledTimes(1);
+    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledWith(
+      "trip 1",
+      "memory 1",
+      "video",
+      { signal: expect.any(AbortSignal), timeoutMs: 120_000 },
+    );
+    expect(memoriesApiMock.bffFetchTripMemoryAssetBlob).toHaveBeenCalledTimes(2);
   });
 
-  it("shows the download link only when the memory can be downloaded", async () => {
+  it("downloads ready memories through the authenticated BFF client", async () => {
     const { rerender } = render(
       <MemoryVideoViewer tripId="trip 1" memory={READY_MEMORY} onClose={() => {}} />,
     );
 
     expect(await screen.findByLabelText("Da Nang recap video")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
-      "href",
-      "/api/trips/trip%201/memories/memory%201/download",
+
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+    await waitFor(() =>
+      expect(memoriesApiMock.bffDownloadTripMemoryVideo).toHaveBeenCalledWith(
+        "trip 1",
+        "memory 1",
+        "da-nang-recap.mp4",
+      ),
     );
-    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
-      "download",
+    expect(downloadFileMock.triggerBrowserDownload).toHaveBeenCalledWith(
+      expect.any(Blob),
       "da-nang-recap.mp4",
     );
 
@@ -95,7 +115,7 @@ describe("MemoryVideoViewer", () => {
       />,
     );
 
-    expect(screen.queryByRole("link", { name: "Download" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
   });
 
   it("does not render a video tag for non-ready memories", () => {

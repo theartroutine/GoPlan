@@ -23,7 +23,7 @@ from media.image_validation import (
     validate_pillow_image,
 )
 from memories.models import TripPhoto
-from trips.models import MemberStatus, TripMember, TripRole, TripStatus
+from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
 from trips.services import TripNotFoundError, TripTerminalError
 
 logger = logging.getLogger(__name__)
@@ -118,13 +118,27 @@ def _max_download_files() -> int:
 
 
 def _get_active_membership(trip_id, actor, *, for_update: bool = False):
+    if for_update:
+        try:
+            trip = Trip.objects.select_for_update().get(pk=trip_id)
+        except Trip.DoesNotExist as exc:
+            raise TripNotFoundError("Trip not found.") from exc
+        try:
+            membership = TripMember.objects.select_for_update().get(
+                trip=trip,
+                user=actor,
+                status=MemberStatus.ACTIVE,
+            )
+        except TripMember.DoesNotExist as exc:
+            raise TripNotFoundError("Trip not found.") from exc
+        membership.trip = trip
+        return membership
+
     queryset = TripMember.objects.select_related("trip").filter(
         trip_id=trip_id,
         user=actor,
         status=MemberStatus.ACTIVE,
     )
-    if for_update:
-        queryset = queryset.select_for_update()
     try:
         return queryset.get()
     except TripMember.DoesNotExist as exc:
@@ -404,7 +418,14 @@ def create_trip_photos(*, trip_id, actor, files: list) -> list[TripPhoto]:
         _render_trip_photo_variants(item.image_file, probe=item.probe)
         for item in validated_uploads
     ]
-    return _build_photo_records(trip=trip, actor=actor, prepared_items=prepared_items)
+    with transaction.atomic():
+        locked_membership = _get_active_membership(trip_id, actor, for_update=True)
+        _assert_trip_accepts_photo_mutation(locked_membership.trip.status)
+        return _build_photo_records(
+            trip=locked_membership.trip,
+            actor=actor,
+            prepared_items=prepared_items,
+        )
 
 
 def _get_photo_for_member(*, trip_id, photo_id, actor, for_update: bool = False):

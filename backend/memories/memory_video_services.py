@@ -472,10 +472,11 @@ def create_trip_memory_video(
 
     source_photo_ids = [str(photo.id) for photo in selected_photos]
     with transaction.atomic():
-        membership.trip.__class__.objects.select_for_update().get(pk=trip.pk)
+        locked_membership = _get_active_membership(trip_id, actor, for_update=True)
+        _assert_trip_accepts_memory_mutation(locked_membership.trip.status)
         _assert_active_memory_quota_available(trip_id=trip_id, actor=actor)
         memory = TripMemoryVideo.objects.create(
-            trip=trip,
+            trip=locked_membership.trip,
             created_by=actor,
             created_by_display_name_snapshot=actor.display_name,
             created_by_identify_tag_snapshot=actor.identify_tag,

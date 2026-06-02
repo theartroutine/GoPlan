@@ -16,8 +16,13 @@ import {
   TriangleAlert,
 } from "lucide-react";
 
+import { getTripMemoryErrorMessage } from "@/features/trips/domain/memory-errors";
 import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
-import { bffFetchTripMemoryAssetBlob } from "@/features/trips/infrastructure/memories-api";
+import { triggerBrowserDownload } from "@/features/trips/infrastructure/download-file";
+import {
+  bffDownloadTripMemoryVideo,
+  bffFetchTripMemoryAssetBlob,
+} from "@/features/trips/infrastructure/memories-api";
 import { useAssetBlobUrl } from "@/features/trips/presentation/use-asset-blob-url";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
@@ -39,6 +44,7 @@ type MemoryVideoCardProps = {
 const FAILED_STATUS_LABEL = "Render failed";
 const QUEUED_STATUS_LABEL = "Queued";
 const RENDERING_STATUS_LABEL = "Rendering…";
+const DOWNLOAD_ERROR = "Could not download this memory video.";
 const POSTER_GRADIENT =
   "bg-[radial-gradient(circle_at_24%_18%,rgba(255,255,255,0.22),transparent_32%),linear-gradient(135deg,rgba(14,165,233,0.22),transparent_48%,rgba(245,158,11,0.18))]";
 
@@ -83,6 +89,8 @@ export function MemoryVideoCard({
   onPlay,
   onShare,
 }: MemoryVideoCardProps) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [posterImageFailedKey, setPosterImageFailedKey] = useState<string | null>(null);
   const title = memory.title.trim() || "Untitled memory";
   const duration = formatDuration(memory.duration_seconds);
@@ -109,7 +117,24 @@ export function MemoryVideoCard({
   const posterFailed =
     posterAsset.failed ||
     (posterAssetKey !== null && posterImageFailedKey === posterAssetKey);
-  const downloadHref = `/api/trips/${encodeURIComponent(memory.trip_id)}/memories/${encodeURIComponent(memory.id)}/download`;
+
+  async function handleDownload() {
+    if (downloading) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const download = await bffDownloadTripMemoryVideo(
+        memory.trip_id,
+        memory.id,
+        buildDownloadFileName(title),
+      );
+      triggerBrowserDownload(download.blob, download.filename);
+    } catch (err) {
+      setDownloadError(getTripMemoryErrorMessage(err, DOWNLOAD_ERROR));
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <article
@@ -205,11 +230,12 @@ export function MemoryVideoCard({
                   </DropdownMenuItem>
                 ) : null}
                 {canDownload ? (
-                  <DropdownMenuItem asChild>
-                    <a download={buildDownloadFileName(title)} href={downloadHref}>
-                      <Download />
-                      Download
-                    </a>
+                  <DropdownMenuItem
+                    disabled={downloading}
+                    onSelect={() => void handleDownload()}
+                  >
+                    {downloading ? <Loader2 className="animate-spin" /> : <Download />}
+                    Download
                   </DropdownMenuItem>
                 ) : null}
                 {(canShare || canDownload) && canDelete ? <DropdownMenuSeparator /> : null}
@@ -242,6 +268,11 @@ export function MemoryVideoCard({
           {isFailed && memory.render_error ? (
             <p className="text-xs text-destructive" role="alert">
               {memory.render_error.message}
+            </p>
+          ) : null}
+          {downloadError ? (
+            <p className="text-xs text-destructive" role="alert">
+              {downloadError}
             </p>
           ) : null}
         </div>

@@ -1,13 +1,20 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
 
 const memoriesApiMock = vi.hoisted(() => ({
+  bffDownloadTripMemoryVideo: vi.fn(),
   bffFetchTripMemoryAssetBlob: vi.fn(),
 }));
 
 vi.mock("@/features/trips/infrastructure/memories-api", () => memoriesApiMock);
+
+const downloadFileMock = vi.hoisted(() => ({
+  triggerBrowserDownload: vi.fn(),
+}));
+
+vi.mock("@/features/trips/infrastructure/download-file", () => downloadFileMock);
 
 import { MemoryVideoCard } from "@/features/trips/presentation/memory-video-card";
 
@@ -51,11 +58,6 @@ function openMenu() {
   fireEvent.pointerUp(trigger, { button: 0, pointerType: "mouse" });
 }
 
-function closeMenu() {
-  // Press Escape to close the uncontrolled Radix menu when it is open.
-  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
-}
-
 describe("MemoryVideoCard", () => {
   beforeEach(() => {
     let index = 0;
@@ -67,6 +69,10 @@ describe("MemoryVideoCard", () => {
     memoriesApiMock.bffFetchTripMemoryAssetBlob.mockResolvedValue(
       new Blob(["poster"], { type: "image/webp" }),
     );
+    memoriesApiMock.bffDownloadTripMemoryVideo.mockResolvedValue({
+      blob: new Blob(["video"], { type: "video/mp4" }),
+      filename: "da-nang-recap.mp4",
+    });
   });
 
   afterEach(() => {
@@ -91,7 +97,7 @@ describe("MemoryVideoCard", () => {
     expect(onPlay).toHaveBeenCalledTimes(1);
   });
 
-  it("exposes share, download, and delete in the actions menu for a manageable ready memory", () => {
+  it("exposes share, authenticated download, and delete in the actions menu for a manageable ready memory", async () => {
     const onShare = vi.fn();
     const onDelete = vi.fn();
     render(
@@ -103,14 +109,20 @@ describe("MemoryVideoCard", () => {
     expect(onShare).toHaveBeenCalledTimes(1);
 
     openMenu();
-    expect(
+    fireEvent.click(
       within(screen.getByRole("menu")).getByRole("menuitem", { name: "Download" }),
-    ).toHaveAttribute("href", "/api/trips/trip_1/memories/memory_1/download");
-    expect(
-      within(screen.getByRole("menu")).getByRole("menuitem", { name: "Download" }),
-    ).toHaveAttribute("download", "da-nang-recap.mp4");
-    // Close menu before re-opening; Radix toggle on pointerDown would shut it if already open.
-    closeMenu();
+    );
+    await waitFor(() =>
+      expect(memoriesApiMock.bffDownloadTripMemoryVideo).toHaveBeenCalledWith(
+        "trip_1",
+        "memory_1",
+        "da-nang-recap.mp4",
+      ),
+    );
+    expect(downloadFileMock.triggerBrowserDownload).toHaveBeenCalledWith(
+      expect.any(Blob),
+      "da-nang-recap.mp4",
+    );
 
     openMenu();
     fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete memory" }));

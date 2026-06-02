@@ -15,6 +15,7 @@ import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
 import {
   bffCreateTripMemory,
   bffDeleteTripMemory,
+  bffDownloadTripMemoryVideo,
   bffDisableTripMemoryShareLink,
   bffEnableTripMemoryShareLink,
   bffFetchTripMemoryAssetBlob,
@@ -170,6 +171,28 @@ describe("memories-api", () => {
         responseType: "blob",
         signal,
       },
+    );
+  });
+
+  it("downloads memory videos as blobs and keeps the server filename", async () => {
+    const videoBlob = new Blob(["video"], { type: "video/mp4" });
+    bffMock.get.mockResolvedValueOnce({
+      data: videoBlob,
+      headers: {
+        "content-disposition": "attachment; filename*=UTF-8''da-nang-recap.mp4",
+      },
+    });
+
+    await expect(
+      bffDownloadTripMemoryVideo("trip/1", "memory/1", "fallback.mp4"),
+    ).resolves.toEqual({
+      blob: videoBlob,
+      filename: "da-nang-recap.mp4",
+    });
+
+    expect(bffMock.get).toHaveBeenCalledWith(
+      "/api/trips/trip%2F1/memories/memory%2F1/download",
+      { responseType: "blob" },
     );
   });
 
