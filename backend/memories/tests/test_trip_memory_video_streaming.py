@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 from types import SimpleNamespace
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.core.files.base import ContentFile
 from django.test import override_settings
@@ -206,7 +207,7 @@ class TripMemoryVideoStreamingAPITests(APITestCase):
         self.assertEqual(response.status_code, 416)
         self.assertEqual(response.headers["Content-Range"], "bytes */10")
 
-    def test_range_response_opens_storage_only_when_body_is_iterated(self):
+    def test_range_response_opens_storage_before_returning_response(self):
         class TrackingStorage:
             def __init__(self) -> None:
                 self.open_calls = 0
@@ -226,7 +227,7 @@ class TripMemoryVideoStreamingAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 206)
-        self.assertEqual(storage.open_calls, 0)
+        self.assertEqual(storage.open_calls, 1)
         self.assertEqual(_response_body(response), b"0123")
         self.assertEqual(storage.open_calls, 1)
 
@@ -278,6 +279,40 @@ class TripMemoryVideoStreamingAPITests(APITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["error_code"], "MEMORY_NOT_READY")
 
+    def test_private_video_open_race_returns_not_found(self):
+        memory = self._ready_memory()
+
+        with (
+            patch("django.core.files.storage.filesystem.FileSystemStorage.exists", return_value=True),
+            patch(
+                "django.core.files.storage.filesystem.FileSystemStorage.open",
+                side_effect=FileNotFoundError("video disappeared"),
+            ),
+        ):
+            response = self.client.get(_video_url(self.trip.id, memory.id), **_auth(self.member))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "MEMORY_NOT_FOUND")
+
+    def test_private_video_range_open_race_returns_not_found(self):
+        memory = self._ready_memory()
+
+        with (
+            patch("django.core.files.storage.filesystem.FileSystemStorage.exists", return_value=True),
+            patch(
+                "django.core.files.storage.filesystem.FileSystemStorage.open",
+                side_effect=FileNotFoundError("video disappeared"),
+            ),
+        ):
+            response = self.client.get(
+                _video_url(self.trip.id, memory.id),
+                HTTP_RANGE="bytes=0-3",
+                **_auth(self.member),
+            )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "MEMORY_NOT_FOUND")
+
     def test_non_member_cannot_access_private_asset(self):
         memory = self._ready_memory()
 
@@ -294,3 +329,18 @@ class TripMemoryVideoStreamingAPITests(APITestCase):
         self.assertEqual(response.headers["Content-Type"], "image/webp")
         self.assertEqual(response.headers["Cache-Control"], "private, no-store")
         self.assertEqual(_response_body(response), b"WEBP")
+
+    def test_private_poster_open_race_returns_not_found(self):
+        memory = self._ready_memory()
+
+        with (
+            patch("django.core.files.storage.filesystem.FileSystemStorage.exists", return_value=True),
+            patch(
+                "django.core.files.storage.filesystem.FileSystemStorage.open",
+                side_effect=FileNotFoundError("poster disappeared"),
+            ),
+        ):
+            response = self.client.get(_poster_url(self.trip.id, memory.id), **_auth(self.member))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "MEMORY_NOT_FOUND")

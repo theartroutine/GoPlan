@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Blob object URLs cannot be optimized by next/image. */
 
 import { ImageIcon, RefreshCcw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { TripPhoto } from "@/features/trips/domain/photo-types";
 import { getTripPhotoErrorMessage } from "@/features/trips/domain/photo-errors";
@@ -11,6 +11,7 @@ import {
   bffFetchTripPhotoAssetBlob,
   bffListTripPhotos,
 } from "@/features/trips/infrastructure/photos-api";
+import { useAssetBlobUrlMap } from "@/features/trips/presentation/use-asset-blob-url";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
@@ -48,31 +49,27 @@ export function MemoryPhotoPicker({
 }: MemoryPhotoPickerProps) {
   const [photos, setPhotos] = useState<TripPhoto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
-  const [thumbnailErrors, setThumbnailErrors] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const thumbnailUrlsRef = useRef<Map<string, string>>(new Map());
-  const thumbnailErrorsRef = useRef<Set<string>>(new Set());
-  const thumbnailRequestsRef = useRef<Map<string, AbortController>>(new Map());
-  const visiblePhotoIdsRef = useRef<Set<string>>(new Set());
-  const mountedRef = useRef(false);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedOrderById = useMemo(
     () => new Map(selectedIds.map((id, index) => [id, index + 1])),
     [selectedIds],
   );
 
-  const syncThumbnailUrls = useCallback(() => {
-    setThumbnailUrls(Object.fromEntries(thumbnailUrlsRef.current.entries()));
-  }, []);
-
-  const syncThumbnailErrors = useCallback(() => {
-    setThumbnailErrors(new Set(thumbnailErrorsRef.current));
-  }, []);
+  const getPhotoId = useCallback((photo: TripPhoto) => photo.id, []);
+  const fetchThumbnailBlob = useCallback(
+    (photo: TripPhoto, signal: AbortSignal) =>
+      bffFetchTripPhotoAssetBlob(tripId, photo.id, "thumbnail", { signal }),
+    [tripId],
+  );
+  const { errors: thumbnailErrors, urls: thumbnailUrls } = useAssetBlobUrlMap({
+    fetchBlob: fetchThumbnailBlob,
+    getId: getPhotoId,
+    items: photos,
+    resetKey: tripId,
+  });
 
   const loadPhotos = useCallback(async (
     options: {
@@ -132,114 +129,6 @@ export function MemoryPhotoPicker({
       controller.abort();
     };
   }, [loadPhotos]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    const thumbnailRequests = thumbnailRequestsRef.current;
-    const thumbnailObjectUrls = thumbnailUrlsRef.current;
-    const thumbnailErrorsByPhoto = thumbnailErrorsRef.current;
-
-    return () => {
-      mountedRef.current = false;
-      for (const controller of thumbnailRequests.values()) {
-        controller.abort();
-      }
-      thumbnailRequests.clear();
-      for (const url of thumbnailObjectUrls.values()) {
-        URL.revokeObjectURL(url);
-      }
-      thumbnailObjectUrls.clear();
-      thumbnailErrorsByPhoto.clear();
-    };
-  }, []);
-
-  useEffect(() => {
-    for (const controller of thumbnailRequestsRef.current.values()) {
-      controller.abort();
-    }
-    thumbnailRequestsRef.current.clear();
-    for (const url of thumbnailUrlsRef.current.values()) {
-      URL.revokeObjectURL(url);
-    }
-    thumbnailUrlsRef.current.clear();
-    thumbnailErrorsRef.current.clear();
-    visiblePhotoIdsRef.current = new Set();
-    setThumbnailUrls({});
-    setThumbnailErrors(new Set());
-  }, [tripId]);
-
-  useEffect(() => {
-    const visibleIds = new Set(photos.map((photo) => photo.id));
-    visiblePhotoIdsRef.current = visibleIds;
-
-    let urlsChanged = false;
-    let errorsChanged = false;
-    for (const [photoId, url] of thumbnailUrlsRef.current.entries()) {
-      if (!visibleIds.has(photoId)) {
-        URL.revokeObjectURL(url);
-        thumbnailUrlsRef.current.delete(photoId);
-        urlsChanged = true;
-      }
-    }
-    for (const [photoId, controller] of thumbnailRequestsRef.current.entries()) {
-      if (!visibleIds.has(photoId)) {
-        controller.abort();
-        thumbnailRequestsRef.current.delete(photoId);
-      }
-    }
-    for (const photoId of thumbnailErrorsRef.current) {
-      if (!visibleIds.has(photoId)) {
-        thumbnailErrorsRef.current.delete(photoId);
-        errorsChanged = true;
-      }
-    }
-    if (urlsChanged) syncThumbnailUrls();
-    if (errorsChanged) syncThumbnailErrors();
-
-    for (const photo of photos) {
-      if (
-        thumbnailUrlsRef.current.has(photo.id) ||
-        thumbnailRequestsRef.current.has(photo.id) ||
-        thumbnailErrorsRef.current.has(photo.id)
-      ) {
-        continue;
-      }
-
-      const controller = new AbortController();
-      thumbnailRequestsRef.current.set(photo.id, controller);
-      void bffFetchTripPhotoAssetBlob(tripId, photo.id, "thumbnail", {
-        signal: controller.signal,
-      })
-        .then((blob) => {
-          if (
-            controller.signal.aborted ||
-            !mountedRef.current ||
-            !visiblePhotoIdsRef.current.has(photo.id)
-          ) {
-            return;
-          }
-
-          const objectUrl = URL.createObjectURL(blob);
-          const previousUrl = thumbnailUrlsRef.current.get(photo.id);
-          if (previousUrl) URL.revokeObjectURL(previousUrl);
-          thumbnailUrlsRef.current.set(photo.id, objectUrl);
-          syncThumbnailUrls();
-        })
-        .catch(() => {
-          if (
-            !controller.signal.aborted &&
-            mountedRef.current &&
-            visiblePhotoIdsRef.current.has(photo.id)
-          ) {
-            thumbnailErrorsRef.current.add(photo.id);
-            syncThumbnailErrors();
-          }
-        })
-        .finally(() => {
-          thumbnailRequestsRef.current.delete(photo.id);
-        });
-    }
-  }, [photos, syncThumbnailErrors, syncThumbnailUrls, tripId]);
 
   function togglePhoto(photoId: string) {
     if (disabled) return;

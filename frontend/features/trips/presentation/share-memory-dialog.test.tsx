@@ -35,6 +35,7 @@ describe("ShareMemoryDialog", () => {
     vi.resetAllMocks();
     Object.assign(navigator, {
       clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+      share: undefined,
     });
   });
 
@@ -102,5 +103,74 @@ describe("ShareMemoryDialog", () => {
       );
       expect(onShareChanged).toHaveBeenCalledWith({ enabled: false, url: null });
     });
+  });
+
+  it("shows a message when clipboard copy is blocked", async () => {
+    Object.assign(navigator, {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error("blocked")) },
+    });
+
+    render(
+      <ShareMemoryDialog
+        tripId="trip_1"
+        memory={{
+          ...MEMORY,
+          share: { enabled: true, url: "https://goplan.test/m/share-1" },
+        }}
+        onClose={() => {}}
+        onShareChanged={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+
+    expect(await screen.findByText("Could not copy link.")).toBeInTheDocument();
+  });
+
+  it("ignores native share cancellation without showing an error", async () => {
+    Object.assign(navigator, {
+      share: vi.fn().mockRejectedValue(new DOMException("Cancelled", "AbortError")),
+    });
+
+    render(
+      <ShareMemoryDialog
+        tripId="trip_1"
+        memory={{
+          ...MEMORY,
+          share: { enabled: true, url: "https://goplan.test/m/share-1" },
+        }}
+        onClose={() => {}}
+        onShareChanged={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+
+    await waitFor(() => {
+      expect(navigator.share).toHaveBeenCalled();
+    });
+    expect(screen.queryByText("Could not share link.")).not.toBeInTheDocument();
+  });
+
+  it("shows a message when native share fails", async () => {
+    Object.assign(navigator, {
+      share: vi.fn().mockRejectedValue(new Error("share blocked")),
+    });
+
+    render(
+      <ShareMemoryDialog
+        tripId="trip_1"
+        memory={{
+          ...MEMORY,
+          share: { enabled: true, url: "https://goplan.test/m/share-1" },
+        }}
+        onClose={() => {}}
+        onShareChanged={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+
+    expect(await screen.findByText("Could not share link.")).toBeInTheDocument();
   });
 });

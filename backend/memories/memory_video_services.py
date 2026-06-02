@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 MEMORY_RENDER_ENQUEUE_FAILED = "MEMORY_RENDER_ENQUEUE_FAILED"
 MEMORY_RENDER_FAILED = "MEMORY_RENDER_FAILED"
+MEMORY_RENDER_STALE = "MEMORY_RENDER_STALE"
 MEMORY_SOURCE_UNAVAILABLE = "MEMORY_SOURCE_UNAVAILABLE"
 MEMORY_STORAGE_ERROR = "MEMORY_STORAGE_ERROR"
 MEMORY_RENDER_TRIP_LIMIT_REACHED = "MEMORY_RENDER_TRIP_LIMIT_REACHED"
@@ -125,6 +126,10 @@ def _max_active_per_user_per_trip() -> int:
 
 def _max_active_per_trip() -> int:
     return _setting("TRIP_MEMORY_MAX_ACTIVE_PER_TRIP", 3)
+
+
+def _max_render_recoveries() -> int:
+    return _setting("TRIP_MEMORY_RENDER_MAX_RECOVERIES", 2)
 
 
 def memory_photo_limits() -> dict[str, int]:
@@ -620,6 +625,95 @@ def _mark_memory_render_failed(
         render_error_message=message[:240],
         updated_at=now,
     )
+
+
+def recover_stale_memory_renders(*, limit: int = 25) -> dict[str, int]:
+    now = timezone.now()
+    stale_seconds = _setting("TRIP_MEMORY_RENDER_STALE_SECONDS", 15 * 60)
+    stale_cutoff = now - timezone.timedelta(seconds=stale_seconds)
+    candidate_ids = list(
+        TripMemoryVideo.objects.filter(
+            status=TripMemoryVideoStatus.RENDERING,
+            render_started_at__lt=stale_cutoff,
+        )
+        .order_by("render_started_at", "created_at")
+        .values_list("id", flat=True)[:limit]
+    )
+
+    requeued = 0
+    failed = 0
+    skipped = 0
+
+    for memory_id in candidate_ids:
+        enqueue_source_photo_count: int | None = None
+
+        with transaction.atomic():
+            memory = (
+                TripMemoryVideo.objects
+                .select_for_update()
+                .filter(pk=memory_id)
+                .first()
+            )
+            if memory is None:
+                skipped += 1
+                continue
+            if (
+                memory.status != TripMemoryVideoStatus.RENDERING
+                or memory.render_started_at is None
+                or memory.render_started_at >= stale_cutoff
+            ):
+                skipped += 1
+                continue
+
+            if memory.render_recovery_count >= _max_render_recoveries():
+                memory.status = TripMemoryVideoStatus.FAILED
+                memory.render_finished_at = timezone.now()
+                memory.render_error_code = MEMORY_RENDER_STALE
+                memory.render_error_message = "Memory video render became stale."
+                memory.save(
+                    update_fields=[
+                        "status",
+                        "render_finished_at",
+                        "render_error_code",
+                        "render_error_message",
+                        "updated_at",
+                    ]
+                )
+                failed += 1
+                continue
+
+            memory.status = TripMemoryVideoStatus.QUEUED
+            memory.render_recovery_count += 1
+            memory.render_started_at = None
+            memory.render_finished_at = None
+            memory.render_error_code = ""
+            memory.render_error_message = ""
+            memory.celery_task_id = ""
+            enqueue_source_photo_count = memory.source_photo_count
+            memory.save(
+                update_fields=[
+                    "status",
+                    "render_recovery_count",
+                    "render_started_at",
+                    "render_finished_at",
+                    "render_error_code",
+                    "render_error_message",
+                    "celery_task_id",
+                    "updated_at",
+                ]
+            )
+
+            transaction.on_commit(
+                lambda memory_id=str(memory.id), source_photo_count=enqueue_source_photo_count: (
+                    _enqueue_trip_memory_render(
+                        memory_id,
+                        source_photo_count=source_photo_count or 0,
+                    )
+                )
+            )
+            requeued += 1
+
+    return {"requeued": requeued, "failed": failed, "skipped": skipped}
 
 
 def _resolve_render_source_photos(memory: TripMemoryVideo) -> list[TripPhoto]:

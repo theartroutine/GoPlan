@@ -3,16 +3,19 @@ import {
   getApiErrorCode,
   getApiErrorData,
 } from "@/shared/http/api-errors";
+import {
+  TRIP_PHOTO_MAX_FILE_BYTES,
+  TRIP_PHOTO_MAX_FILES,
+  TRIP_PHOTO_MAX_TOTAL_UPLOAD_BYTES,
+  hasKnownUnsupportedTripPhotoMime,
+  isTripPhotoHeicFile,
+  isTripPhotoSvgFile,
+  totalTripPhotoFileBytes,
+} from "@/features/trips/domain/photo-constraints";
 
 type PhotoValidationResult =
   | { ok: true }
   | { ok: false; message: string };
-
-const MAX_FILES = 20;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const HEIC_TYPES = new Set(["image/heic", "image/heif"]);
-const GENERIC_BINARY_TYPES = new Set(["application/octet-stream", "binary/octet-stream"]);
 
 const ERROR_MESSAGES: Record<string, string> = {
   HEIC_UNSUPPORTED:
@@ -24,33 +27,13 @@ const ERROR_MESSAGES: Record<string, string> = {
     "That photo could not be processed. Choose a valid JPEG, PNG, or WebP file.",
   PHOTO_STORAGE_ERROR: "We could not save the photos. Please try again.",
   PHOTO_TOO_LARGE: "Each photo must be 10 MiB or smaller.",
+  PHOTO_UPLOAD_TOO_LARGE: "Upload up to 50 MiB of photos at a time.",
   PHOTO_DELETE_FORBIDDEN: "You can only delete photos you uploaded unless you own the trip.",
   TOO_MANY_FILES: "Upload up to 20 photos at a time.",
   TRIP_TERMINAL: "Cancelled trips cannot change photos.",
   UNSUPPORTED_IMAGE_TYPE:
     "Use JPEG, PNG, or WebP photos. SVG and other formats are not supported.",
 };
-
-function isHeicFile(file: File): boolean {
-  const lowerName = file.name.toLowerCase();
-  return (
-    HEIC_TYPES.has(file.type) ||
-    lowerName.endsWith(".heic") ||
-    lowerName.endsWith(".heif")
-  );
-}
-
-function isSvgFile(file: File): boolean {
-  return file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
-}
-
-function hasKnownUnsupportedMime(file: File): boolean {
-  return (
-    file.type !== "" &&
-    !GENERIC_BINARY_TYPES.has(file.type) &&
-    !ALLOWED_TYPES.has(file.type)
-  );
-}
 
 export function getTripPhotoErrorMessage(error: unknown, fallback: string): string {
   const code = getApiErrorCode(error);
@@ -64,18 +47,21 @@ export function validateTripPhotoFiles(files: File[]): PhotoValidationResult {
   if (files.length === 0) {
     return { ok: false, message: ERROR_MESSAGES.NO_FILES };
   }
-  if (files.length > MAX_FILES) {
+  if (files.length > TRIP_PHOTO_MAX_FILES) {
     return { ok: false, message: ERROR_MESSAGES.TOO_MANY_FILES };
+  }
+  if (totalTripPhotoFileBytes(files) > TRIP_PHOTO_MAX_TOTAL_UPLOAD_BYTES) {
+    return { ok: false, message: ERROR_MESSAGES.PHOTO_UPLOAD_TOO_LARGE };
   }
 
   for (const file of files) {
-    if (file.size > MAX_FILE_BYTES) {
+    if (file.size > TRIP_PHOTO_MAX_FILE_BYTES) {
       return { ok: false, message: ERROR_MESSAGES.PHOTO_TOO_LARGE };
     }
-    if (isHeicFile(file)) {
+    if (isTripPhotoHeicFile(file)) {
       return { ok: false, message: ERROR_MESSAGES.HEIC_UNSUPPORTED };
     }
-    if (isSvgFile(file) || hasKnownUnsupportedMime(file)) {
+    if (isTripPhotoSvgFile(file) || hasKnownUnsupportedTripPhotoMime(file)) {
       return { ok: false, message: ERROR_MESSAGES.UNSUPPORTED_IMAGE_TYPE };
     }
   }

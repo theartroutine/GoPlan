@@ -78,6 +78,11 @@ class TripPhotoConfigurationTests(SimpleTestCase):
     def test_medium_variant_uses_large_album_preview_edge(self):
         self.assertEqual(settings.TRIP_PHOTO_MEDIUM_MAX_EDGE, 2560)
 
+    def test_photo_memory_safety_defaults_are_configured(self):
+        self.assertEqual(settings.TRIP_PHOTO_MAX_UPLOAD_BYTES, 50 * 1024 * 1024)
+        self.assertEqual(settings.TRIP_PHOTO_MAX_UPLOAD_SOURCE_PIXELS, 90_000_000)
+        self.assertEqual(settings.TRIP_PHOTO_MAX_DECODED_BYTES, 160 * 1024 * 1024)
+
 
 class TripPhotoServiceTests(TestCase):
     def setUp(self) -> None:
@@ -90,6 +95,8 @@ class TripPhotoServiceTests(TestCase):
             TRIP_PHOTO_MEDIUM_MAX_EDGE=2560,
             TRIP_PHOTO_WEBP_QUALITY=84,
             TRIP_PHOTO_MAX_FILES_PER_UPLOAD=20,
+            TRIP_PHOTO_MAX_UPLOAD_SOURCE_PIXELS=90_000_000,
+            TRIP_PHOTO_MAX_DECODED_BYTES=160 * 1024 * 1024,
         )
         self.override.enable()
         self.captain = create_completed_user("photo-cap@example.com", "photocap", "PHC001")
@@ -252,6 +259,37 @@ class TripPhotoServiceTests(TestCase):
             create_trip_photos(trip_id=self.trip.id, actor=self.member, files=[upload])
 
         self.assertEqual(ctx.exception.error_code, "PHOTO_DIMENSIONS_TOO_LARGE")
+
+    @override_settings(TRIP_PHOTO_MAX_UPLOAD_SOURCE_PIXELS=150)
+    def test_create_trip_photos_rejects_total_source_pixels_above_cap(self):
+        with self.assertRaises(TripPhotoValidationError) as ctx:
+            create_trip_photos(
+                trip_id=self.trip.id,
+                actor=self.member,
+                files=[
+                    _make_image_upload(size=(10, 10), filename="one.jpg"),
+                    _make_image_upload(size=(10, 10), filename="two.jpg"),
+                ],
+            )
+
+        self.assertEqual(ctx.exception.error_code, "PHOTO_DIMENSIONS_TOO_LARGE")
+        self.assertEqual(TripPhoto.objects.count(), 0)
+
+    @override_settings(TRIP_PHOTO_MAX_DECODED_BYTES=399)
+    def test_create_trip_photos_rejects_source_above_decoded_byte_budget(self):
+        buf = io.BytesIO()
+        PILImage.new("RGBA", (10, 10), (0, 0, 0, 0)).save(buf, format="PNG")
+        upload = SimpleUploadedFile(
+            "alpha.png",
+            buf.getvalue(),
+            content_type="image/png",
+        )
+
+        with self.assertRaises(TripPhotoValidationError) as ctx:
+            create_trip_photos(trip_id=self.trip.id, actor=self.member, files=[upload])
+
+        self.assertEqual(ctx.exception.error_code, "PHOTO_DIMENSIONS_TOO_LARGE")
+        self.assertEqual(TripPhoto.objects.count(), 0)
 
     def test_delete_trip_photo_removes_variant_files(self):
         photo = create_trip_photos(

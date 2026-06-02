@@ -86,6 +86,34 @@ describe("BFF /api/share/memories/[slug]", () => {
     await expect(response.json()).resolves.toMatchObject({ music });
   });
 
+  it("normalizes partial public music metadata to null without rejecting the video", async () => {
+    const { GET } = await import("@/app/api/share/memories/[slug]/route");
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({
+        title: "Da Nang recap",
+        poster_url: "/api/public/memories/public-slug/poster",
+        video_url: "/api/public/memories/public-slug/video",
+        duration_seconds: 42,
+        source_photo_count: 7,
+        music: {
+          title: "Air Prelude",
+          artist: "Kevin MacLeod",
+          license: "CC BY 4.0",
+        },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const response = await GET({} as never, {
+      params: Promise.resolve({ slug: "public-slug" }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ music: null });
+  });
+
   it("rejects invalid successful upstream metadata instead of leaking it", async () => {
     const { GET } = await import("@/app/api/share/memories/[slug]/route");
     vi.mocked(fetch).mockResolvedValue(

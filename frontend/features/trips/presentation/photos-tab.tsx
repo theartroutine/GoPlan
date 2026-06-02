@@ -23,6 +23,10 @@ import { PhotoGrid } from "@/features/trips/presentation/photo-grid";
 import { PhotoLightbox } from "@/features/trips/presentation/photo-lightbox";
 import { calculateInitialPhotoPageSizeFromElement } from "@/features/trips/presentation/photo-page-size";
 import { useTripContext } from "@/features/trips/presentation/trip-context";
+import {
+  useAssetBlobUrl,
+  useAssetBlobUrlMap,
+} from "@/features/trips/presentation/use-asset-blob-url";
 import { UploadFab } from "@/features/trips/presentation/upload-fab";
 import { UploadReviewDialog } from "@/features/trips/presentation/upload-review-dialog";
 import {
@@ -59,41 +63,13 @@ export function PhotosTab() {
   const [stagedFiles, setStagedFiles] = useState<File[] | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<TripPhoto | null>(null);
   const [photoPendingDelete, setPhotoPendingDelete] = useState<TripPhoto | null>(null);
-  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
-  const [thumbnailErrors, setThumbnailErrors] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [mediumUrl, setMediumUrl] = useState<string | null>(null);
-  const [mediumPhotoId, setMediumPhotoId] = useState<string | null>(null);
-  const [mediumLoading, setMediumLoading] = useState(false);
-  const [mediumError, setMediumError] = useState<string | null>(null);
-  const thumbnailUrlsRef = useRef<Map<string, string>>(new Map());
-  const thumbnailErrorsRef = useRef<Set<string>>(new Set());
-  const thumbnailRequestsRef = useRef<Map<string, AbortController>>(new Map());
-  const visiblePhotoIdsRef = useRef<Set<string>>(new Set());
-  const mountedRef = useRef(false);
-  const mediumUrlRef = useRef<string | null>(null);
+  const selectedPhotoId = selectedPhoto?.id ?? null;
   const selectedPhotoIndex = selectedPhoto
     ? photos.findIndex((photo) => photo.id === selectedPhoto.id)
     : -1;
   const canNavigatePreviousPhoto = selectedPhotoIndex > 0;
   const canNavigateNextPhoto =
     selectedPhotoIndex >= 0 && selectedPhotoIndex < photos.length - 1;
-
-  const syncThumbnailUrls = useCallback(() => {
-    setThumbnailUrls(Object.fromEntries(thumbnailUrlsRef.current.entries()));
-  }, []);
-
-  const syncThumbnailErrors = useCallback(() => {
-    setThumbnailErrors(new Set(thumbnailErrorsRef.current));
-  }, []);
-
-  const revokeMediumUrl = useCallback(() => {
-    if (mediumUrlRef.current) {
-      URL.revokeObjectURL(mediumUrlRef.current);
-      mediumUrlRef.current = null;
-    }
-  }, []);
 
   const loadFirstPage = useCallback(async (signal?: AbortSignal) => {
     if (pageSize === null) return;
@@ -117,6 +93,38 @@ export function PhotosTab() {
     }
   }, [pageSize, tripId]);
 
+  const getPhotoId = useCallback((photo: TripPhoto) => photo.id, []);
+  const fetchThumbnailBlob = useCallback(
+    (photo: TripPhoto, signal: AbortSignal) =>
+      bffFetchTripPhotoAssetBlob(tripId, photo.id, "thumbnail", { signal }),
+    [tripId],
+  );
+  const { errors: thumbnailErrors, urls: thumbnailUrls } = useAssetBlobUrlMap({
+    fetchBlob: fetchThumbnailBlob,
+    getId: getPhotoId,
+    items: photos,
+    resetKey: tripId,
+  });
+  const mediumAssetKey = selectedPhotoId
+    ? `${tripId}:${selectedPhotoId}:medium`
+    : null;
+  const fetchMediumBlob = useCallback(
+    (signal: AbortSignal) => {
+      if (!selectedPhotoId) return Promise.reject(new Error("No selected photo."));
+      return bffFetchTripPhotoAssetBlob(tripId, selectedPhotoId, "medium", {
+        signal,
+      });
+    },
+    [selectedPhotoId, tripId],
+  );
+  const mediumAsset = useAssetBlobUrl({
+    assetKey: mediumAssetKey,
+    fetchBlob: fetchMediumBlob,
+  });
+  const mediumError = mediumAsset.error
+    ? getTripPhotoErrorMessage(mediumAsset.error, LOAD_ERROR)
+    : null;
+
   useEffect(() => {
     setPageSize(calculateInitialPhotoPageSizeFromElement(galleryRootRef.current));
   }, [tripId]);
@@ -130,162 +138,6 @@ export function PhotosTab() {
       controller.abort();
     };
   }, [loadFirstPage, pageSize]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    const thumbnailRequests = thumbnailRequestsRef.current;
-    const thumbnailObjectUrls = thumbnailUrlsRef.current;
-    const thumbnailErrorsByPhoto = thumbnailErrorsRef.current;
-
-    return () => {
-      mountedRef.current = false;
-      for (const controller of thumbnailRequests.values()) {
-        controller.abort();
-      }
-      thumbnailRequests.clear();
-      for (const url of thumbnailObjectUrls.values()) {
-        URL.revokeObjectURL(url);
-      }
-      thumbnailObjectUrls.clear();
-      thumbnailErrorsByPhoto.clear();
-      revokeMediumUrl();
-    };
-  }, [revokeMediumUrl]);
-
-  useEffect(() => {
-    for (const controller of thumbnailRequestsRef.current.values()) {
-      controller.abort();
-    }
-    thumbnailRequestsRef.current.clear();
-    for (const url of thumbnailUrlsRef.current.values()) {
-      URL.revokeObjectURL(url);
-    }
-    thumbnailUrlsRef.current.clear();
-    thumbnailErrorsRef.current.clear();
-    visiblePhotoIdsRef.current = new Set();
-    setThumbnailUrls({});
-    setThumbnailErrors(new Set());
-    revokeMediumUrl();
-    setMediumUrl(null);
-    setMediumPhotoId(null);
-    setMediumLoading(false);
-    setMediumError(null);
-  }, [revokeMediumUrl, tripId]);
-
-  useEffect(() => {
-    const visibleIds = new Set(photos.map((photo) => photo.id));
-    visiblePhotoIdsRef.current = visibleIds;
-
-    let didChange = false;
-    let errorsChanged = false;
-    for (const [photoId, url] of thumbnailUrlsRef.current.entries()) {
-      if (!visibleIds.has(photoId)) {
-        URL.revokeObjectURL(url);
-        thumbnailUrlsRef.current.delete(photoId);
-        didChange = true;
-      }
-    }
-    for (const [photoId, controller] of thumbnailRequestsRef.current.entries()) {
-      if (!visibleIds.has(photoId)) {
-        controller.abort();
-        thumbnailRequestsRef.current.delete(photoId);
-      }
-    }
-    for (const photoId of thumbnailErrorsRef.current) {
-      if (!visibleIds.has(photoId)) {
-        thumbnailErrorsRef.current.delete(photoId);
-        errorsChanged = true;
-      }
-    }
-    if (didChange) syncThumbnailUrls();
-    if (errorsChanged) syncThumbnailErrors();
-
-    for (const photo of photos) {
-      if (
-        thumbnailUrlsRef.current.has(photo.id) ||
-        thumbnailRequestsRef.current.has(photo.id) ||
-        thumbnailErrorsRef.current.has(photo.id)
-      ) {
-        continue;
-      }
-
-      const controller = new AbortController();
-      thumbnailRequestsRef.current.set(photo.id, controller);
-      void bffFetchTripPhotoAssetBlob(tripId, photo.id, "thumbnail", {
-        signal: controller.signal,
-      })
-        .then((blob) => {
-          if (
-            controller.signal.aborted ||
-            !mountedRef.current ||
-            !visiblePhotoIdsRef.current.has(photo.id)
-          ) {
-            return;
-          }
-
-          const objectUrl = URL.createObjectURL(blob);
-          const previousUrl = thumbnailUrlsRef.current.get(photo.id);
-          if (previousUrl) URL.revokeObjectURL(previousUrl);
-          thumbnailUrlsRef.current.set(photo.id, objectUrl);
-          syncThumbnailUrls();
-        })
-        .catch(() => {
-          if (
-            !controller.signal.aborted &&
-            mountedRef.current &&
-            visiblePhotoIdsRef.current.has(photo.id)
-          ) {
-            thumbnailErrorsRef.current.add(photo.id);
-            syncThumbnailErrors();
-          }
-        })
-        .finally(() => {
-          thumbnailRequestsRef.current.delete(photo.id);
-        });
-    }
-  }, [photos, syncThumbnailErrors, syncThumbnailUrls, tripId]);
-
-  useEffect(() => {
-    if (!selectedPhoto) {
-      revokeMediumUrl();
-      setMediumUrl(null);
-      setMediumPhotoId(null);
-      setMediumLoading(false);
-      setMediumError(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    revokeMediumUrl();
-    setMediumUrl(null);
-    setMediumPhotoId(null);
-    setMediumLoading(true);
-    setMediumError(null);
-
-    void bffFetchTripPhotoAssetBlob(tripId, selectedPhoto.id, "medium", {
-      signal: controller.signal,
-    })
-      .then((blob) => {
-        if (controller.signal.aborted) return;
-        const objectUrl = URL.createObjectURL(blob);
-        mediumUrlRef.current = objectUrl;
-        setMediumUrl(objectUrl);
-        setMediumPhotoId(selectedPhoto.id);
-      })
-      .catch((err) => {
-        if (!controller.signal.aborted) {
-          setMediumError(getTripPhotoErrorMessage(err, LOAD_ERROR));
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setMediumLoading(false);
-      });
-
-    return () => {
-      controller.abort();
-      revokeMediumUrl();
-    };
-  }, [revokeMediumUrl, selectedPhoto, tripId]);
 
   async function handleLoadMore() {
     if (!nextCursor || loadingMore) return;
@@ -486,8 +338,8 @@ export function PhotosTab() {
 
       <PhotoLightbox
         photo={selectedPhoto}
-        mediumUrl={mediumPhotoId === selectedPhoto?.id ? mediumUrl : null}
-        loading={mediumLoading}
+        mediumUrl={mediumAsset.url}
+        loading={mediumAsset.loading}
         error={mediumError}
         canNavigatePrevious={canNavigatePreviousPhoto}
         canNavigateNext={canNavigateNextPhoto}

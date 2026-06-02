@@ -1,23 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Download, Loader2, X } from "lucide-react";
 
 import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
 import { bffFetchTripMemoryAssetBlob } from "@/features/trips/infrastructure/memories-api";
+import { useAssetBlobUrl } from "@/features/trips/presentation/use-asset-blob-url";
 import { Button } from "@/shared/ui/button";
 
 type MemoryVideoViewerProps = {
   tripId: string;
   memory: TripMemoryVideo;
   onClose: () => void;
-};
-
-type MemoryAssetBlobState = {
-  assetKey: string;
-  status: "error" | "ready";
-  url: string | null;
 };
 
 type VideoStreamState = {
@@ -48,69 +43,21 @@ function formatDownloadFileName(title: string): string {
   return `${slug || "trip-memory"}.mp4`;
 }
 
-function useMemoryAssetBlobUrl({
-  enabled,
-  memoryId,
-  timeoutMs,
-  tripId,
-  updatedAt,
-  variant,
-}: {
-  enabled: boolean;
-  memoryId: string;
-  timeoutMs?: number;
-  tripId: string;
-  updatedAt: string;
-  variant: "poster";
-}) {
-  const assetKey = enabled ? `${tripId}:${memoryId}:${updatedAt}:${variant}` : null;
-  const [asset, setAsset] = useState<MemoryAssetBlobState | null>(null);
-
-  useEffect(() => {
-    if (!assetKey) return undefined;
-
-    const controller = new AbortController();
-    let objectUrl: string | null = null;
-
-    void bffFetchTripMemoryAssetBlob(tripId, memoryId, variant, {
-      signal: controller.signal,
-      timeoutMs,
-    })
-      .then((blob) => {
-        if (controller.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        setAsset({ assetKey, status: "ready", url: objectUrl });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setAsset({ assetKey, status: "error", url: null });
-        }
-      });
-
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [assetKey, memoryId, timeoutMs, tripId, variant]);
-
-  const currentAsset = asset?.assetKey === assetKey ? asset : null;
-  return {
-    error: currentAsset?.status === "error",
-    loading: Boolean(assetKey) && !currentAsset,
-    url: currentAsset?.url ?? null,
-  };
-}
-
 export function MemoryVideoViewer({ tripId, memory, onClose }: MemoryVideoViewerProps) {
   const title = memory.title.trim() || "Trip memory";
   const duration = formatDuration(memory.duration_seconds);
   const isReady = memory.status === "ready";
-  const posterAsset = useMemoryAssetBlobUrl({
-    enabled: isReady,
-    memoryId: memory.id,
-    tripId,
-    updatedAt: memory.updated_at,
-    variant: "poster",
+  const posterAssetKey = isReady
+    ? `${tripId}:${memory.id}:${memory.updated_at}:poster`
+    : null;
+  const fetchPosterBlob = useCallback(
+    (signal: AbortSignal) =>
+      bffFetchTripMemoryAssetBlob(tripId, memory.id, "poster", { signal }),
+    [memory.id, tripId],
+  );
+  const posterAsset = useAssetBlobUrl({
+    assetKey: posterAssetKey,
+    fetchBlob: fetchPosterBlob,
   });
   const videoAssetKey = isReady
     ? `${tripId}:${memory.id}:${memory.updated_at}:video`

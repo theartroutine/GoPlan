@@ -50,6 +50,20 @@ describe("photo-errors", () => {
 
     expect(
       validateTripPhotoFiles([
+        { name: "one.jpg", size: 9 * 1024 * 1024, type: "image/jpeg" } as File,
+        { name: "two.jpg", size: 9 * 1024 * 1024, type: "image/jpeg" } as File,
+        { name: "three.jpg", size: 9 * 1024 * 1024, type: "image/jpeg" } as File,
+        { name: "four.jpg", size: 9 * 1024 * 1024, type: "image/jpeg" } as File,
+        { name: "five.jpg", size: 9 * 1024 * 1024, type: "image/jpeg" } as File,
+        { name: "six.jpg", size: 9 * 1024 * 1024, type: "image/jpeg" } as File,
+      ]),
+    ).toEqual({
+      ok: false,
+      message: "Upload up to 50 MiB of photos at a time.",
+    });
+
+    expect(
+      validateTripPhotoFiles([
         new File(["jpeg"], "memory.jpg", { type: "" }),
         new File(["webp"], "memory.webp", { type: "application/octet-stream" }),
       ]),

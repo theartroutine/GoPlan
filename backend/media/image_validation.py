@@ -34,6 +34,8 @@ class ImageProbeResult:
     content_type: str
     width: int
     height: int
+    mode: str
+    has_transparency: bool
 
 
 def _is_heic_header(header: bytes) -> bool:
@@ -108,6 +110,8 @@ def validate_pillow_image(
                 content_type=FORMAT_CONTENT_TYPES[image_format],
                 width=probe.width,
                 height=probe.height,
+                mode=probe.mode,
+                has_transparency="transparency" in probe.info,
             )
             probe.verify()
             return result

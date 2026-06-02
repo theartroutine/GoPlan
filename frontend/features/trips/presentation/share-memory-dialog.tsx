@@ -39,10 +39,16 @@ type ShareMemoryDialogProps = {
 };
 
 const SHARE_ERROR = "Could not update public share link.";
+const COPY_ERROR = "Could not copy link.";
+const NATIVE_SHARE_ERROR = "Could not share link.";
 
 type NavigatorWithShare = Navigator & {
   share?: (data: ShareData) => Promise<void>;
 };
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
 
 export function ShareMemoryDialog({
   memory,
@@ -93,16 +99,24 @@ export function ShareMemoryDialog({
 
   async function handleCopy() {
     if (!share.url) return;
-    await navigator.clipboard?.writeText(share.url);
-    setMessage("Link copied.");
+    try {
+      await navigator.clipboard?.writeText(share.url);
+      setMessage("Link copied.");
+    } catch {
+      setMessage(COPY_ERROR);
+    }
   }
 
   async function handleNativeShare() {
     if (!share.url || !canNativeShare) return;
-    await (navigator as NavigatorWithShare).share?.({
-      title: memory.title || "Trip memory",
-      url: share.url,
-    });
+    try {
+      await (navigator as NavigatorWithShare).share?.({
+        title: memory.title || "Trip memory",
+        url: share.url,
+      });
+    } catch (error) {
+      if (!isAbortError(error)) setMessage(NATIVE_SHARE_ERROR);
+    }
   }
 
   return (

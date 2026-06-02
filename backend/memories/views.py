@@ -166,6 +166,14 @@ def _public_memory_not_found_response() -> Response:
     )
 
 
+def _memory_asset_not_found_response() -> Response:
+    return _error_response(
+        "Memory video not found.",
+        "MEMORY_NOT_FOUND",
+        status.HTTP_404_NOT_FOUND,
+    )
+
+
 class TripPhotoListCreateAPIView(APIView):
     permission_classes = TRIP_PHOTO_PERMISSIONS
     parser_classes = [MultiPartParser, FormParser]
@@ -511,6 +519,8 @@ class TripMemoryVideoAssetAPIView(APIView):
                     "MEMORY_NOT_FOUND",
                     "Memory video asset not found.",
                 )
+        except OSError:
+            return _memory_asset_not_found_response()
         except Exception as exc:
             response = _map_service_error(exc)
             if response is None:

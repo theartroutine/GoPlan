@@ -86,8 +86,8 @@ def parse_range_header(range_header: str, size: int) -> ParsedByteRange | None:
     return ParsedByteRange(start=start, end=end)
 
 
-def _range_file_iterator(storage, name: str, byte_range: ParsedByteRange) -> Iterator[bytes]:
-    with storage.open(name, "rb") as file_obj:
+def _range_file_iterator(file_obj, byte_range: ParsedByteRange) -> Iterator[bytes]:
+    with file_obj:
         file_obj.seek(byte_range.start)
         remaining = byte_range.length
         while remaining > 0:
@@ -139,8 +139,9 @@ def range_streaming_response(
         response.headers["Content-Length"] = "0"
         return response
 
+    file_obj = field.storage.open(field.name, "rb")
     response = StreamingHttpResponse(
-        _range_file_iterator(field.storage, field.name, parsed_range),
+        _range_file_iterator(file_obj, parsed_range),
         status=206,
         content_type=content_type,
     )

@@ -98,12 +98,11 @@ describe("BFF /api/trips/[tripId]/photos", () => {
 
   it("forwards repeated files as multipart to Django", async () => {
     const { POST } = await import("@/app/api/trips/[tripId]/photos/route");
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ photos: [{ id: "photo-1" }] }), {
-        status: 201,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+    protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
+      ok: true,
+      data: { photos: [{ id: "photo-1" }] },
+      status: 201,
+    });
     const formData = new FormData();
     formData.append("files", new File(["one"], "one.jpg", { type: "image/jpeg" }));
     formData.append("files", new File(["two"], "two.png", { type: "image/png" }));
@@ -112,11 +111,11 @@ describe("BFF /api/trips/[tripId]/photos", () => {
       params: Promise.resolve({ tripId: TRIP_ID }),
     });
 
-    expect(fetch).toHaveBeenCalledWith(
-      `https://api.example.com/api/trips/${TRIP_ID}/photos`,
+    expect(protectedUpstreamMock.protectedUpstreamCall).toHaveBeenCalledWith(
       expect.objectContaining({
+        path: `/api/trips/${TRIP_ID}/photos`,
         method: "POST",
-        headers: { Authorization: "Bearer access-token" },
+        authorization: "Bearer access-token",
         body: expect.any(FormData),
       }),
     );
@@ -129,7 +128,7 @@ describe("BFF /api/trips/[tripId]/photos", () => {
     const request = buildPostRequestWithHeaders(
       new Headers({
         Authorization: "Bearer access-token",
-        "Content-Length": String(202 * 1024 * 1024),
+          "Content-Length": String(202 * 1024 * 1024),
       }),
     );
 
@@ -141,7 +140,30 @@ describe("BFF /api/trips/[tripId]/photos", () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(response.status).toBe(413);
     await expect(response.json()).resolves.toEqual({
-      detail: "Upload body is too large. Upload at most 20 photos of 10 MiB each.",
+      detail: "Upload body is too large. Upload at most 50 MiB of photos at a time.",
+      error_code: "UPLOAD_TOO_LARGE",
+    });
+  });
+
+  it("rejects multipart bodies above the backend 50 MiB total upload limit", async () => {
+    const { POST } = await import("@/app/api/trips/[tripId]/photos/route");
+    const request = buildPostRequestWithHeaders(
+      new Headers({
+        Authorization: "Bearer access-token",
+        "Content-Length": String(52 * 1024 * 1024),
+      }),
+    );
+
+    const response = await POST(request as never, {
+      params: Promise.resolve({ tripId: TRIP_ID }),
+    });
+
+    expect(request.formData).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(protectedUpstreamMock.protectedUpstreamCall).not.toHaveBeenCalled();
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      detail: "Upload body is too large. Upload at most 50 MiB of photos at a time.",
       error_code: "UPLOAD_TOO_LARGE",
     });
   });
@@ -219,12 +241,11 @@ describe("BFF /api/trips/[tripId]/photos", () => {
 
   it("allows empty or generic file MIME types so backend magic-byte validation remains authoritative", async () => {
     const { POST } = await import("@/app/api/trips/[tripId]/photos/route");
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ photos: [{ id: "photo-1" }] }), {
-        status: 201,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+    protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
+      ok: true,
+      data: { photos: [{ id: "photo-1" }] },
+      status: 201,
+    });
     const formData = new FormData();
     formData.append("files", new File(["jpeg-bytes"], "photo.jpg", { type: "" }));
     formData.append(
@@ -236,7 +257,7 @@ describe("BFF /api/trips/[tripId]/photos", () => {
       params: Promise.resolve({ tripId: TRIP_ID }),
     });
 
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(protectedUpstreamMock.protectedUpstreamCall).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(201);
   });
 });

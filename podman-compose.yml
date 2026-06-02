@@ -116,7 +116,7 @@ services:
   backend-scheduler:
     image: backend:latest
     container_name: backend-scheduler-goplan
-    command: bash -c "while true; do python manage.py dispatch_timeline_reminders || echo 'dispatch_timeline_reminders failed'; python manage.py recover_ai_interactions || echo 'recover_ai_interactions failed'; sleep 60; done"
+    command: bash -c "while true; do python manage.py dispatch_timeline_reminders || echo 'dispatch_timeline_reminders failed'; python manage.py recover_ai_interactions || echo 'recover_ai_interactions failed'; python manage.py recover_memory_renders || echo 'recover_memory_renders failed'; sleep 60; done"
     volumes:
       - ./backend:/app:Z
       - mediadata:/app/media_files

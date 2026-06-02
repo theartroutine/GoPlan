@@ -15,6 +15,7 @@ from PIL import Image, ImageOps
 
 from media.image_validation import (
     ALLOWED_WEB_IMAGE_FORMATS,
+    ImageProbeResult,
     ImageValidationError,
     detect_image_format_from_header,
     validate_pillow_image,
@@ -64,6 +65,12 @@ class PreparedTripPhoto:
     medium_height: int
 
 
+@dataclass(frozen=True)
+class ValidatedTripPhotoUpload:
+    image_file: object
+    probe: ImageProbeResult
+
+
 def _setting(name: str, default: int) -> int:
     return int(getattr(settings, name, default))
 
@@ -82,6 +89,14 @@ def _max_upload_bytes() -> int:
 
 def _max_source_pixels() -> int:
     return _setting("TRIP_PHOTO_MAX_SOURCE_PIXELS", 45_000_000)
+
+
+def _max_upload_source_pixels() -> int:
+    return _setting("TRIP_PHOTO_MAX_UPLOAD_SOURCE_PIXELS", 90_000_000)
+
+
+def _max_decoded_bytes() -> int:
+    return _setting("TRIP_PHOTO_MAX_DECODED_BYTES", 160 * 1024 * 1024)
 
 
 def _thumbnail_max_edge() -> int:
@@ -161,12 +176,46 @@ def _validate_upload_total_bytes(files: list) -> None:
         )
 
 
+def _source_pixel_count(probe: ImageProbeResult) -> int:
+    return probe.width * probe.height
+
+
+def _estimated_bytes_per_pixel(probe: ImageProbeResult) -> int:
+    if probe.has_transparency or probe.mode in {"RGBA", "LA"}:
+        return 4
+    if probe.mode in {"RGB", "YCbCr"}:
+        return 3
+    if probe.mode in {"L", "P", "1"}:
+        return 1
+    if probe.mode == "CMYK":
+        return 4
+    return 4
+
+
+def _validate_upload_total_source_pixels(probes: Iterable[ImageProbeResult]) -> None:
+    total_pixels = sum(_source_pixel_count(probe) for probe in probes)
+    if total_pixels > _max_upload_source_pixels():
+        raise TripPhotoValidationError(
+            "PHOTO_DIMENSIONS_TOO_LARGE",
+            "Upload contains too many total source pixels.",
+        )
+
+
+def _validate_decoded_byte_budget(probe: ImageProbeResult) -> None:
+    decoded_bytes = _source_pixel_count(probe) * _estimated_bytes_per_pixel(probe)
+    if decoded_bytes > _max_decoded_bytes():
+        raise TripPhotoValidationError(
+            "PHOTO_DIMENSIONS_TOO_LARGE",
+            "Photo dimensions are too large to process safely.",
+        )
+
+
 def _safe_original_filename(image_file) -> str:
     raw_name = getattr(image_file, "name", "") or ""
     return PurePath(raw_name).name[:160]
 
 
-def _validate_image_file(image_file) -> str:
+def _validate_image_file(image_file) -> ImageProbeResult:
     size = getattr(image_file, "size", 0)
     if size > _max_bytes():
         raise TripPhotoValidationError(
@@ -176,19 +225,32 @@ def _validate_image_file(image_file) -> str:
 
     expected_format = _detect_source_format(image_file)
     try:
-        validate_pillow_image(
+        probe = validate_pillow_image(
             image_file,
             expected_format=expected_format,
             allowed_formats=ALLOWED_WEB_IMAGE_FORMATS,
             max_source_pixels=_max_source_pixels(),
         )
+        _validate_decoded_byte_budget(probe)
     except TripPhotoValidationError:
         raise
     except ImageValidationError as exc:
         raise TripPhotoValidationError(exc.error_code, exc.detail) from exc
     finally:
         image_file.seek(0)
-    return expected_format
+    return probe
+
+
+def _validate_image_uploads(files: list) -> list[ValidatedTripPhotoUpload]:
+    validated_uploads = [
+        ValidatedTripPhotoUpload(
+            image_file=image_file,
+            probe=_validate_image_file(image_file),
+        )
+        for image_file in files
+    ]
+    _validate_upload_total_source_pixels(item.probe for item in validated_uploads)
+    return validated_uploads
 
 
 def _to_clean_rgb(image: Image.Image) -> Image.Image:
@@ -213,8 +275,13 @@ def _encode_webp(image: Image.Image) -> ContentFile:
     return ContentFile(output.getvalue())
 
 
-def _render_trip_photo_variants(image_file) -> PreparedTripPhoto:
-    _validate_image_file(image_file)
+def _render_trip_photo_variants(
+    image_file,
+    *,
+    probe: ImageProbeResult | None = None,
+) -> PreparedTripPhoto:
+    if probe is None:
+        _validate_image_file(image_file)
     try:
         image_file.seek(0)
         with Image.open(image_file) as source:
@@ -326,7 +393,11 @@ def create_trip_photos(*, trip_id, actor, files: list) -> list[TripPhoto]:
     trip = membership.trip
     _assert_trip_accepts_photo_mutation(trip.status)
 
-    prepared_items = [_render_trip_photo_variants(image_file) for image_file in files]
+    validated_uploads = _validate_image_uploads(files)
+    prepared_items = [
+        _render_trip_photo_variants(item.image_file, probe=item.probe)
+        for item in validated_uploads
+    ]
     return _build_photo_records(trip=trip, actor=actor, prepared_items=prepared_items)
 
 

@@ -89,6 +89,7 @@ class TripMemoryVideo(models.Model):
     duration_seconds = models.PositiveIntegerField(null=True, blank=True)
     render_error_code = models.CharField(max_length=64, blank=True, default="")
     render_error_message = models.CharField(max_length=240, blank=True, default="")
+    render_recovery_count = models.PositiveSmallIntegerField(default=0)
     celery_task_id = models.CharField(max_length=255, blank=True, default="")
     share_enabled = models.BooleanField(default=False)
     share_slug = models.CharField(max_length=96, unique=True, null=True, blank=True)

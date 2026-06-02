@@ -20,7 +20,7 @@ import {
 type ProtectedCallOptions = {
   path: string;
   method: "GET" | "POST" | "PATCH" | "DELETE";
-  body?: string;
+  body?: BodyInit;
   query?: string;
   authorization?: string | null;
 };
@@ -88,7 +88,7 @@ export async function protectedUpstreamCall(
 
   const buildHeaders = (token: string): Record<string, string> => {
     const h: Record<string, string> = { Authorization: `Bearer ${token}` };
-    if (options.body) h["Content-Type"] = "application/json";
+    if (typeof options.body === "string") h["Content-Type"] = "application/json";
     return h;
   };
 

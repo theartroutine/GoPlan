@@ -39,7 +39,16 @@ import {
 const LOAD_ERROR = "Could not load trip memories.";
 const DELETE_ERROR = "Could not delete this memory video.";
 const POLL_INTERVAL_MS = 15_000;
+const POLL_BACKOFF_AFTER_MS = 10 * 60_000;
+const POLL_BACKOFF_INTERVAL_MS = 60_000;
+const POLL_STOP_AFTER_MS = 30 * 60_000;
 const LOADING_SKELETON_KEYS = ["primary", "secondary", "tertiary"] as const;
+
+type MemoryPollState = {
+  firstSeenAt: number;
+  lastPolledAt: number;
+  updatedAt: string;
+};
 
 function hasInProgressMemory(memories: TripMemoryVideo[]): boolean {
   return memories.some(
@@ -97,6 +106,7 @@ export function MemoriesTab() {
     useState<TripMemoryVideo | null>(null);
   const loadedCursorsRef = useRef<(string | null)[]>([null]);
   const activeMemoryIdsRef = useRef<string[]>([]);
+  const activeMemoryPollStateRef = useRef<Map<string, MemoryPollState>>(new Map());
   const pollInFlightRef = useRef(false);
   const hasActiveMemory = hasInProgressMemory(memories);
 
@@ -161,6 +171,23 @@ export function MemoriesTab() {
   }, [loadedCursors]);
 
   useEffect(() => {
+    const now = Date.now();
+    const activeIds = new Set<string>();
+    for (const memory of memories) {
+      if (memory.status !== "queued" && memory.status !== "rendering") continue;
+      activeIds.add(memory.id);
+      const existing = activeMemoryPollStateRef.current.get(memory.id);
+      if (!existing || existing.updatedAt !== memory.updated_at) {
+        activeMemoryPollStateRef.current.set(memory.id, {
+          firstSeenAt: now,
+          lastPolledAt: now,
+          updatedAt: memory.updated_at,
+        });
+      }
+    }
+    for (const memoryId of activeMemoryPollStateRef.current.keys()) {
+      if (!activeIds.has(memoryId)) activeMemoryPollStateRef.current.delete(memoryId);
+    }
     activeMemoryIdsRef.current = inProgressMemoryIds(memories);
   }, [memories]);
 
@@ -171,8 +198,31 @@ export function MemoriesTab() {
     let controller: AbortController | null = null;
     const interval = window.setInterval(() => {
       if (pollInFlightRef.current) return;
-      const ids = activeMemoryIdsRef.current.slice(0, 10);
+      const now = Date.now();
+      const ids = activeMemoryIdsRef.current.filter((memoryId) => {
+        const state = activeMemoryPollStateRef.current.get(memoryId);
+        if (!state) return false;
+        const ageMs = now - state.firstSeenAt;
+        if (ageMs >= POLL_STOP_AFTER_MS) return false;
+        if (ageMs >= POLL_BACKOFF_AFTER_MS) {
+          const backoffStartAt = state.firstSeenAt + POLL_BACKOFF_AFTER_MS;
+          return (
+            now - Math.max(state.lastPolledAt, backoffStartAt) >=
+            POLL_BACKOFF_INTERVAL_MS
+          );
+        }
+        return now - state.lastPolledAt >= POLL_INTERVAL_MS;
+      }).slice(0, 10);
       if (ids.length === 0) return;
+      for (const memoryId of ids) {
+        const state = activeMemoryPollStateRef.current.get(memoryId);
+        if (state) {
+          activeMemoryPollStateRef.current.set(memoryId, {
+            ...state,
+            lastPolledAt: now,
+          });
+        }
+      }
 
       pollInFlightRef.current = true;
       controller = new AbortController();

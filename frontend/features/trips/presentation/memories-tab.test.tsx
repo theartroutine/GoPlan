@@ -263,6 +263,57 @@ describe("MemoriesTab", () => {
     expect(setIntervalSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("backs off and eventually stops polling a stuck in-progress memory", async () => {
+    vi.useFakeTimers();
+    memoriesApiMock.bffListTripMemories.mockResolvedValueOnce({
+      results: [memory({ status: "rendering" })],
+      nextCursor: null,
+      previousCursor: null,
+    });
+    memoriesApiMock.bffListTripMemoryStatuses.mockResolvedValue({
+      results: [memory({ status: "rendering" })],
+    });
+
+    render(<MemoriesTab />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("memory-card-memory_1")).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+    });
+    const callsAtBackoffStart = memoriesApiMock.bffListTripMemoryStatuses.mock.calls.length;
+    expect(callsAtBackoffStart).toBeGreaterThan(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(45_000);
+    });
+    expect(memoriesApiMock.bffListTripMemoryStatuses).toHaveBeenCalledTimes(
+      callsAtBackoffStart,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    const callsAfterBackoffTick = memoriesApiMock.bffListTripMemoryStatuses.mock.calls.length;
+    expect(callsAfterBackoffTick).toBe(callsAtBackoffStart + 1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+    });
+    const callsAfterStopWindow = memoriesApiMock.bffListTripMemoryStatuses.mock.calls.length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+    });
+    expect(memoriesApiMock.bffListTripMemoryStatuses).toHaveBeenCalledTimes(
+      callsAfterStopWindow,
+    );
+  });
+
   it("keeps visible memories when silent status polling fails", async () => {
     vi.useFakeTimers();
     memoriesApiMock.bffListTripMemories.mockResolvedValueOnce({

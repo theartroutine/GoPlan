@@ -63,8 +63,7 @@ function isPublicMemoryPayload(value: unknown): value is PublicMemoryPayload {
       typeof candidate.duration_seconds === "number" ||
       candidate.duration_seconds === null
     ) &&
-    typeof candidate.source_photo_count === "number" &&
-    isPublicMemoryMusic(candidate.music)
+    typeof candidate.source_photo_count === "number"
   );
 }
 
@@ -94,7 +93,7 @@ function normalizePublicMemoryPayload(
     video_url: `/api/share/memories/${encodedSlug}/video`,
     duration_seconds: data.duration_seconds,
     source_photo_count: data.source_photo_count,
-    music: data.music,
+    music: isPublicMemoryMusic(data.music) ? data.music : null,
   };
 }
 

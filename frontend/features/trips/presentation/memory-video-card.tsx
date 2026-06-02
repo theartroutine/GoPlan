@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import {
   Clock3,
@@ -18,6 +18,7 @@ import {
 
 import type { TripMemoryVideo } from "@/features/trips/domain/memory-types";
 import { bffFetchTripMemoryAssetBlob } from "@/features/trips/infrastructure/memories-api";
+import { useAssetBlobUrl } from "@/features/trips/presentation/use-asset-blob-url";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import {
@@ -33,12 +34,6 @@ type MemoryVideoCardProps = {
   onDelete: (memory: TripMemoryVideo) => void;
   onPlay: (memory: TripMemoryVideo) => void;
   onShare: (memory: TripMemoryVideo) => void;
-};
-
-type PosterPreviewState = {
-  assetKey: string;
-  failed: boolean;
-  url: string | null;
 };
 
 const FAILED_STATUS_LABEL = "Render failed";
@@ -88,7 +83,7 @@ export function MemoryVideoCard({
   onPlay,
   onShare,
 }: MemoryVideoCardProps) {
-  const [posterPreview, setPosterPreview] = useState<PosterPreviewState | null>(null);
+  const [posterImageFailedKey, setPosterImageFailedKey] = useState<string | null>(null);
   const title = memory.title.trim() || "Untitled memory";
   const duration = formatDuration(memory.duration_seconds);
   const isReady = memory.status === "ready";
@@ -98,37 +93,23 @@ export function MemoryVideoCard({
   const canDownload = isReady && memory.can_download;
   const canDelete = memory.can_manage && (isReady || isFailed);
   const hasMenu = canShare || canDownload || canDelete;
-  const posterAssetKey = isReady ? `${memory.id}:${memory.updated_at}` : null;
-  const posterUrl = posterPreview?.assetKey === posterAssetKey ? posterPreview.url : null;
+  const posterAssetKey = isReady
+    ? `${memory.trip_id}:${memory.id}:${memory.updated_at}:poster`
+    : null;
+  const fetchPosterBlob = useCallback(
+    (signal: AbortSignal) =>
+      bffFetchTripMemoryAssetBlob(memory.trip_id, memory.id, "poster", { signal }),
+    [memory.id, memory.trip_id],
+  );
+  const posterAsset = useAssetBlobUrl({
+    assetKey: posterAssetKey,
+    fetchBlob: fetchPosterBlob,
+  });
+  const posterUrl = posterAsset.url;
   const posterFailed =
-    posterPreview?.assetKey === posterAssetKey ? posterPreview.failed : false;
+    posterAsset.failed ||
+    (posterAssetKey !== null && posterImageFailedKey === posterAssetKey);
   const downloadHref = `/api/trips/${encodeURIComponent(memory.trip_id)}/memories/${encodeURIComponent(memory.id)}/download`;
-
-  useEffect(() => {
-    if (!posterAssetKey) return undefined;
-
-    const controller = new AbortController();
-    let objectUrl: string | null = null;
-
-    void bffFetchTripMemoryAssetBlob(memory.trip_id, memory.id, "poster", {
-      signal: controller.signal,
-    })
-      .then((blob) => {
-        if (controller.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        setPosterPreview({ assetKey: posterAssetKey, failed: false, url: objectUrl });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setPosterPreview({ assetKey: posterAssetKey, failed: true, url: null });
-        }
-      });
-
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [memory.id, memory.trip_id, posterAssetKey]);
 
   return (
     <article
@@ -163,11 +144,7 @@ export function MemoryVideoCard({
               loading="lazy"
               onError={() => {
                 if (!posterAssetKey) return;
-                setPosterPreview((current) =>
-                  current?.assetKey === posterAssetKey
-                    ? { ...current, failed: true }
-                    : current,
-                );
+                setPosterImageFailedKey(posterAssetKey);
               }}
               src={posterUrl}
             />

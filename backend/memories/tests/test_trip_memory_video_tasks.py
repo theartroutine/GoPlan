@@ -15,6 +15,7 @@ from django.utils import timezone
 from memories.memory_video_services import (
     _finish_memory_render_success,
     create_trip_memory_video,
+    recover_stale_memory_renders,
 )
 from memories.models import (
     TripMemoryVideo,
@@ -310,6 +311,70 @@ class TripMemoryVideoTaskTests(TestCase):
         memory.refresh_from_db()
         self.assertEqual(memory.status, TripMemoryVideoStatus.RENDERING)
         self.assertEqual(memory.render_started_at, started_at)
+
+    @patch("memories.memory_video_services.render_trip_memory_video_task.apply_async")
+    def test_recover_stale_rendering_memory_requeues_and_increments_recovery_count(
+        self,
+        apply_async,
+    ):
+        apply_async.return_value = SimpleNamespace(id="memory-recovery-task")
+        photos = self._photos(2)
+        memory = self._memory(photos, status=TripMemoryVideoStatus.RENDERING)
+        memory.render_started_at = timezone.now() - timezone.timedelta(minutes=20)
+        memory.render_error_code = "OLD_ERROR"
+        memory.render_error_message = "old error"
+        memory.save(
+            update_fields=[
+                "render_started_at",
+                "render_error_code",
+                "render_error_message",
+                "updated_at",
+            ]
+        )
+
+        with (
+            self.settings(TRIP_MEMORY_RENDER_STALE_SECONDS=900),
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            result = recover_stale_memory_renders(limit=25)
+
+        self.assertEqual(result, {"requeued": 1, "failed": 0, "skipped": 0})
+        apply_async.assert_called_once_with(
+            args=[str(memory.id)],
+            queue="memory_render",
+            soft_time_limit=600,
+            time_limit=720,
+        )
+        memory.refresh_from_db()
+        self.assertEqual(memory.status, TripMemoryVideoStatus.QUEUED)
+        self.assertEqual(memory.render_recovery_count, 1)
+        self.assertIsNone(memory.render_started_at)
+        self.assertIsNone(memory.render_finished_at)
+        self.assertEqual(memory.render_error_code, "")
+        self.assertEqual(memory.render_error_message, "")
+        self.assertEqual(memory.celery_task_id, "memory-recovery-task")
+
+    @patch("memories.memory_video_services.render_trip_memory_video_task.apply_async")
+    def test_recover_stale_rendering_memory_marks_failed_after_max_recoveries(
+        self,
+        apply_async,
+    ):
+        photos = self._photos(2)
+        memory = self._memory(photos, status=TripMemoryVideoStatus.RENDERING)
+        memory.render_started_at = timezone.now() - timezone.timedelta(minutes=20)
+        memory.render_recovery_count = 2
+        memory.save(update_fields=["render_started_at", "render_recovery_count", "updated_at"])
+
+        with self.settings(TRIP_MEMORY_RENDER_STALE_SECONDS=900):
+            result = recover_stale_memory_renders(limit=25)
+
+        self.assertEqual(result, {"requeued": 0, "failed": 1, "skipped": 0})
+        apply_async.assert_not_called()
+        memory.refresh_from_db()
+        self.assertEqual(memory.status, TripMemoryVideoStatus.FAILED)
+        self.assertEqual(memory.render_error_code, "MEMORY_RENDER_STALE")
+        self.assertIn("stale", memory.render_error_message.lower())
+        self.assertIsNotNone(memory.render_finished_at)
 
     @patch(
         "memories.memory_video_services.render_memory_video",
