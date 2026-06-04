@@ -133,6 +133,10 @@ body {
   40%, 100% { opacity: 1; }
 }
 
+@keyframes memory-progress-border {
+  to { offset-distance: 100%; }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -149,6 +153,48 @@ body {
     &::-webkit-scrollbar {
       display: none;
     }
+  }
+
+  .memory-progress-border::before {
+    --memory-border-runner-length: clamp(8rem, 34%, 28rem);
+    --memory-border-runner-size: 4px;
+    animation: memory-progress-border 1.85s linear infinite;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(0 0 0 / 42%) 18%,
+      rgb(0 0 0) 50%,
+      rgb(0 0 0 / 42%) 82%,
+      transparent
+    );
+    border-radius: 999px;
+    box-shadow: 0 0 12px rgb(0 0 0 / 24%);
+    content: "";
+    height: var(--memory-border-runner-size);
+    left: 0;
+    offset-anchor: 0% 50%;
+    offset-distance: 0%;
+    offset-path: border-box;
+    offset-rotate: auto;
+    opacity: 1;
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    will-change: offset-distance;
+    width: var(--memory-border-runner-length);
+    z-index: 30;
+  }
+
+  .memory-progress-border::after {
+    border-radius: inherit;
+    box-shadow:
+      inset 0 0 0 1px rgb(0 0 0 / 10%),
+      0 0 16px rgb(0 0 0 / 8%);
+    content: "";
+    inset: 0;
+    pointer-events: none;
+    position: absolute;
+    z-index: 20;
   }
 }
 

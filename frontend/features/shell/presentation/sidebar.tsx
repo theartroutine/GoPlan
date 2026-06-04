@@ -6,7 +6,6 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   LayoutDashboard,
   LogOut,
-  Settings,
   UserCircle,
   Users,
   X,
@@ -33,7 +32,6 @@ const NAV_ITEMS: NavigationItem[] = [
   { key: "dashboard", label: "Dashboard", href: "/", icon: LayoutDashboard },
   { key: "friends", label: "Friends", href: "/friends", icon: Users },
   { key: "profile", label: "Profile", href: "/profile", icon: UserCircle },
-  { key: "settings", label: "Settings", href: "/settings", icon: Settings },
 ];
 
 function SidebarContent({ isMobile }: { isMobile: boolean }) {

@@ -51,6 +51,13 @@ class PublicMediaFileTests(APITestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_rejects_trip_photos_prefix(self):
+        self.write_media_file("trip-photos/trip-id/photo.webp", b"private-photo")
+
+        response = self.client.get("/api/media/files/trip-photos/trip-id/photo.webp")
+
+        self.assertEqual(response.status_code, 404)
+
     def test_rejects_path_traversal(self):
         response = self.client.get("/api/media/files/avatars/../private/secret.webp")
 

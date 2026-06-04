@@ -89,11 +89,34 @@ services:
       redis-messaging:
         condition: service_healthy
 
+  # -------- Backend Memory Render Worker Service --------
+  backend-memory-render-worker:
+    build:
+      context: ./backend
+      dockerfile: Containerfile
+    image: backend:latest
+    container_name: backend-memory-render-worker-goplan
+    command: celery -A configs worker -l info -Q memory_render --concurrency=1
+    volumes:
+      - ./backend:/app:Z
+      - mediadata:/app/media_files
+    env_file:
+      - ./backend/.env
+    environment:
+      CELERY_BROKER_URL: redis://redis-messaging:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-messaging:6379/2
+    restart: unless-stopped
+    depends_on:
+      postgresql-goplan:
+        condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
+
   # -------- Backend Scheduler Service --------
   backend-scheduler:
     image: backend:latest
     container_name: backend-scheduler-goplan
-    command: bash -c "while true; do python manage.py dispatch_timeline_reminders || echo 'dispatch_timeline_reminders failed'; python manage.py recover_ai_interactions || echo 'recover_ai_interactions failed'; sleep 60; done"
+    command: bash -c "while true; do python manage.py dispatch_timeline_reminders || echo 'dispatch_timeline_reminders failed'; python manage.py recover_ai_interactions || echo 'recover_ai_interactions failed'; python manage.py recover_memory_renders || echo 'recover_memory_renders failed'; sleep 60; done"
     volumes:
       - ./backend:/app:Z
       - mediadata:/app/media_files

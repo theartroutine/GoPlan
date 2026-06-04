@@ -5,7 +5,10 @@ from pathlib import Path
 
 from PIL import Image as _PILImage
 
-_PILImage.MAX_IMAGE_PIXELS = 4_000_000  # 4MP — decompression-bomb guard for avatar uploads
+# Process-wide hard guard for extreme decompression bombs. Every Image.open path
+# that accepts user-controlled files must enforce a local pixel/dimension cap
+# before storing files; do not rely on this global ceiling as feature validation.
+_PILImage.MAX_IMAGE_PIXELS = 50_000_000
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,10 +21,25 @@ def env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_list(name: str) -> tuple[str, ...]:
+    raw = os.environ.get(name, "")
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
 # -------- Core Flags --------
 DEBUG = os.environ.get('DJANGO_DEBUG') == '1'
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 ALLOWED_HOSTS = os.environ['DJANGO_ALLOWED_HOSTS'].split(',')
+_RAW_FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL')
+_RAW_PUBLIC_APP_BASE_URL = os.environ.get("PUBLIC_APP_BASE_URL")
+if not DEBUG and not (_RAW_FRONTEND_BASE_URL or _RAW_PUBLIC_APP_BASE_URL):
+    raise RuntimeError("Set PUBLIC_APP_BASE_URL or FRONTEND_BASE_URL in production.")
+FRONTEND_BASE_URL = _RAW_FRONTEND_BASE_URL or 'http://localhost:3000'
+PUBLIC_APP_BASE_URL = (_RAW_PUBLIC_APP_BASE_URL or FRONTEND_BASE_URL).rstrip('/')
+DEV_THROTTLE_BYPASS_ENABLED = DEBUG and env_bool("DEV_THROTTLE_BYPASS_ENABLED", False)
+DEV_THROTTLE_BYPASS_EMAILS = (
+    env_list("DEV_THROTTLE_BYPASS_EMAILS") if DEV_THROTTLE_BYPASS_ENABLED else ()
+)
 
 # -------- Installed Apps --------
 INSTALLED_APPS = [
@@ -52,6 +70,7 @@ INSTALLED_APPS = [
     'ai.apps.AIConfig',
     'chat',
     'media',
+    'memories',
 
 ]
 
@@ -132,8 +151,43 @@ STORAGES = {
     },
 }
 UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+UPLOAD_MAX_SOURCE_PIXELS = 4_000_000
 DATA_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
 FILE_UPLOAD_MAX_MEMORY_SIZE = UPLOAD_MAX_BYTES
+TRIP_PHOTO_MAX_FILES_PER_UPLOAD = 20
+TRIP_PHOTO_MAX_BYTES = 10 * 1024 * 1024
+TRIP_PHOTO_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+TRIP_PHOTO_MAX_SOURCE_PIXELS = 45_000_000
+TRIP_PHOTO_MAX_UPLOAD_SOURCE_PIXELS = 90_000_000
+TRIP_PHOTO_MAX_DECODED_BYTES = 160 * 1024 * 1024
+TRIP_PHOTO_THUMBNAIL_MAX_EDGE = 480
+TRIP_PHOTO_MEDIUM_MAX_EDGE = 2560
+TRIP_PHOTO_WEBP_QUALITY = 84
+TRIP_MEMORY_MIN_PHOTOS = 5
+TRIP_MEMORY_MAX_PHOTOS = 50
+TRIP_MEMORY_AUTO_PICK_PHOTOS = 20
+TRIP_MEMORY_RENDER_QUEUE = "memory_render"
+TRIP_MEMORY_VIDEO_WIDTH = 1920
+TRIP_MEMORY_VIDEO_HEIGHT = 1080
+TRIP_MEMORY_VIDEO_FPS = 30
+TRIP_MEMORY_SECONDS_PER_PHOTO = 4
+# Cinematic render tuning (Ken Burns motion + crossfade + blurred fill).
+TRIP_MEMORY_TRANSITION_SECONDS = 0.8
+TRIP_MEMORY_VIDEO_FADE_SECONDS = 0.8
+TRIP_MEMORY_KEN_BURNS_ZOOM = 0.12
+TRIP_MEMORY_KEN_BURNS_SUPERSAMPLE = 2.5
+TRIP_MEMORY_BACKGROUND_BLUR_SIGMA = 20
+TRIP_MEMORY_VIDEO_PRESET = "faster"
+TRIP_MEMORY_RENDER_STALE_SECONDS = 15 * 60
+TRIP_MEMORY_RENDER_ACTIVE_RETRY_MAX_RETRIES = 3
+TRIP_MEMORY_FFMPEG_TIMEOUT_SECONDS = 540
+TRIP_MEMORY_RENDER_SOFT_TIME_LIMIT_SECONDS = 600
+TRIP_MEMORY_RENDER_TIME_LIMIT_SECONDS = 720
+TRIP_MEMORY_RENDER_SECONDS_PER_PHOTO_BUDGET = 24
+TRIP_MEMORY_RENDER_TIME_LIMIT_GRACE_SECONDS = 120
+TRIP_MEMORY_RENDER_MAX_RECOVERIES = 2
+TRIP_MEMORY_MAX_ACTIVE_PER_USER_PER_TRIP = 1
+TRIP_MEMORY_MAX_ACTIVE_PER_TRIP = 3
 
 # -------- Cross-Origin Settings --------
 CORS_ALLOWED_ORIGINS = os.environ['CORS_ALLOWED_ORIGINS'].split(',')
@@ -162,9 +216,9 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     'DEFAULT_THROTTLE_CLASSES': (
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle',
-        'rest_framework.throttling.ScopedRateThrottle',
+        'accounts.throttling.DevBypassAnonRateThrottle',
+        'accounts.throttling.DevBypassUserRateThrottle',
+        'accounts.throttling.DevBypassScopedRateThrottle',
     ),
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
@@ -195,6 +249,20 @@ REST_FRAMEWORK = {
         'friends_search': '60/hour',
         'media_upload': '30/hour',
         'public_media': '600/hour',
+        'trip_photos_list': '120/hour',
+        'trip_photos_upload': '30/hour',
+        'trip_photos_detail': '120/hour',
+        'trip_photo_assets': '600/hour',
+        'trip_photos_download': '300/hour',
+        'trip_photos_bulk_download': '30/hour',
+        'trip_memories_list': '120/hour',
+        'trip_memories_create': '30/hour',
+        'trip_memories_detail': '120/hour',
+        'trip_memories_status': '600/hour',
+        'trip_memory_assets': '600/hour',
+        'trip_memory_share_link': '60/hour',
+        'public_memory_detail': '600/hour',
+        'public_memory_assets': '600/hour',
         'trips_list_create': '60/hour',
         'trips_detail_update': '120/hour',
         'trips_invitations_list': '240/hour',
@@ -264,8 +332,6 @@ PASSWORD_RESET_TIMEOUT = 3600  # 1 hour
 
 # -------- Email Verification --------
 EMAIL_VERIFICATION_MAX_AGE_SECONDS = 60 * 60 * 24  # 24 hours
-FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:3000')
-
 # MongoDB Integration
 # MONGO_URL = os.environ.get('MONGO_URL')
 # MONGO_DB = os.environ.get('MONGO_DB')
@@ -278,6 +344,9 @@ CELERY_TASK_REJECT_ON_WORKER_LOST = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "120"))
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "90"))
+CELERY_TASK_ROUTES = {
+    "memories.tasks.render_trip_memory_video_task": {"queue": TRIP_MEMORY_RENDER_QUEUE},
+}
 
 # -------- DeepSeek AI Configuration --------
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")

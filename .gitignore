@@ -40,3 +40,5 @@ report/
 
 # Local-only docs (not tracked on remote)
 docs/
+.codegraph/
+output/

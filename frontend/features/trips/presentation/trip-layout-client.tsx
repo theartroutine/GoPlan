@@ -50,6 +50,7 @@ function TripShell({ children }: { children: React.ReactNode }) {
   const TAB_TITLES: Record<string, string> = {
     timeline: "Timeline",
     expenses: "Expenses",
+    memories: "Memories",
   };
   const tabTitle = TAB_TITLES[pathname.split("/").pop() ?? ""];
 
