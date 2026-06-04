@@ -335,7 +335,7 @@ describe("proxyPublicVideoStream", () => {
         "Content-Length": "2",
         "Content-Type": "video/mp4",
         "Content-Disposition": "inline",
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "no-store",
       },
     });
     const arrayBufferSpy = vi.spyOn(upstream, "arrayBuffer");
@@ -367,7 +367,7 @@ describe("proxyPublicVideoStream", () => {
     expect(response.headers.get("Content-Length")).toBe("2");
     expect(response.headers.get("Content-Type")).toBe("video/mp4");
     expect(response.headers.get("Content-Disposition")).toBe("inline");
-    expect(response.headers.get("Cache-Control")).toBe("public, max-age=300");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(sessionStateMock.setNoStoreHeaders).not.toHaveBeenCalled();
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(
       new Uint8Array([4, 5]),

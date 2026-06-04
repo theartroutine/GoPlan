@@ -68,7 +68,7 @@ TRIP_MEMORY_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 PUBLIC_MEMORY_NOT_FOUND_DETAIL = "Memory video not found."
 PUBLIC_MEMORY_NOT_FOUND_CODE = "MEMORY_NOT_FOUND"
 PUBLIC_MEMORY_METADATA_CACHE_CONTROL = "no-store"
-PUBLIC_MEMORY_ASSET_CACHE_CONTROL = "public, max-age=300"
+PUBLIC_MEMORY_ASSET_CACHE_CONTROL = "no-store"
 MAX_MEMORY_STATUS_IDS = 10
 
 
@@ -554,6 +554,7 @@ class TripMemoryVideoAssetAPIView(APIView):
                     content_type="video/mp4",
                     content_disposition="inline",
                 )
+                response.headers["Cache-Control"] = "private, no-store"
             elif variant == "download":
                 asset = get_private_memory_download_file(
                     trip_id=trip_id,
@@ -567,6 +568,7 @@ class TripMemoryVideoAssetAPIView(APIView):
                     content_type="video/mp4",
                     content_disposition=f'attachment; filename="{filename}"',
                 )
+                response.headers["Cache-Control"] = "private, no-store"
             elif variant == "poster":
                 asset = get_private_memory_poster_file(
                     trip_id=trip_id,

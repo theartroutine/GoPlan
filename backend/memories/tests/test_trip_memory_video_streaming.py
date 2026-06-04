@@ -123,6 +123,7 @@ class TripMemoryVideoStreamingAPITests(APITestCase):
         self.assertEqual(response.headers["Content-Type"], "video/mp4")
         self.assertEqual(response.headers["Content-Length"], "10")
         self.assertEqual(response.headers["Content-Disposition"], "inline")
+        self.assertEqual(response.headers["Cache-Control"], "private, no-store")
         self.assertEqual(_response_body(response), b"0123456789")
 
     def test_private_video_with_byte_range_returns_partial_body(self):
@@ -139,6 +140,7 @@ class TripMemoryVideoStreamingAPITests(APITestCase):
         self.assertEqual(response.headers["Content-Range"], "bytes 0-3/10")
         self.assertEqual(response.headers["Content-Length"], "4")
         self.assertEqual(response.headers["Content-Type"], "video/mp4")
+        self.assertEqual(response.headers["Cache-Control"], "private, no-store")
         self.assertEqual(_response_body(response), b"0123")
 
     def test_private_video_with_open_ended_range_returns_tail_from_start(self):
@@ -241,6 +243,7 @@ class TripMemoryVideoStreamingAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["Content-Type"], "video/mp4")
+        self.assertEqual(response.headers["Cache-Control"], "private, no-store")
         self.assertIn("attachment", response.headers["Content-Disposition"])
         self.assertIn('filename="Da_Nang_Best_recap.mp4"', response.headers["Content-Disposition"])
 

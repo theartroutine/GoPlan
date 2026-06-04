@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 
-import { PUBLIC_APP_BASE_URL } from "@/shared/http/public-origin";
+import { resolvePublicAppBaseUrl } from "@/shared/http/public-origin";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -113,7 +113,7 @@ const fetchPublicMemory = cache(
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const origin = PUBLIC_APP_BASE_URL;
+  const origin = await resolvePublicAppBaseUrl();
   const memory = await fetchPublicMemory(slug, origin);
 
   if (!memory) {
@@ -150,7 +150,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function PublicMemoryPage({ params }: PageProps) {
   const { slug } = await params;
-  const origin = PUBLIC_APP_BASE_URL;
+  const origin = await resolvePublicAppBaseUrl();
   const memory = await fetchPublicMemory(slug, origin);
 
   if (!memory) notFound();
