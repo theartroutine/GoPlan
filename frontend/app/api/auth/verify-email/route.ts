@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token }),
-  });
+  }, request.headers);
 
   if (upstream.kind === "network_error") {
     return NextResponse.redirect(new URL("/login?verify_error=invalid", request.url));

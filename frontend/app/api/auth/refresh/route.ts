@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { refreshWithSingleFlight } from "@/app/api/auth/_lib/refresh";
@@ -12,6 +12,7 @@ import {
 
 export async function POST() {
   const jar = await cookies();
+  const sourceHeaders = await headers();
   const refreshTokenValue = jar.get(REFRESH_COOKIE_NAME)?.value;
 
   if (!refreshTokenValue) {
@@ -22,7 +23,10 @@ export async function POST() {
     );
   }
 
-  const refreshResult = await refreshWithSingleFlight(refreshTokenValue);
+  const refreshResult = await refreshWithSingleFlight(
+    refreshTokenValue,
+    sourceHeaders,
+  );
 
   const failureResponse = handleRefreshFailure(jar, refreshResult);
   if (failureResponse) return failureResponse;

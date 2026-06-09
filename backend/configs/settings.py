@@ -3,6 +3,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from PIL import Image as _PILImage
 
 # Process-wide hard guard for extreme decompression bombs. Every Image.open path
@@ -26,6 +27,17 @@ def env_list(name: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
+def env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ImproperlyConfigured(f"{name} must be an integer.") from exc
+
+
 # -------- Core Flags --------
 DEBUG = os.environ.get('DJANGO_DEBUG') == '1'
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
@@ -40,6 +52,7 @@ DEV_THROTTLE_BYPASS_ENABLED = DEBUG and env_bool("DEV_THROTTLE_BYPASS_ENABLED", 
 DEV_THROTTLE_BYPASS_EMAILS = (
     env_list("DEV_THROTTLE_BYPASS_EMAILS") if DEV_THROTTLE_BYPASS_ENABLED else ()
 )
+GOPLAN_INTERNAL_PROXY_SECRET = os.environ.get("GOPLAN_INTERNAL_PROXY_SECRET", "")
 
 # -------- Installed Apps --------
 INSTALLED_APPS = [
@@ -117,7 +130,7 @@ DATABASES = {
         'PASSWORD': os.environ['DB_PASSWORD'],
         'HOST': os.environ['DB_HOST'],
         'PORT': os.environ['DB_PORT'],
-        'CONN_MAX_AGE': 600,
+        'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 0),
     }
 }
 

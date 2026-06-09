@@ -1,0 +1,148 @@
+name: goplan
+
+services:
+  # -------- Database Service --------
+  postgresql-goplan:
+    image: postgres:16-alpine
+    container_name: postgres-db-goplan
+    env_file:
+      - ./backend/db.env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # -------- Redis (Channel Layer) --------
+  redis-messaging:
+    image: redis:7-alpine
+    container_name: redis-messaging-goplan
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # -------- Django Backend Service --------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Containerfile
+    image: backend:latest
+    container_name: backend-goplan
+    command: bash -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 configs.asgi:application"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - mediadata:/app/media_files
+    env_file:
+      - ./backend/.env
+    environment:
+      CELERY_BROKER_URL: redis://redis-messaging:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-messaging:6379/2
+    restart: unless-stopped
+    depends_on:
+      postgresql-goplan:
+        condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
+
+  # -------- Next.js Frontend Service --------
+  frontend:
+    profiles:
+      - frontend-container
+    build:
+      context: ./frontend
+      dockerfile: Containerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://backend:8000
+        NEXT_PUBLIC_APP_BASE_URL: https://goplan.quangmin.me
+        NEXT_PUBLIC_WS_URL: wss://api.quangmin.me
+    image: frontend-goplan:latest
+    container_name: frontend-goplan
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - ./frontend/.env.local
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_BASE_URL: http://backend:8000
+      NEXT_PUBLIC_APP_BASE_URL: https://goplan.quangmin.me
+      NEXT_PUBLIC_WS_URL: wss://api.quangmin.me
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+
+  # -------- Backend AI Worker Service --------
+  backend-worker:
+    image: backend:latest
+    container_name: backend-worker-goplan
+    command: celery -A configs worker -l info
+    volumes:
+      - mediadata:/app/media_files
+    env_file:
+      - ./backend/.env
+    environment:
+      CELERY_BROKER_URL: redis://redis-messaging:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-messaging:6379/2
+    restart: unless-stopped
+    depends_on:
+      postgresql-goplan:
+        condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
+
+  # -------- Backend Memory Render Worker Service --------
+  backend-memory-render-worker:
+    image: backend:latest
+    container_name: backend-memory-render-worker-goplan
+    command: celery -A configs worker -l info -Q memory_render --concurrency=1
+    volumes:
+      - mediadata:/app/media_files
+    env_file:
+      - ./backend/.env
+    environment:
+      CELERY_BROKER_URL: redis://redis-messaging:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-messaging:6379/2
+    restart: unless-stopped
+    depends_on:
+      postgresql-goplan:
+        condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
+
+  # -------- Backend Scheduler Service --------
+  backend-scheduler:
+    image: backend:latest
+    container_name: backend-scheduler-goplan
+    command: bash -c "while true; do python manage.py dispatch_timeline_reminders || echo 'dispatch_timeline_reminders failed'; python manage.py recover_ai_interactions || echo 'recover_ai_interactions failed'; python manage.py recover_memory_renders || echo 'recover_memory_renders failed'; sleep 60; done"
+    volumes:
+      - mediadata:/app/media_files
+    env_file:
+      - ./backend/.env
+    environment:
+      CELERY_BROKER_URL: redis://redis-messaging:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-messaging:6379/2
+    restart: unless-stopped
+    depends_on:
+      postgresql-goplan:
+        condition: service_healthy
+      redis-messaging:
+        condition: service_healthy
+
+volumes:
+  pgdata: {}
+  redisdata: {}
+  mediadata: {}
