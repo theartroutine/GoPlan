@@ -40,6 +40,7 @@ describe("BFF /api/share/memories/[slug]", () => {
       "https://api.example.com/api/public/memories/public%2Fslug",
       {
         method: "GET",
+        headers: {},
         cache: "no-store",
       },
     );

@@ -31,12 +31,15 @@ export type RefreshResult =
 
 const inFlightRefreshByToken = new Map<string, Promise<RefreshResult>>();
 
-async function performRefresh(refreshToken: string): Promise<RefreshResult> {
+async function performRefresh(
+  refreshToken: string,
+  sourceHeaders?: Headers | null,
+): Promise<RefreshResult> {
   const upstream = await callAuthUpstream("/api/auth/refresh", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh: refreshToken }),
-  });
+  }, sourceHeaders);
 
   if (upstream.kind === "network_error") {
     return {
@@ -90,13 +93,14 @@ async function performRefresh(refreshToken: string): Promise<RefreshResult> {
 
 export async function refreshWithSingleFlight(
   refreshToken: string,
+  sourceHeaders?: Headers | null,
 ): Promise<RefreshResult> {
   const existingPromise = inFlightRefreshByToken.get(refreshToken);
   if (existingPromise) {
     return existingPromise;
   }
 
-  const promise = performRefresh(refreshToken).finally(() => {
+  const promise = performRefresh(refreshToken, sourceHeaders).finally(() => {
     inFlightRefreshByToken.delete(refreshToken);
   });
 

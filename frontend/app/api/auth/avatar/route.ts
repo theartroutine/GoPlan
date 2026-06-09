@@ -8,11 +8,13 @@ import {
   setNoStoreHeaders,
   setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
+import { mergeHeadersWithTrustedClient } from "@/app/api/_lib/upstream-headers";
 import { API_BASE_URL } from "@/shared/http/config";
 
 async function resolveBearer(
   jar: Awaited<ReturnType<typeof cookies>>,
   incomingAuth: string | null,
+  sourceHeaders: Headers,
 ): Promise<
   | { ok: true; bearer: string; refreshedAccessToken: string | null }
   | { ok: false; response: NextResponse }
@@ -29,7 +31,7 @@ async function resolveBearer(
     };
   }
 
-  const refreshResult = await refreshWithSingleFlight(refreshToken);
+  const refreshResult = await refreshWithSingleFlight(refreshToken, sourceHeaders);
   const failureResponse = handleRefreshFailure(jar, refreshResult);
   if (failureResponse) return { ok: false, response: failureResponse };
   if (refreshResult.kind !== "success") {
@@ -49,12 +51,16 @@ async function resolveBearer(
 async function callAvatarUpstream(
   method: "PATCH" | "DELETE",
   bearer: string,
+  sourceHeaders: Headers,
   body?: BodyInit,
 ): Promise<{ data: unknown; status: number; headers?: Headers }> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/auth/avatar`, {
       method,
-      headers: { Authorization: bearer },
+      headers: mergeHeadersWithTrustedClient(
+        { Authorization: bearer },
+        sourceHeaders,
+      ),
       body,
     });
     const text = await res.text();
@@ -92,7 +98,7 @@ function finalize(
 export async function PATCH(request: NextRequest) {
   const jar = await cookies();
   const incomingAuth = request.headers.get("Authorization");
-  const auth = await resolveBearer(jar, incomingAuth);
+  const auth = await resolveBearer(jar, incomingAuth, request.headers);
   if (!auth.ok) return auth.response;
 
   let formData: FormData;
@@ -109,19 +115,29 @@ export async function PATCH(request: NextRequest) {
   const djangoForm = new FormData();
   djangoForm.append("avatar", file);
 
-  let result = await callAvatarUpstream("PATCH", auth.bearer, djangoForm);
+  let result = await callAvatarUpstream(
+    "PATCH",
+    auth.bearer,
+    request.headers,
+    djangoForm,
+  );
   let refreshedAccessToken = auth.refreshedAccessToken;
 
   // Only retry when the first call used the caller-provided bearer; if we
   // already refreshed and still got 401, a second refresh would consume another
   // rotation slot without changing the outcome.
   if (result.status === 401 && incomingAuth && refreshedAccessToken === null) {
-    const retry = await resolveBearer(jar, null);
+    const retry = await resolveBearer(jar, null, request.headers);
     if (!retry.ok) return retry.response;
     refreshedAccessToken = retry.refreshedAccessToken ?? refreshedAccessToken;
     const retryForm = new FormData();
     retryForm.append("avatar", file);
-    result = await callAvatarUpstream("PATCH", retry.bearer, retryForm);
+    result = await callAvatarUpstream(
+      "PATCH",
+      retry.bearer,
+      request.headers,
+      retryForm,
+    );
   }
 
   return finalize(result, refreshedAccessToken);
@@ -130,17 +146,17 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const jar = await cookies();
   const incomingAuth = request.headers.get("Authorization");
-  const auth = await resolveBearer(jar, incomingAuth);
+  const auth = await resolveBearer(jar, incomingAuth, request.headers);
   if (!auth.ok) return auth.response;
 
-  let result = await callAvatarUpstream("DELETE", auth.bearer);
+  let result = await callAvatarUpstream("DELETE", auth.bearer, request.headers);
   let refreshedAccessToken = auth.refreshedAccessToken;
 
   if (result.status === 401 && incomingAuth && refreshedAccessToken === null) {
-    const retry = await resolveBearer(jar, null);
+    const retry = await resolveBearer(jar, null, request.headers);
     if (!retry.ok) return retry.response;
     refreshedAccessToken = retry.refreshedAccessToken ?? refreshedAccessToken;
-    result = await callAvatarUpstream("DELETE", retry.bearer);
+    result = await callAvatarUpstream("DELETE", retry.bearer, request.headers);
   }
 
   return finalize(result, refreshedAccessToken);

@@ -185,7 +185,10 @@ describe("POST /api/trips/cover-upload", () => {
         headers: { Authorization: "Bearer fresh-access-token" },
       }),
     );
-    expect(refreshMock.refreshWithSingleFlight).toHaveBeenCalledWith("refresh-cookie");
+    expect(refreshMock.refreshWithSingleFlight).toHaveBeenCalledWith(
+      "refresh-cookie",
+      expect.any(Headers),
+    );
     expect(sessionStateMock.setRefreshToken).toHaveBeenCalledWith(jar, "fresh-refresh-token");
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Access-Token")).toBe("fresh-access-token");

@@ -8,6 +8,7 @@ import {
   setNoStoreHeaders,
   setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
+import { mergeHeadersWithTrustedClient } from "@/app/api/_lib/upstream-headers";
 import { API_BASE_URL } from "@/shared/http/config";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -36,13 +37,17 @@ function unsupportedMediaResponse(): NextResponse {
 async function uploadTripCover(
   file: Blob,
   bearerToken: string,
+  sourceHeaders: Headers,
 ): Promise<{ data: unknown; status: number }> {
   const djangoForm = new FormData();
   djangoForm.append("file", file);
 
   const res = await fetch(`${API_BASE_URL}/api/media/trip-covers`, {
     method: "POST",
-    headers: { Authorization: bearerToken },
+    headers: mergeHeadersWithTrustedClient(
+      { Authorization: bearerToken },
+      sourceHeaders,
+    ),
     body: djangoForm,
   });
 
@@ -67,7 +72,10 @@ export async function POST(request: NextRequest) {
     if (!refreshToken) {
       return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
     }
-    const refreshResult = await refreshWithSingleFlight(refreshToken);
+    const refreshResult = await refreshWithSingleFlight(
+      refreshToken,
+      request.headers,
+    );
     const failureResponse = handleRefreshFailure(jar, refreshResult);
     if (failureResponse) return failureResponse;
     if (refreshResult.kind !== "success") {
@@ -101,7 +109,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    let result = await uploadTripCover(file, bearerToken);
+    let result = await uploadTripCover(file, bearerToken, request.headers);
 
     if (result.status === 401) {
       const refreshToken = jar.get(REFRESH_COOKIE_NAME)?.value;
@@ -109,7 +117,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
       }
 
-      const refreshResult = await refreshWithSingleFlight(refreshToken);
+      const refreshResult = await refreshWithSingleFlight(
+        refreshToken,
+        request.headers,
+      );
       const failureResponse = handleRefreshFailure(jar, refreshResult);
       if (failureResponse) return failureResponse;
       if (refreshResult.kind !== "success") {
@@ -118,7 +129,11 @@ export async function POST(request: NextRequest) {
 
       setRefreshToken(jar, refreshResult.refreshToken);
       refreshedAccessToken = refreshResult.accessToken;
-      result = await uploadTripCover(file, `Bearer ${refreshResult.accessToken}`);
+      result = await uploadTripCover(
+        file,
+        `Bearer ${refreshResult.accessToken}`,
+        request.headers,
+      );
     }
 
     const response = NextResponse.json(result.data, { status: result.status });

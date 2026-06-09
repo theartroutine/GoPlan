@@ -8,6 +8,7 @@ import {
   handleRefreshFailure,
   setRefreshToken,
 } from "@/app/api/auth/_lib/session-state";
+import { mergeHeadersWithTrustedClient } from "@/app/api/_lib/upstream-headers";
 import { API_BASE_URL } from "@/shared/http/config";
 
 type AuthResult =
@@ -47,6 +48,7 @@ export function extractRangeHeader(
 async function resolveBearer(
   jar: Awaited<ReturnType<typeof cookies>>,
   incomingAuth: string | null,
+  sourceHeaders: Headers,
 ): Promise<AuthResult> {
   if (incomingAuth) {
     return { ok: true, bearer: incomingAuth, refreshedAccessToken: null };
@@ -60,7 +62,7 @@ async function resolveBearer(
     };
   }
 
-  const refreshResult = await refreshWithSingleFlight(refreshToken);
+  const refreshResult = await refreshWithSingleFlight(refreshToken, sourceHeaders);
   const failureResponse = handleRefreshFailure(jar, refreshResult);
   if (failureResponse) return { ok: false, response: failureResponse };
   if (refreshResult.kind !== "success") {
@@ -88,7 +90,10 @@ async function fetchProtectedAsset(
 ): Promise<Response> {
   return fetch(`${API_BASE_URL}${upstreamPath}`, {
     method,
-    headers: buildUpstreamHeaders(request, bearer),
+    headers: mergeHeadersWithTrustedClient(
+      buildUpstreamHeaders(request, bearer),
+      request.headers,
+    ),
     body,
   });
 }
@@ -123,7 +128,7 @@ export async function proxyProtectedAsset({
 }: ProxyProtectedAssetOptions): Promise<NextResponse> {
   const jar = await cookies();
   const incomingAuth = request.headers.get("Authorization");
-  const auth = await resolveBearer(jar, incomingAuth);
+  const auth = await resolveBearer(jar, incomingAuth, request.headers);
   if (!auth.ok) return auth.response;
 
   let upstream: Response;
@@ -145,7 +150,7 @@ export async function proxyProtectedAsset({
 
   let refreshedAccessToken = auth.refreshedAccessToken;
   if (upstream.status === 401 && incomingAuth && refreshedAccessToken === null) {
-    const retry = await resolveBearer(jar, null);
+    const retry = await resolveBearer(jar, null, request.headers);
     if (!retry.ok) return retry.response;
     refreshedAccessToken = retry.refreshedAccessToken;
     try {

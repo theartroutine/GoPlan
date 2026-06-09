@@ -6,6 +6,7 @@ import {
   jsonErrorResponse,
   proxyProtectedAsset,
 } from "@/app/api/_lib/protected-asset-proxy";
+import { mergeHeadersWithTrustedClient } from "@/app/api/_lib/upstream-headers";
 import { setNoStoreHeaders } from "@/app/api/auth/_lib/session-state";
 import { API_BASE_URL } from "@/shared/http/config";
 
@@ -53,7 +54,10 @@ async function fetchPublicStream(
 ): Promise<Response> {
   return fetch(`${API_BASE_URL}${upstreamPath}`, {
     method: "GET",
-    headers: buildPublicUpstreamHeaders(request),
+    headers: mergeHeadersWithTrustedClient(
+      buildPublicUpstreamHeaders(request),
+      request.headers,
+    ),
   });
 }
 
