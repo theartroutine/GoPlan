@@ -1,3 +1,22 @@
+# Production compose for GoPlan (homelab).
+#
+# Required local files (all gitignored, never commit real values):
+#   ./.env                — compose interpolation values for the frontend image
+#                           build args below (NEXT_PUBLIC_APP_BASE_URL,
+#                           NEXT_PUBLIC_WS_URL, NEXT_ALLOWED_DEV_ORIGINS,
+#                           NEXT_ENABLE_HSTS). Public values only, no secrets.
+#   ./backend/.env        — Django runtime env (see backend/.env.example).
+#   ./backend/db.env      — PostgreSQL credentials (see backend/db.env.example).
+#   ./frontend/.env.local — frontend runtime env (see frontend/.env.example).
+#
+# NEXT_PUBLIC_* values are baked into the frontend bundle at image build time:
+# changing them requires `up -d --build`, not just a restart.
+#
+# This file shares the project name, container names, and volumes with the dev
+# podman-compose.yml — run only one of the two at a time on the same host
+# (`podman compose [-f podman-compose.prod.yml] down` first when switching).
+# Data in pgdata/redisdata/mediadata survives the switch.
+
 name: goplan
 
 services:
