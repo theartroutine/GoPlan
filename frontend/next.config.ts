@@ -12,7 +12,7 @@ const scriptSrc = [
 ].join(" ");
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["127.0.0.1", "[::1]"],
+  allowedDevOrigins: ["127.0.0.1", "[::1]", "goplan.quangmin.me"],
   async headers() {
     return [
       {

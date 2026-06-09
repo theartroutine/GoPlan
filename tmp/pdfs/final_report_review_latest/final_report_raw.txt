@@ -1,0 +1,2080 @@
+Ho Chi Minh City, June 2026
+HO CHI MINH CITY UNIVERSITY OF TECHNOLOGY AND
+ENGINEERING
+FACULTY OF INTERNATIONAL EDUCATION
+CAPSTONE PROJECT
+Design and Implementation of an AI-Driven
+Group Trip Planning and Coordination System
+Semester: II – 2025–2026
+Course: Capstone Project
+Course’s ID: 252GRPR471979E
+The student group: Group 4
+Instructor: Dr. Mai Anh Thơ
+Examiner: MSc. Nguyễn Trần Thi VănLIST OF STUDENTS
+Group: 4
+Project: Design and Implementation of an AI-Driven Group Trip Planning and Co-
+ordination System
+No. Full name Student’s ID Class Major Percent
+1 Dương Quang Minh 21110782 21110FIE5
+Software
+Engineering
+100%
+Note:
+%: completion rate of each participating student
+Group Leader: Dương Quang Minh
+INSTRUCTOR’S NOTE:
+...............................................................................
+...............................................................................
+...............................................................................
+Group Leader INSTRUCTOR
+Dương Quang Minh Mai Anh ThơACKNOWLEDGEMENT
+Completing this capstone project has been a long journey, and I would like to be-
+gin by sincerely thanking the Faculty of International Education at Ho Chi Minh City
+University of Technology and Education (HCMUTE). Beyond simply being a place to
+study, the Faculty has given me a demanding yet encouraging environment in which I
+could broaden my technical foundation, confront real engineering problems, and gradu-
+ally grow into a more capable software developer throughout my time here.
+My deepest appreciation goes to my supervising instructor, Dr. Mai Anh Thơ.
+From the very first conversations about the idea behind GoPlan to the delivery of the
+finishedsystem, shehasgenerouslysharedhertime, herprofessionalexperience, andher
+candid feedback at every stage of the work. Her patient guidance helped me transform
+a broad ambition into a structured, working product, and the lessons I have taken from
+her mentorship extend well beyond this report; they are principles I intend to carry into
+my professional career in software engineering.
+I am also fully aware that, however carefully the system was designed and tested,
+the limits of time and of my own experience mean that shortcomings inevitably remain.
+For this reason, I sincerely welcome any comments, criticism, and suggestions from the
+review council and the teaching staff. I regard such feedback not as a final verdict but as
+avaluableopportunity, andIwilluseittorefineboththesystemandmyownengineering
+judgement in the work that lies ahead.
+Finally, I would like to wish Dr. Mai Anh Thơ and all the dedicated lecturers of
+the Faculty good health, lasting enthusiasm, and continued success in the meaningful
+mission of teaching and guiding the generations of students who follow.Table of Contents
+Acknowledgement i
+1 Introduction 1
+1.1 Project Background . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
+1.2 Problem Statement . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 1
+1.3 Objectives . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2
+1.4 Scope . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+1.5 Methodology . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+1.6 Report Structure . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+2 Background and Technology Foundation 6
+2.1 Group Trip Planning Systems . . . . . . . . . . . . . . . . . . . . . . . . 6
+2.2 Backend-for-Frontend Architecture . . . . . . . . . . . . . . . . . . . . . 6
+2.3 REST API and Service Layer . . . . . . . . . . . . . . . . . . . . . . . . . 6
+2.4 JWT Session Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+2.5 Realtime Communication with WebSocket . . . . . . . . . . . . . . . . . 7
+2.6 AI-Assisted Planning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8
+2.7 Media Processing and Memory Video Rendering . . . . . . . . . . . . . . 8
+3 Requirement Analysis 9
+3.1 Actors . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+3.2 Functional Requirements . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+3.3 Non-Functional Requirements . . . . . . . . . . . . . . . . . . . . . . . . 10
+3.4 Use Case Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+4 System Design 21
+4.1 Architecture Overview . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+4.2 Frontend Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+ii4.3 Backend Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22
+4.4 Authentication and Authorization Design . . . . . . . . . . . . . . . . . . 22
+4.5 Domain Model Overview . . . . . . . . . . . . . . . . . . . . . . . . . . . 23
+4.6 Class Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23
+4.7 Realtime Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+4.8 AI Action Draft Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+4.9 Interaction Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 33
+5 Implementation 45
+5.1 Authentication and Profile Module . . . . . . . . . . . . . . . . . . . . . . 45
+5.2 Friends Module . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 45
+5.3 Trip Management Module . . . . . . . . . . . . . . . . . . . . . . . . . . 45
+5.4 Timeline Module . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 46
+5.5 Expense and Settlement Module . . . . . . . . . . . . . . . . . . . . . . . 46
+5.6 Notification Module . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 47
+5.7 Realtime Chat Module . . . . . . . . . . . . . . . . . . . . . . . . . . . . 47
+5.8 AI Assistance Module . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 48
+5.9 Media and Photos Module . . . . . . . . . . . . . . . . . . . . . . . . . . 48
+5.10 Memories Module . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 48
+5.11 Location Search Integration . . . . . . . . . . . . . . . . . . . . . . . . . 49
+5.12 Local Infrastructure . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 49
+6 Testing and Evaluation 50
+6.1 Testing Strategy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 50
+6.2 Backend Test Coverage . . . . . . . . . . . . . . . . . . . . . . . . . . . . 50
+6.3 Frontend Test Coverage . . . . . . . . . . . . . . . . . . . . . . . . . . . . 51
+6.4 Evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 51
+6.5 Test Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 52
+7 Application Demonstration 53
+7.1 Authentication and Onboarding . . . . . . . . . . . . . . . . . . . . . . . 53
+Page iii / 1147.2 Trips Dashboard and Notifications . . . . . . . . . . . . . . . . . . . . . . 60
+7.3 Trip Creation and Management . . . . . . . . . . . . . . . . . . . . . . . . 64
+7.4 Trip Members . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 72
+7.5 Timeline and Itinerary . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 74
+7.6 Map Integration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 82
+7.7 Expenses and Settlement . . . . . . . . . . . . . . . . . . . . . . . . . . . 83
+7.8 Trip Photos . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 89
+7.9 Memory Videos . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 93
+7.10 Realtime Chat and AI Assistant . . . . . . . . . . . . . . . . . . . . . . . 98
+7.11 Friends . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 102
+7.12 Profile, Settings, and Session . . . . . . . . . . . . . . . . . . . . . . . . . 106
+8 Conclusion and Future Development 112
+8.1 Conclusion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 112
+8.2 Limitations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 112
+8.3 Future Development . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 113
+Page iv / 114List of Figures
+3.1 Actor hierarchy: account and profile states, and per-trip roles. . . . . . . 12
+3.2 Account and authentication use cases. . . . . . . . . . . . . . . . . . . . . 13
+3.3 Friends and social-graph use cases. . . . . . . . . . . . . . . . . . . . . . 14
+3.4 Trip management: creation, membership, and lifecycle. . . . . . . . . . . 15
+3.5 Timeline planning and activity scheduling. . . . . . . . . . . . . . . . . . 16
+3.6 Expenses and settlement use cases. . . . . . . . . . . . . . . . . . . . . . 17
+3.7 Realtime chat use cases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+3.8 GoPlanAI assistance and two-step action-draft confirmation. . . . . . . . 19
+3.9 Photos and memory-video use cases. . . . . . . . . . . . . . . . . . . . . 20
+4.1 Class model: identity, authentication, and realtime ticket. . . . . . . . . . 25
+4.2 Class model: friends and social graph. . . . . . . . . . . . . . . . . . . . . 26
+4.3 Class model: trip core, members, and invitations. . . . . . . . . . . . . . 27
+4.4 Class model: timeline planning and activities. . . . . . . . . . . . . . . . 28
+4.5 Class model: expenses and settlement. . . . . . . . . . . . . . . . . . . . 29
+4.6 Class model: realtime chat and AI action drafts. . . . . . . . . . . . . . . 30
+4.7 Class model: notifications, photos, and memory videos. . . . . . . . . . . 31
+4.8 SD-01 — Login and protected-request token refresh. . . . . . . . . . . . 34
+4.9 SD-02 — WebSocket ticket issuance and realtime connection. . . . . . . 35
+4.10 SD-03 — Trip creation, invitation, and acceptance. . . . . . . . . . . . . 36
+4.11 SD-04 — Member removal and chat kicked event. . . . . . . . . . . . . . 37
+4.12 SD-05 — Timeline activity creation and reminder dispatch. . . . . . . . . 38
+4.13 SD-06 — Expense settlement finalize, reopen, and transfer marks. . . . . 39
+4.14 SD-07 — Chat message with a GoPlanAI mention. . . . . . . . . . . . . 40
+4.15 SD-08 — AI action-draft refinement and confirmation. . . . . . . . . . . 41
+4.16 SD-09 — Photo upload and asset download. . . . . . . . . . . . . . . . . 42
+4.17 SD-10 — Memory-video render and public sharing. . . . . . . . . . . . . 43
+v4.18 SD-11 — Notification delivery and read synchronisation. . . . . . . . . . 44
+7.1 Sign-in screen with empty credential fields. . . . . . . . . . . . . . . . . . 53
+7.2 Sign-in screen with the account email and password entered. . . . . . . . 54
+7.3 Registration screen in its empty state. . . . . . . . . . . . . . . . . . . . . 54
+7.4 Registration screen with the account email and password entered. . . . . 55
+7.5 Password-recovery request screen in its empty state. . . . . . . . . . . . . 55
+7.6 Password-recovery request screen with the account email entered. . . . . 56
+7.7 Confirmation message shown after submitting a password-recovery re-
+quest, worded to avoid account enumeration. . . . . . . . . . . . . . . . . 56
+7.8 Reset-password screen showing an invalid or expired reset link with an
+option to request a new one. . . . . . . . . . . . . . . . . . . . . . . . . . 57
+7.9 Email-verification screen waiting for the user to confirm the verification
+email. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 57
+7.10 Sign-in attempt blocked because the email address is not yet verified,
+with a resend-verification action. . . . . . . . . . . . . . . . . . . . . . . . 58
+7.11 Resend-verification screen confirming the verification email was sent
+again. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 58
+7.12 Profile-completion onboarding screen with the live profile preview and
+the permanent-identifier notice. . . . . . . . . . . . . . . . . . . . . . . . 59
+7.13 Profile-completion screen with the name and identity fields filled and
+previewed. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 59
+7.14 Trips dashboard showing all trips of the signed-in user. . . . . . . . . . . 60
+7.15 Trips dashboard filtered to trips in the planning status. . . . . . . . . . . . 61
+7.16 Trips dashboard filtered to ongoing trips. . . . . . . . . . . . . . . . . . . 61
+7.17 Trips dashboard filtered to completed trips. . . . . . . . . . . . . . . . . . 62
+7.18 Trips dashboard filtered to cancelled trips. . . . . . . . . . . . . . . . . . 62
+7.19 Sidebar identity tag with the “copied” feedback after copying it. . . . . . 63
+7.20 Notifications popover opened from the dashboard header. . . . . . . . . . 63
+7.21 Trip-creation form in its empty state. . . . . . . . . . . . . . . . . . . . . 64
+7.22 Trip-creation form showing destination autocomplete suggestions. . . . . 65
+Page vi / 1147.23 Trip-creation form filled with the trip details. . . . . . . . . . . . . . . . . 65
+7.24 Trip-creation form with an uploaded cover-image preview. . . . . . . . . 66
+7.25 Trip root URL redirecting to the trip overview tab. . . . . . . . . . . . . . 66
+7.26 Trip overview for a trip in the planning status. . . . . . . . . . . . . . . . 67
+7.27 Trip overview with the edit action available to the trip captain. . . . . . . 67
+7.28 Trip overview actions menu. . . . . . . . . . . . . . . . . . . . . . . . . . 68
+7.29 Trip-cancellation confirmation modal. . . . . . . . . . . . . . . . . . . . . 68
+7.30 Trip overview for a trip in the ongoing status. . . . . . . . . . . . . . . . . 69
+7.31 Trip overview for a completed trip. . . . . . . . . . . . . . . . . . . . . . 69
+7.32 Trip overview for a cancelled trip. . . . . . . . . . . . . . . . . . . . . . . 70
+7.33 Trip-edit form loaded with the current trip data. . . . . . . . . . . . . . . 70
+7.34 Trip-edit form showing destination autocomplete suggestions. . . . . . . 71
+7.35 Trip-edit form with unsaved changes. . . . . . . . . . . . . . . . . . . . . 71
+7.36 Trip-edit form with a new cover-image preview. . . . . . . . . . . . . . . 72
+7.37 Trip members list. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 73
+7.38 Invite-member modal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 73
+7.39 Invite-member modal with the search filter applied. . . . . . . . . . . . . 74
+7.40 Timeline (itinerary) overview with the planned days. . . . . . . . . . . . . 75
+7.41 Add-day modal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 75
+7.42 Manage-activity-types modal. . . . . . . . . . . . . . . . . . . . . . . . . 76
+7.43 Timeline overview before opening a specific day. . . . . . . . . . . . . . 76
+7.44 Day detail view with its activities. . . . . . . . . . . . . . . . . . . . . . . 77
+7.45 Add-activity form in its empty state. . . . . . . . . . . . . . . . . . . . . . 77
+7.46 Add-activity form showing location autocomplete suggestions. . . . . . . 78
+7.47 Add-activity form with the additional-details fields expanded. . . . . . . 78
+7.48 Reopening a day to view its activities. . . . . . . . . . . . . . . . . . . . . 79
+7.49 Edit-activity modal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 79
+7.50 Delete-activity confirmation modal. . . . . . . . . . . . . . . . . . . . . . 80
+7.51 Activity status menu. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 80
+Page vii / 1147.52 Timeline activity used as the source for the open-map action. . . . . . . . 81
+7.53 Day detail with the open-map button visible. . . . . . . . . . . . . . . . . 81
+7.54 HERE map view with a selected place opened. . . . . . . . . . . . . . . . 82
+7.55 HERE map view with the directions panel. . . . . . . . . . . . . . . . . . 83
+7.56 Expenses dashboard with the totals and the expense list. . . . . . . . . . . 84
+7.57 Add-expense dialog in its empty state. . . . . . . . . . . . . . . . . . . . . 84
+7.58 Add-expense dialog filled with the expense details. . . . . . . . . . . . . 85
+7.59 Expense detail panel. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 85
+7.60 Edit-expense dialog. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 86
+7.61 Expenses filtered to items needing attention, reflected in the URL state. . 86
+7.62 Expensesfilteredtoitemswithmissinginformation,reflectedintheURL
+state. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 87
+7.63 Settlement panel with the computed transfers. . . . . . . . . . . . . . . . 87
+7.64 Settlement panel in an action state. . . . . . . . . . . . . . . . . . . . . . . 88
+7.65 Reopen-settlement confirmation control after a settlement was finalized. 88
+7.66 Trip photo grid. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 89
+7.67 Photo lightbox viewer. . . . . . . . . . . . . . . . . . . . . . . . . . . . . 90
+7.68 Photo lightbox with the download action. . . . . . . . . . . . . . . . . . . 90
+7.69 Photo grid before opening the context menu. . . . . . . . . . . . . . . . . 91
+7.70 Photo context menu with download and select actions. . . . . . . . . . . . 91
+7.71 Photo selection toolbar after selecting photos. . . . . . . . . . . . . . . . 92
+7.72 Photo upload source selection. . . . . . . . . . . . . . . . . . . . . . . . . 92
+7.73 Photo upload review dialog before confirming. . . . . . . . . . . . . . . . 93
+7.74 Memory-video grid showing different render statuses. . . . . . . . . . . . 94
+7.75 Create-memory dialog in manual mode. . . . . . . . . . . . . . . . . . . . 94
+7.76 Create-memory dialog in automatic mode. . . . . . . . . . . . . . . . . . 95
+7.77 Create-memory dialog with photos selected in manual mode. . . . . . . . 95
+7.78 Memory-video actions menu. . . . . . . . . . . . . . . . . . . . . . . . . . 96
+7.79 Memory-video viewer. . . . . . . . . . . . . . . . . . . . . . . . . . . . . 96
+7.80 Actions menu for a ready memory video. . . . . . . . . . . . . . . . . . . 97
+Page viii / 1147.81 Share dialog for a memory video with the public-link controls. . . . . . . 97
+7.82 Public memory-video share page. . . . . . . . . . . . . . . . . . . . . . . 98
+7.83 Trip chat room. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 99
+7.84 Chat composer with a typed message. . . . . . . . . . . . . . . . . . . . . 99
+7.85 Chat showing the GoPlanAI mention suggestion. . . . . . . . . . . . . . . 100
+7.86 Chat AI prompt composer. . . . . . . . . . . . . . . . . . . . . . . . . . . 100
+7.87 Chat message hover actions. . . . . . . . . . . . . . . . . . . . . . . . . . 101
+7.88 Chat with AI-drafted action cards (a timeline activity and an expense)
+awaiting confirmation, alongside the reaction picker. . . . . . . . . . . . . 101
+7.89 Chat message selection and context menu. . . . . . . . . . . . . . . . . . 102
+7.90 Friends list. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 103
+7.91 Remove-friend confirmation modal. . . . . . . . . . . . . . . . . . . . . . 103
+7.92 Add-friend search in its empty state. . . . . . . . . . . . . . . . . . . . . . 104
+7.93 Add-friend search showing a matched user with a send-request action. . . 104
+7.94 Incoming friend requests with accept and decline actions. . . . . . . . . . 105
+7.95 Outgoing friend requests with a cancel action. . . . . . . . . . . . . . . . 105
+7.96 Profile overview with the personal-info and security sections. . . . . . . . 106
+7.97 Change-avatar dialog in its empty state. . . . . . . . . . . . . . . . . . . . 107
+7.98 Avatar cropper after choosing an image. . . . . . . . . . . . . . . . . . . . 107
+7.99 Profile with edited personal-information fields. . . . . . . . . . . . . . . . 108
+7.100Security section showing the password-strength indicator. . . . . . . . . . 108
+7.101Security section with the password-visibility toggle enabled. . . . . . . . 109
+7.102Settings page. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 109
+7.103Session sync: tab B showing the profile before logout. . . . . . . . . . . . 110
+7.104Session sync: tab A after logging out, redirected to the sign-in screen. . . 110
+7.105Session sync: tab B reflecting the logout after cross-tab synchronization. 111
+Page ix / 114List of Tables
+3.1 Functional requirements overview . . . . . . . . . . . . . . . . . . . . . . 9
+xChapter 1. Introduction
+1.1 Project Background
+Grouptripsarerarelyplannedbyonepersonfrombeginningtoend. Friends, fam-
+ilies, and teams usually discuss destinations in chat, compare possible dates, invite par-
+ticipants, create an itinerary, divide costs, and keep important memories after the trip. In
+practice, these activities are often scattered across messaging applications, spreadsheets,
+note-taking tools, payment screenshots, and photo albums. The result is duplicated in-
+formation, missing context, unclear responsibility, and difficulty checking the final cost
+of the trip.
+GoPlan is designed as a web application that centralizes those coordination tasks
+into a shared trip workspace. The system supports account onboarding, friend connec-
+tions, trip creation, member invitation, itinerary planning, expense tracking, settlement,
+notifications,realtimechat,AI-assistedplanning,photomanagement,andmemoryvideo
+generation. The project is implemented as a full-stack application using Next.js, Django
+REST Framework, PostgreSQL, Redis, WebSocket, and an AI provider integration.
+This final report documents the completed system as a software engineering cap-
+stone project. It presents the final scope, implemented architecture, design decisions,
+business modules, testing approach, limitations, and future development directions.
+1.2 Problem Statement
+The main problem addressed by this project is the lack of a single collaborative
+workspaceforgrouptravelplanning. Agroupneedstoanswerseveralquestionsthrough-
+out the lifecycle of a trip:
+• Who is participating in the trip, and who has permission to manage important
+information?
+• What is the itinerary for each day, including time, location, activity status, as-
+signee, and reminders?
+• Which expenses have been recorded, who should share each cost, who has con-
+tributed money, and what transfers are needed for settlement?
+1• How can trip members discuss plans in realtime while keeping the conversation
+connected to the trip data?
+• How can AI assist planning without directly changing critical trip data without
+user confirmation?
+• How can members preserve trip photos and generate shareable memory videos
+after or during the trip?
+Existing general-purpose tools can solve parts of these questions, but they do not
+provide a consistent data model, permission model, realtime flow, and trip-specific user
+experience. GoPlan addresses this by combining structured trip management with real-
+time collaboration and AI-assisted action drafting.
+1.3 Objectives
+The main objective of the project is to design and implement an AI-driven group
+trip planning and coordination system. The specific objectives are:
+• Build a maintainable full-stack system with clear boundaries between the browser
+UI,Next.jsBFFroutehandlers,DjangoRESTAPI,servicelayer,andPostgreSQL
+database.
+• Implement secure account and session management, including registration, login,
+logout, email verification, profile setup, password reset, password change, avatar
+update, access-token refresh, and current-user loading.
+• Supportsocialcoordinationthroughfriendsearch,friendrequests,friendlists,trip
+invitations, trip membership, and role-based trip management.
+• Providetripplanningfeaturesincludingtripmetadata, destinations, coverimages,
+itinerary sections, activities, custom activity types, activity statuses, assignees,
+locations, and reminders.
+• Implement expense management with participants, contributions, money nor-
+malization, settlement calculation, transfer tracking, finalization, reopening, and
+ledger entries.
+• Add realtime collaboration through WebSocket-based notification delivery and
+trip chat subscription.
+Page 2 / 114• Integrate AI assistance through chat mentions and action drafts that require user
+confirmation before modifying timeline, expense, or settlement data.
+• Implement media and memories features, including protected photo uploads,
+thumbnail/medium variants, bulk download, memory video rendering, private
+assets, and public share links.
+• Provide a reasonable testing foundation across backend services/APIs and fron-
+tend route handlers/components.
+1.4 Scope
+The implemented scope covers the core product flow from account creation to trip
+planning, collaborative communication, expense settlement, and memory sharing. The
+project does not aim to replace every travel-related service such as booking platforms,
+payment gateways, map navigation, or social media sharing. The focus is on coordina-
+tion and decision support for group trips.
+Page 3 / 114Area Included scope
+Account and profile Registration, login, logout, refresh, email verification, profile setup, profile up-
+date, avatar upload, password reset, and password change.
+Social graph Friend search by identity tag, friend request lifecycle, friend list, and friend re-
+moval.
+Trip workspace Trip dashboard, trip creation, trip detail, trip edit, member list, invitations, role
+management, status transitions, and leave/remove flows.
+Timeline Day sections, activities, time modes, custom activity types, structured/manual
+locations, assignees, statuses, reminders, and HERE-powered location search
+through BFF routes.
+Expenses Expense CRUD, participants, contribution updates, dashboard balances, settle-
+ment calculation, transfer actions, finalization, reopening, and ledger recording.
+Realtime and chat WebSocket tickets, authenticated realtime connection, notification push, trip chat
+subscription, message history, reactions, delete/hide behavior, and AI mention
+trigger.
+AI assistance DeepSeek-backed tool-calling agent, trip context building, AI interactions, ac-
+tion drafts, missing-field handling, confirmation/cancellation, and execution of
+approved actions.
+Media and memo-
+ries
+Trip cover upload, trip photo upload, protected photo variants, photo download,
+memory video creation, render queue, private video/poster assets, and public
+memory share page.
+1.5 Methodology
+The project follows an iterative implementation approach. Each major business
+module is developed through the same pattern: analyze the business rules, model persis-
+tent data, implement backend services, expose REST APIs, create BFF route handlers,
+integrate the frontend UI, and add focused regression tests. Security-sensitive features
+such as authentication, WebSocket access, file upload, and AI action execution are han-
+dled with explicit validation and permission checks.
+ThesystemismodelledwithstandardUMLviews—usecase,class,andsequence
+diagrams — that reflect the implemented system across all major modules, including au-
+thentication, friends, trips, timeline, expenses, realtimechat, AIassistance, notifications,
+photos, and memory videos.
+Page 4 / 1141.6 Report Structure
+The rest of this report is organized as follows:
+• Chapter 2 presents the background technologies and architectural concepts.
+• Chapter 3 analyzes system requirements and actors.
+• Chapter 4 describes the system design and UML models.
+• Chapter 5 explains the implementation of the main modules.
+• Chapter 6 presents the testing and evaluation approach.
+• Chapter7demonstratestheimplementedapplicationthroughanannotatedscreen-
+shot walkthrough.
+• Chapter 8 concludes the project and proposes future development.
+Page 5 / 114Chapter 2. Background and Technology Founda-
+tion
+2.1 Group Trip Planning Systems
+A group trip planning system must combine social coordination, schedule man-
+agement, expense accounting, and communication. Unlike a personal travel planner, the
+system must handle multiple users acting on shared data. This introduces business rules
+for invitations, member roles, visibility, edit permission, concurrency, auditability, and
+notification delivery.
+GoPlan treats a trip as the central workspace. Most business objects belong to
+a trip: members, invitations, timeline sections, activities, expenses, settlements, chat
+messages,photos,andmemoryvideos. Thismakesthepermissionmodeleasiertoreason
+about because access can be checked through active trip membership.
+2.2 Backend-for-Frontend Architecture
+The project uses a Backend-for-Frontend architecture, abbreviated as BFF. A BFF
+is a server-side layer created specifically for a frontend application. In this project, the
+browsercallsNext.jsRouteHandlersfirst,andthoseroutehandlerscalltheDjangoREST
+API.
+Browser → Next.js Route Handlers → Django REST API → PostgreSQL / Redis
+This design is important for authentication and API consistency. The browser
+does not call Django directly for HTTP APIs. Route handlers can forward access tokens,
+manage refresh-token cookies, normalize response shapes, proxy protected assets, and
+hide server-only API keys such as the HERE location search key.
+2.3 REST API and Service Layer
+The backend uses Django REST Framework for HTTP APIs. Views are kept thin:
+they parse request data, call serializers for validation when needed, delegate business
+6logic to services, and return structured responses. The service layer contains the main
+business rules such as trip creation, invitation acceptance, timeline mutation, expense
+settlement, chat message sending, AI draft execution, and memory video creation.
+This separation reduces duplication and makes backend tests more focused. Busi-
+ness behavior can be tested at the service level, while API tests verify authentication,
+permission, throttling, and response contracts.
+2.4 JWT Session Model
+The system uses JSON Web Tokens, abbreviated as JWT, for authenticated API
+access. AJWTisasignedtokenthatallowsthebackendtoverifyauser’sidentitywithout
+storing a traditional server-side session for every request. In GoPlan, the access token is
+short-lived and the refresh token is longer-lived.
+The security rule is that the refresh token is stored only in an HttpOnly cookie. An
+HttpOnly cookie cannot be read by browser-side JavaScript, which reduces the damage
+of cross-site scripting attacks. The access token is kept in memory on the frontend and
+is not stored in localStorage or sessionStorage. When the access token expires, the BFF
+refresh route uses the refresh cookie to obtain a new access token.
+2.5 Realtime Communication with WebSocket
+The project uses WebSocket over ASGI for realtime features. WebSocket allows
+a persistent connection between the browser and backend so that the server can push
+notifications and chat events without requiring the browser to continuously poll.
+The current realtime topology uses a direct browser-to-Django WebSocket con-
+nectionat/ws/realtime. ThisdoesnotchangetheHTTP/BFFrulebecausenormalHTTP
+API calls still go through Next.js Route Handlers. WebSocket authentication is handled
+with short-lived WebSocket tickets issued through the BFF. The ticket is used during the
+WebSocket handshake, and the backend validates the ticket through ASGI middleware
+before accepting the connection.
+The realtime consumer is multiplexed, meaning notification events and trip chat
+subscriptions share one WebSocket connection. This reduces connection overhead and
+centralizes session validation.
+Page 7 / 1142.6 AI-Assisted Planning
+The AI feature is integrated into trip chat. A user can mention GoPlanAI in a trip
+conversation and request help with planning actions such as creating a timeline activity,
+updating an expense, or finalizing settlement. The AI provider returns tool calls, and the
+backend converts those tool calls into action drafts.
+The action-draft design is a safety boundary. The AI does not directly mutate
+important trip data. Instead, it creates a draft with a summary, display payload, missing
+fieldsifany, requiredconfirmationtype, andexpirytime. Auserwiththecorrectpermis-
+sion can then confirm, edit, cancel, or complete missing information. Only confirmed
+drafts are executed by backend service logic.
+2.7 Media Processing and Memory Video Rendering
+The project includes media features for trip covers, photos, and memory videos.
+Photo uploads are validated by file type, size, pixel count, decoded memory budget, and
+allowed image formats. The system generates derivative assets such as thumbnails and
+medium-size images to improve frontend performance and reduce unnecessary transfer
+size.
+Memory videos are rendered from trip photos. The backend stores video render
+state, selected photos, source mode, music key, generated video file, poster file, and
+public sharing information. Long-running render work is queued through Celery and
+Redis so the HTTP request can return quickly while the render process continues in the
+background.
+Page 8 / 114Chapter 3. Requirement Analysis
+3.1 Actors
+The system includes the following main actors:
+• Guest: A visitor who has not logged in. This actor can register, log in, verify
+email, and request password reset.
+• AuthenticatedUser: Auserwhohasloggedinandcompletedtherequiredprofile
+flow. This actor can manage profile data, friends, notifications, and trip partici-
+pation.
+• Trip Member: An authenticated user who is an active member of a trip. This
+actor can view the trip workspace, participate in chat, manage allowed activities,
+add expenses, upload photos, and create memories.
+• Trip Captain: A trip member with elevated trip management permission. This
+actor can edit trip information, invite members, remove members, control trip
+status, and confirm captain-managed AI drafts.
+• AI Assistant: A system actor represented in chat messages. It reads trip context
+and creates action drafts through backend-controlled tools.
+• ExternalServices: Emailserviceforverification/resetemail,HERElocationser-
+vice for location search, DeepSeek AI provider for AI completions, Redis for
+channel layer and task queue, and FFmpeg/Pillow-based media processing tools
+for image/video work.
+3.2 Functional Requirements
+Table 3.1: Functional requirements overview
+Code Module Requirement
+FR-01 Authentication The system shall allow users to register, log in, log out, refresh sessions,
+verify email, reset password, change password, and retrieve the current user.
+FR-02 Profile The system shall require profile setup before full application access and
+shall allow users to update personal information and avatar.
+9Code Module Requirement
+FR-03 Friends The system shall allow users to search by identity tag, send friend requests,
+accept/decline/cancel requests, list friends, and remove friends.
+FR-04 Trips The system shall allow users to create, view, update, start, complete, cancel,
+leave, and manage trips according to membership and role rules.
+FR-05 Invitations The system shall allow trip captains to invite eligible friends and allow
+invitees to accept or decline invitations.
+FR-06 Timeline The system shall allow trip members to manage timeline sections, activities,
+custom activity types, activity status, time mode, assignee, location, notes,
+and reminders.
+FR-07 Expenses The system shall allow trip members to create expenses, assign participants,
+record contributions, update/delete expenses, and inspect expense detail.
+FR-08 Settlement The system shall calculate balances, generate transfer instructions, final-
+ize settlement, reopen settlement, mark transfer sent, and confirm transfer
+received.
+FR-09 Notifications The system shall store notifications, show unread counts, mark notifications
+as read, and push realtime notification events.
+FR-10 Chat The system shall provide trip chat history, sending, realtime delivery, reac-
+tions, delete-for-everyone within a time window, and hide-for-me behavior.
+FR-11 AI Assistance The system shall allow users to mention GoPlanAI in chat, create AI inter-
+actions, generate action drafts, require confirmation, and execute confirmed
+drafts through backend services.
+FR-12 Photos The system shall allow trip members to upload, list, view, delete, and down-
+load trip photos with protected asset delivery.
+FR-13 Memories The system shall allow trip members to generate memory videos from pho-
+tos, track render status, download finished videos, and optionally share
+ready memories through public links.
+3.3 Non-Functional Requirements
+• Security: Sensitiveendpointsmustuseauthentication,permissionchecks,scoped
+throttling,andnon-enumeratingerrorbehaviorwhereapplicable. Passwordsmust
+be stored through Django’s password hashing system.
+• Maintainability: The backend must keep business logic in services rather than
+heavy views. The frontend must keep feature-specific code in feature modules
+and call Django through BFF routes.
+• Reliability: Money calculations, settlement, timeline mutation, membership
+changes, and AI action execution must use transactional service logic where
+consistency matters.
+Page 10 / 114• Realtime responsiveness: Notifications and chat events should be pushed over
+WebSocket when users are connected, while HTTP APIs remain available for
+history and recovery.
+• Media safety: Uploaded images must be validated for type, dimensions, total
+upload size, and decoded memory budget before storage and processing.
+• Usability: The trip workspace should expose major planning tasks through clear
+tabs: overview, timeline, expenses, members, chat, photos, and memories.
+• Testability: Important service rules, API contracts, BFF handlers, and frontend
+UI behavior should be covered with focused tests.
+3.4 Use Case Model
+The use case model is organised by functional domain so that each diagram stays
+focused and readable. The first diagram presents the actor hierarchy; the remaining di-
+agrams cover one domain each: account and authentication, friends, trip management,
+timelineplanning, expensesandsettlement, realtimechat, AIassistance, andphotoswith
+memory videos. Across all domains, protected use cases share the same cross-cutting
+guards — authentication and profile completion, active trip membership, captain role,
+and trip-state (non-terminal) checks — which correspond to «include» relationships in
+UML. To keep each domain diagram readable, these recurring guards are described once
+here rather than drawn as repeated «include» edges on every use case; the per-domain
+diagrams instead show only the domain-specific «include» and «extend» relationships
+(for example, notification dispatch, settlement plan building, AI context building, and
+the GoPlanAI mention extension).
+Page 11 / 114GoPlan — Actors Overview
+Human actors
+Guest
+Unverified User
+Incomplete User
+User
+Captain Member Assignee
+Captain / Member = trip roles • Assignee = activity role
+System actors
+Next.js BFF
+«system»
+Realtime Gateway
+«system»
+GoPlanAI Agent
+«system»
+Memory Render Worker
+«system»
+Reminder Scheduler
+«system»
+External actors
+DeepSeek API
+«external»
+HERE Maps API
+«external»
+SMTP
+«external»
+ffmpeg
+«external»
+Figure 3.1: Actor hierarchy: account and profile states, and per-trip roles.
+Page 12 / 114Account & Authentication
+Guest
+Unverified User
+Incomplete User
+User
+Register account
+Login
+Request password reset
+Confirm password reset
+Verify email
+Resend verification email
+Setup profile
+Logout
+Update profile / avatar
+Change password
+Send verification email
+Refresh session
+SMTP
+«external»
+«include»
+«include»
+«extend»
+(token expired)
+Figure 3.2: Account and authentication use cases.
+Page 13 / 114Friends
+User
+Search user by tag
+Send friend request
+Accept friend request
+Decline friend request
+Cancel friend request
+View friends list
+View pending requests
+Remove friend
+Notify involved user
+Notification Service
+«system»
+«include»
+«include»
+Figure 3.3: Friends and social-graph use cases.
+Page 14 / 114Trip, Members & Lifecycle
+User
+Captain
+Member
+Invitee
+Create trip
+View trip dashboard
+Update trip info
+Invite member
+Remove member
+Start trip
+Complete trip
+Cancel trip
+View trip detail
+Leave trip
+Accept invitation
+Decline invitation
+Notify trip members
+Notification Service
+«system»
+«include»
+«include»
+«include»
+Figure 3.4: Trip management: creation, membership, and lifecycle.
+Page 15 / 114Timeline Planning
+Member
+Captain
+Assignee
+Reminder Scheduler
+View timeline
+Manage day sections
+Create activity
+Update activity
+Delete activity
+Manage activity types
+Set activity reminders
+Change activity status
+Dispatch due reminders Notify members
+Notification Service
+«system»
+«include»
+Figure 3.5: Timeline planning and activity scheduling.
+Page 16 / 114Expenses & Settlement
+Member
+Captain
+Payer
+Recipient
+Create expense
+View expense dashboard
+Update expense
+Delete expense
+Set contribution
+Finalize settlement
+Reopen settlement
+Mark transfer sent
+Confirm transfer received
+Build settlement plan
+Lock all expenses
+«include»
+«include»
+Figure 3.6: Expenses and settlement use cases.
+Page 17 / 114Chat, Realtime & Notifications
+User
+Member
+Realtime Gateway
+«system»
+Open realtime connection
+View notifications
+Mark notification read
+Subscribe to trip chat
+View chat history
+Send chat message
+React to message
+Hide message (for me)
+Delete message (everyone)
+Invoke GoPlanAI
+detailed in GoPlanAI diagram
+«extend»
+(on @GoPlanAI)
+Figure 3.7: Realtime chat use cases.
+Page 18 / 114GoPlanAI & Action Drafts
+Member
+Captain
+Invoke GoPlanAI
+View action draft
+Provide missing info
+Cancel action draft
+Confirm action draft
+Generate response & drafts
+Build trip context
+Execute domain action
+timeline · expense · settlement
+GoPlanAI Agent
+«system»
+DeepSeek API
+«external»
+«include»
+«include»
+«include»
+Figure 3.8: GoPlanAI assistance and two-step action-draft confirmation.
+Page 19 / 114Photos & Memory Videos
+Member
+Guest
+Upload photos
+View photos
+Download photos
+Delete photos
+Create memory video
+View memory video
+Share memory (public link)
+View public memory share
+Render memory video Memory Render Worker
+«system»
+ffmpeg
+«external»
+«include»
+Figure 3.9: Photos and memory-video use cases.
+Page 20 / 114Chapter 4. System Design
+4.1 Architecture Overview
+GoPlan is implemented as a layered full-stack system. The browser renders the
+user interface with Next.js and React. HTTP requests are sent to Next.js Route Handlers,
+which form the BFF layer. The BFF then calls the Django REST API. Django services
+handlebusinesslogicandpersistdatainPostgreSQL.RedissupportsWebSocketchannel
+delivery and Celery task queues.
+Next.js UI → BFF Route Handlers → DRF API Views → Services → Models / PostgreSQL
+For realtime communication, the browser opens a WebSocket connection to
+Django ASGI. Before opening the connection, the frontend obtains a short-lived Web-
+Socket ticket through a BFF route. The WebSocket middleware validates that ticket and
+attaches the authenticated user to the connection scope.
+4.2 Frontend Design
+The frontend uses Next.js App Router. User-facing pages are organized into
+authentication routes, shell routes, trip workspace routes, and public memory-sharing
+routes. Important pages include login, registration, profile setup, dashboard, friends,
+trip creation, trip overview, timeline, expenses, members, chat, photos, memories, and
+public memory share view.
+Feature code is grouped under frontend/features. Each feature generally sepa-
+rates domain types, infrastructure API clients, application hooks/state, and presentation
+components. This structure helps keep UI components focused on rendering and inter-
+action while API calls and domain transformations remain reusable.
+The BFF layer is implemented under frontend/app/api. The repository currently
+contains route handlers for authentication, friends, invitations, notifications, realtime
+tickets, trips, timeline, expenses, settlement, chat, AI drafts, photos, memories, public
+memory assets, media upload, and location search.
+214.3 Backend Design
+The backend is a Django project using Django REST Framework and ASGI. The
+main local apps are:
+• accounts: custom user model, authentication, email verification, profile setup,
+avatar, password flows, throttling, and JWT authentication.
+• friends: friend request lifecycle, friendship persistence, identity-tag search, val-
+idators, permissions, and services.
+• trips: trip model, trip members, invitations, trip status transitions, timeline sec-
+tions, custom types, activities, reminders, and location data.
+• expenses: expenses, participants, contributions, settlement, transfers, and ledger
+entries.
+• notifications: notificationpersistence,unreadcounts,mark-as-readbehavior,and
+service-triggered realtime events.
+• realtime: WebSocket tickets, middleware, routing, and the multiplexed realtime
+consumer.
+• chat: trip chat messages, reactions, hidden messages, deletion behavior, AI men-
+tion parsing, and WebSocket push helpers.
+• ai: AI interactions, DeepSeek provider integration, tool-calling agent, context
+building, action drafts, draft execution, and background tasks.
+• media: trip cover upload, public media serving, and image validation helpers.
+• memories: trip photos, photo variants, memory video rendering, music catalog,
+private/public assets, and share links.
+4.4 Authentication and Authorization Design
+Authentication uses a custom user model with email as the login identifier. User
+profile completion is separate from account creation so the system can guide users
+through email verification and identity-tag setup before allowing full collaboration
+features.
+Page 22 / 114Authorization is primarily based on active trip membership and role. Many
+trip-specific operations first verify that the actor is an active member of the target trip.
+Captain-only operations require the actor to have the CAPTAIN role. This keeps the
+permission model consistent across trips, timeline, expenses, chat, photos, memories,
+and AI action drafts.
+Session security uses short-lived access tokens and rotating refresh tokens. The
+refresh token is stored in an HttpOnly cookie through the BFF. The access token is
+kept in memory and forwarded by BFF routes to Django. The system also stores an
+auth_version on the user model so already-open WebSocket sessions can be invalidated
+when the user’s authentication state changes.
+4.5 Domain Model Overview
+The main domain starts with the User model. The rest of the domain can be
+grouped as follows:
+• Friend relationships: FriendRequest and Friendship.
+• Trip membership: Trip, TripMember, and TripInvitation.
+• Timeline planning: TimelineSection, TimelineCustomType, TimelineActivity,
+and TimelineActivityReminder.
+• Expenses and settlement: Expense, ExpenseParticipant, ExpenseContribu-
+tion, TripSettlement, SettlementTransfer, and ExpenseLedgerEntry.
+• Collaboration: Notification, WebSocketTicket, ChatMessage, ChatMessage-
+HiddenForUser, and MessageReaction.
+• AI and memories: AIInteraction, AIActionDraft, TripPhoto, and TripMemo-
+ryVideo.
+4.6 Class Model
+The class model is presented per domain cluster, mirroring the backend Django
+applications. Each class lists its UML-typed attributes and key operations; enumerations
+are drawn as separate «enumeration» boxes and referenced by type rather than inlined.
+Ownership uses composition (a filled diamond at the aggregate) wherever the backend
+Page 23 / 114removestheparttogetherwithitsaggregate(on_delete=CASCADE);cross-entityrefer-
+ences to User are shown as UserRef-typed attributes instead of association lines, which
+keeps each diagram free of a central “user hub” and its crossing edges.
+Page 24 / 114User
++ id : UUID
++ email : String
++ first_name : String
++ last_name : String
++ display_name : String
++ identify_name : String [0..1]
++ identify_code : String [0..1]
++ is_profile_completed : Boolean
++ profile_completed_at : DateTime [0..1]
++ email_verified : Boolean
++ email_verified_at : DateTime [0..1]
++ auth_version : Integer
++ avatar : Image [0..1]
++ is_active : Boolean
++ is_staff : Boolean
++ identify_tag() : String
++ requires_email_verification() : Boolean
++ requires_profile_setup() : Boolean
++ set_password(raw) : void
+EmailVerificationToken
++ token_hash : String
++ created_at : DateTime
++ used_at : DateTime [0..1]
++ is_used() : Boolean
+WebSocketTicket
++ id : UUID
++ auth_version : Integer
++ scope : String
++ expires_at : DateTime
++ used_at : DateTime [0..1]
++ created_at : DateTime
++ is_expired() : Boolean
++ is_used() : Boolean
+1 0..*
+issues
+1 0..*
+issues
+Figure 4.1: Class model: identity, authentication, and realtime ticket.
+Page 25 / 114FriendRequest
++ id : UUID
++ sender : UserRef
++ receiver : UserRef
++ status : FriendRequestStatus
++ resolved_at : DateTime [0..1]
++ created_at : DateTime
++ updated_at : DateTime
++ accept() : Friendship
++ decline() : void
++ cancel() : void
+Friendship
++ id : UUID
++ user_low : UserRef
++ user_high : UserRef
++ created_at : DateTime
+«enumeration»
+FriendRequestStatus
+PENDING
+ACCEPTED
+DECLINED
+CANCELLED
+creates on accept
+Figure 4.2: Class model: friends and social graph.
+Page 26 / 114Trip
++ id : UUID
++ name : String
++ destination : String
++ start_date : Date
++ end_date : Date
++ description : Text
++ destination_provider : String
++ destination_lat : Decimal [0..1]
++ destination_lng : Decimal [0..1]
++ destination_country_code : String
++ cover_image_url : String
++ currency_code : String
++ timezone : String
++ budget_estimate : Decimal [0..1]
++ status : TripStatus
++ created_by : UserRef
++ cancelled_at : DateTime [0..1]
++ created_at : DateTime
++ updated_at : DateTime
++ start_trip() : void
++ complete_trip() : void
++ cancel_trip() : void
+TripMember
++ id : UUID
++ user : UserRef
++ role : TripRole
++ status : MemberStatus
++ joined_at : DateTime
++ left_at : DateTime [0..1]
+TripInvitation
++ id : UUID
++ inviter : UserRef
++ invitee : UserRef
++ status : InvitationStatus
++ created_at : DateTime
++ responded_at : DateTime [0..1]
+«enumeration»
+TripStatus
+PLANNING
+ONGOING
+COMPLETED
+CANCELLED
+«enumeration»
+TripRole
+CAPTAIN
+MEMBER
+«enumeration»
+MemberStatus
+ACTIVE
+LEFT
+REMOVED
+«enumeration»
+InvitationStatus
+PENDING
+ACCEPTED
+DECLINED
+CANCELLED
+1 1..*
+has
+1 0..*
+has
+Figure 4.3: Class model: trip core, members, and invitations.
+Page 27 / 114«reference»
+Trip
++ id : UUID
++ start_date : Date
++ end_date : Date
++ timezone : String
++ status : TripStatus
+TimelineSection
++ id : UUID
++ section_date : Date
++ label : String
++ is_label_custom : Boolean
++ position : Integer
++ created_by : UserRef [0..1]
++ updated_by : UserRef [0..1]
++ create_day(...) : TimelineSection
++ patch_section(...) : TimelineSection
++ delete_empty() : void
+TimelineActivity
++ id : UUID
++ title : String
++ time_mode : TimelineActivityTimeMode
++ start_time : Time [0..1]
++ end_time : Time [0..1]
++ status : TimelineActivityStatus
++ system_type : TimelineSystemType [0..1]
++ custom_type : TimelineCustomType [0..1]
++ position : Integer
++ assignee_scope : TimelineActivityAssigneeScope
++ assignee_user : UserRef [0..1]
++ location_mode : TimelineLocationMode
++ location_label : String
++ note : Text
++ create_activity(...) : TimelineActivity
++ patch_activity(...) : TimelineActivity
++ update_status(...) : TimelineActivity
++ delete_activity() : void
+TimelineActivityReminder
++ id : UUID
++ offset_minutes_before : Integer
++ due_at_utc : DateTime
++ sent_at : DateTime [0..1]
++ created_at : DateTime
++ replace_unsent(...) : void
++ dispatch_due(now) : Integer
+TimelineCustomType
++ id : UUID
++ name : String
++ normalized_name : String
++ color_token : String
++ icon_key : String
++ is_active : Boolean
++ create_type(...) : TimelineCustomType
++ patch_type(...) : TimelineCustomType
++ delete_unused() : void
+«enumeration»
+TimelineActivityTimeMode
+ALL_DAY
+FLEXIBLE
+AT_TIME
+TIME_RANGE
+«enumeration»
+TimelineActivityStatus
+UPCOMING
+IN_PROGRESS
+DONE
+CANCELLED
+«enumeration»
+TimelineActivityAssigneeScope
+NONE
+USER
+EVERYONE
+«enumeration»
+TimelineLocationMode
+MANUAL
+STRUCTURED
+«enumeration»
+TimelineSystemType
+TRANSPORTATION
+ACCOMMODATION
+FOOD
+SIGHTSEEING
+SHOPPING
+CHECKIN_OUT
+FREE_TIME
+OTHER
+1
+0..*
+1
+0..*
+1
+0..*
+1
+0..*
+has
+0..* 0..1 custom_type
+Figure 4.4: Class model: timeline planning and activities.
+Page 28 / 114TripSettlement
++ id : UUID
++ status : SettlementStatus
++ finalized_by : UserRef [0..1]
++ finalized_at : DateTime [0..1]
++ reopened_by : UserRef [0..1]
++ reopened_at : DateTime [0..1]
++ created_at : DateTime
++ finalize() : void
++ reopen() : void
+Expense
++ id : UUID
++ title : String
++ description : Text
++ total_amount : Decimal
++ currency_code : String
++ collector : UserRef
++ created_by : UserRef
++ locked_at : DateTime [0..1]
++ created_at : DateTime
++ updated_at : DateTime
+ExpenseLedgerEntry
++ id : UUID
++ expense : ExpenseRef [0..1]
++ actor : UserRef
++ event_type : ExpenseLedgerEventType
++ payload : JSON
++ created_at : DateTime
+«reference»
+Trip
++ id : UUID
++ currency_code : String
++ status : TripStatus
+ExpenseParticipant
++ id : UUID
++ user : UserRef
++ display_name_snapshot : String
++ identify_tag_snapshot : String [0..1]
++ share_amount : Decimal
++ created_at : DateTime
+ExpenseContribution
++ id : UUID
++ user : UserRef
++ amount : Decimal
++ updated_by : UserRef
++ updated_at : DateTime
+SettlementTransfer
++ id : UUID
++ payer : UserRef
++ recipient : UserRef
++ amount : Decimal
++ payer_marked_sent_at : DateTime [0..1]
++ recipient_confirmed_at : DateTime [0..1]
++ created_at : DateTime
+«enumeration»
+SettlementStatus
+FINALIZED
+REOPENED
+«enumeration»
+ExpenseLedgerEventType
+EXPENSE_CREATED
+EXPENSE_UPDATED
+EXPENSE_DELETED
+CONTRIBUTION_SET
+CONTRIBUTION_REMOVED
+SETTLEMENT_FINALIZED
+SETTLEMENT_REOPENED
+TRANSFER_MARKED_SENT
+TRANSFER_CONFIRMED_RECEIVED
+1 0..*
+1
+0..*
+1
+0..*
+1 1..*
+1
+0..*
+1 0..*
+Figure 4.5: Class model: expenses and settlement.
+Page 29 / 114ChatMessage
++ id : UUID
++ sender : UserRef [0..1]
++ sender_display_name_snapshot : String
++ sender_identify_tag_snapshot : String [0..1]
++ sender_kind : ChatMessageSenderKind
++ ai_status : ChatMessageAIStatus [0..1]
++ content : Text
++ client_message_id : UUID [0..1]
++ created_at : DateTime
++ deleted_for_everyone_at : DateTime [0..1]
++ deleted_for_everyone_by : UserRef [0..1]
+AIInteraction
++ id : UUID
++ requested_by : UserRef [0..1]
++ prompt_message : ChatMessageRef
++ response_message : ChatMessageRef [0..1]
++ status : AIInteractionStatus
++ provider : String
++ model : String
++ prompt : Text
++ error_code : String [0..1]
++ total_tokens : Integer [0..1]
++ latency_ms : Integer [0..1]
++ tool_calls_count : Integer
++ attempt_count : Integer
++ lock_expires_at : DateTime
++ created_at : DateTime
+«reference»
+Trip
++ id : UUID
+MessageReaction
++ id : UUID
++ user : UserRef
++ emoji : String
++ created_at : DateTime
+ChatMessageHiddenForUser
++ id : UUID
++ user : UserRef
++ hidden_at : DateTime
+AIActionDraft
++ id : UUID
++ requested_by : UserRef [0..1]
++ action_type : String
++ status : AIActionDraftStatus
++ payload : JSON
++ display : JSON
++ summary : String
++ missing_fields : JSON
++ preconditions : JSON
++ required_confirmation : String
++ result : JSON
++ response_message : ChatMessageRef [0..1]
++ expires_at : DateTime
++ confirmed_by : UserRef [0..1]
++ cancelled_by : UserRef [0..1]
++ created_at : DateTime
++ confirm() : void
++ cancel() : void
+«enumeration»
+ChatMessageSenderKind
+USER
+AI
+«enumeration»
+ChatMessageAIStatus
+SUCCESS
+ERROR
+«enumeration»
+AIInteractionStatus
+PENDING
+RUNNING
+SUCCEEDED
+FAILED
+«enumeration»
+AIActionDraftStatus
+NEEDS_INFO
+READY
+CONFIRMED
+CANCELLED
+EXPIRED
+FAILED
+1
+0..*
+1
+0..*
+1 0..*
+1
+0..*
+1 0..*
+produces
+Figure 4.6: Class model: realtime chat and AI action drafts.
+Page 30 / 114«reference»
+User
++ id : UUID
+Notification
++ id : UUID
++ recipient : UserRef
++ actor : UserRef [0..1]
++ type : NotificationType
++ payload : JSON
++ read_at : DateTime [0..1]
++ created_at : DateTime
+«reference»
+Trip
++ id : UUID
+TripPhoto
++ id : UUID
++ uploaded_by : UserRef [0..1]
++ uploaded_by_display_name_snapshot : String
++ uploaded_by_identify_tag_snapshot : String [0..1]
++ original_filename : String
++ original_width : Integer
++ original_height : Integer
++ thumbnail : Image
++ medium : Image
++ thumbnail_width : Integer
++ thumbnail_height : Integer
++ medium_width : Integer
++ medium_height : Integer
++ created_at : DateTime
+TripMemoryVideo
++ id : UUID
++ created_by : UserRef [0..1]
++ created_by_display_name_snapshot : String
++ created_by_identify_tag_snapshot : String [0..1]
++ title : String
++ status : TripMemoryVideoStatus
++ source_mode : TripMemoryVideoSourceMode
++ source_photo_ids : JSON
++ source_photo_count : Integer
++ music_key : String
++ video_file : File [0..1]
++ poster_file : File [0..1]
++ duration_seconds : Integer [0..1]
++ render_error_code : String [0..1]
++ render_recovery_count : Integer
++ share_enabled : Boolean
++ share_slug : String [0..1]
++ share_created_at : DateTime [0..1]
++ render_started_at : DateTime [0..1]
++ render_finished_at : DateTime [0..1]
++ created_at : DateTime
++ enable_share() : void
++ disable_share() : void
+«enumeration»
+NotificationType
+FRIEND_REQUEST
+FRIEND_ACCEPTED
+TRIP_INVITATION
+TRIP_INVITATION_ACCEPTED
+TRIP_INVITATION_DECLINED
+TRIP_CANCELLED
+TRIP_MEMBER_REMOVED
+TRIP_TIMELINE_REMINDER
+«enumeration»
+TripMemoryVideoStatus
+queued
+rendering
+ready
+failed
+«enumeration»
+TripMemoryVideoSourceMode
+manual
+auto
+1 0..*
+recipient
+1 0..*
+has
+0..* has
+1
+Figure 4.7: Class model: notifications, photos, and memory videos.
+Page 31 / 1144.7 Realtime Design
+Realtime behavior is implemented through Django Channels and Redis chan-
+nel layers. The browser connects to /ws/realtime with the expected subprotocol.
+The connection is authenticated by a short-lived WebSocket ticket issued through
+/api/realtime/ws-ticket.
+After connection, the consumer joins a user-specific notification group. For chat,
+the client sends a chat.subscribe message with a trip identifier. The consumer checks
+that the current user can access that trip chat before joining the trip chat group. This
+prevents users from subscribing to trips where they are not active members.
+The same WebSocket connection can receive notification events, chat messages,
+message deletion events, and chat membership kick events. The consumer also checks
+whether an open WebSocket session remains valid before processing messages or for-
+warding events.
+4.8 AI Action Draft Design
+The AI feature is built around two persistent models: AIInteraction and AIAc-
+tionDraft. An AIInteraction records one AI request with provider, model, status, token
+usage, latency, errors, and task information. An AIActionDraft records a proposed ac-
+tion generated by the AI.
+Supported AI draft action types include:
+• Timeline activity create, update, delete, and status update.
+• Expense create, update, delete, and contribution update.
+• Settlement finalization, reopening, transfer marked sent, and transfer confirmed
+received.
+Each action type has a required confirmation category. Captain-managed actions
+requiretripcaptainconfirmation. Activitystatusupdatesrequireconfirmationfromarel-
+evant activity actor. Transfer actions require payer or recipient confirmation depending
+on the operation. This design allows the AI to assist planning while preserving explicit
+user control over data mutations.
+Page 32 / 1144.9 Interaction Model
+The interaction model captures the runtime behaviour of the main flows as UML
+sequence diagrams. Each diagram shows the participating lifelines, synchronous calls
+(solid arrows) and returns (dashed arrows), and combined fragments (alt, opt, loop, ref)
+for conditional and repeated behaviour. Internal participants such as the Next.js BFF,
+the realtime consumer, Celery workers, and the reminder scheduler appear here as life-
+lines, complementing the use-case view where only external actors are shown. Two
+cross-cutting invariants recur across the diagrams: the BFF holds the refresh token in
+an httpOnly cookie and transparently refreshes expired access tokens, and the AI never
+mutates domain data until a user confirms the corresponding action draft.
+Page 33 / 114Browser
+LoginForm / AuthContext
+Next.js BFF
+route handler
+Django
+LoginAPIView
+Auth/Token
+Service
+CookieStore
+httpOnly
+Protected
+Django API
+POST /api/auth/login
+forward {email, password}
+authenticate(email, password)
+user, requires_email_verification
+alt [email verified]
+build_auth_response(user)
+access + refresh (auth_version)
+user + tokens
+Set-Cookie refresh (httpOnly)
+user + access token
+keep access in memory
+[not verified]
+403 EMAIL_NOT_VERIFIED
+prompt email verification
+ref protected request with expired access token
+GET protected resource
+request + Bearer access
+401 Unauthorized
+read refresh cookie
+POST /api/auth/refresh (single-flight)
+new access + refresh / invalid
+alt [refresh valid]
+retry original request
+200 OK + X-Access-Token
+[invalid / expired]
+clear refresh cookie
+session expired
+Figure 4.8: SD-01 — Login and protected-request token refresh.
+Page 34 / 114Browser
+WebSocketManager
+Next.js BFF
+/ws-ticket
+Django
+Realtime API
+WS Auth
+Middleware
+Realtime
+Consumer
+Redis
+Channel Layer
+GET /api/realtime/ws-ticket
+create ws ticket
+persist WebSocketTicket(jti, auth_version, scope, expires_at)
+ticket JWT (jti = ticket.id)
+ticket JWT
+open WS (goplan.realtime.v1 + ticket)
+verify JWT + DB ticket: used_at, auth_version
+alt [ticket valid]
+mark used_at = now; scope.user = ticket.user
+accept connection
+group_add notifications_{user_id}
+connection accepted
+[invalid / used / auth mismatch]
+close (auth error)
+chat.subscribe(tripId)
+group_add trip_chat_{tripId}
+ping
+pong
+Figure 4.9: SD-02 — WebSocket ticket issuance and realtime connection.
+Page 35 / 114Captain
+Browser
+Next.js BFF
+Trips API
+Django
+Trips Service
+PostgreSQL
+Database
+Notification
+Service
+Invitee
+Browser (WS)
+POST /api/trips
+create trip
+INSERT Trip(PLANNING) + TripMember(CAPTAIN) + seed sections
+trip
+trip detail
+ref invite a friend to the trip
+POST /trips/{id}/invitations
+invite(invitee)
+assert captain; check friendship, not member, no pending
+INSERT TripInvitation(PENDING)
+create Notification(TRIP_INVITATION)
+push notification (on commit)
+invitation created
+ref invitee accepts
+POST accept
+accept invitation
+TripMember(MEMBER, ACTIVE); invitation = ACCEPTED
+notify captain
+push to captain
+Figure 4.10: SD-03 — Trip creation, invitation, and acceptance.
+Page 36 / 114Captain
+Browser
+Next.js BFF
+Trips API
+Django
+Trips Service
+Notification
+Service
+Chat
+Service
+Removed Member
+Browser (WS)
+DELETE /trips/{id}/members/{userId}
+remove member
+assert captain; target != actor
+lock target; status = REMOVED, left_at = now
+create Notification(TRIP_MEMBER_REMOVED)
+notify_trip_chat_member_removed
+removed
+member removed
+opt on DB commit
+notification_push
+chat.kicked
+leave chat context / redirect
+Figure 4.11: SD-04 — Member removal and chat kicked event.
+Page 37 / 114Captain
+Browser
+Next.js BFF
+Timeline API
+Django
+Timeline Service
+PostgreSQL
+Database
+Reminder
+Scheduler
+Member
+Browser (WS)
+POST /trips/{id}/timeline/.../activities
+create activity
+assert captain; validate time_mode, type, assignee, location
+INSERT TimelineActivity
+opt [reminder offsets present]
+INSERT TimelineActivityReminder (due_at_utc)
+activity payload
+ref reminder dispatch (scheduler tick)
+select due & unsent reminders
+due reminders (UPCOMING | IN_PROGRESS, non-terminal)
+loop [per active member]
+Notification(TRIP_TIMELINE_REMINDER) push
+set sent_at = now
+Figure 4.12: SD-05 — Timeline activity creation and reminder dispatch.
+Page 38 / 114Captain /
+Member Browser
+Next.js BFF
+Expenses API
+Django
+Expense Service
+PostgreSQL
+Database
+POST /trips/{id}/settlement/finalize
+finalize settlement
+assert captain; trip non-terminal; no finalized settlement
+load expenses + participants + contributions
+expenses
+compute paid / owed / missing per expense
+alt [some expense underfunded (missing_amount > 0)]
+SETTLEMENT_UNDERFUNDED (no settlement created)
+[fully funded]
+compute net balance per user; build zero-sum transfers
+TX: TripSettlement(FINALIZED) + transfers + lock expenses + ledger
+settlement dashboard + transfers
+ref captain reopens settlement
+POST /settlement/reopen
+snapshot transfer marks if any exist
+settlement = REOPENED; unlock expenses; ledger
+reopened
+ref payer / recipient update a transfer
+payer: mark transfer sent
+set payer_marked_sent_at
+recipient: confirm received (requires sent)
+set recipient_confirmed_at
+Figure 4.13: SD-06 — Expense settlement finalize, reopen, and transfer marks.
+Page 39 / 114User
+Browser
+Next.js BFF
+Chat API
+Django
+Chat Service
+Redis
+Channel Layer
+Celery
+GoPlanAI Worker
+DeepSeek
+API
+POST chat message (client_message_id, "@GoPlanAI ...")
+send message
+assert membership + mutable; normalize; len <= 2000; idempotency
+create ChatMessage(USER); create AIInteraction(PENDING)
+broadcast chat.message (on commit)
+enqueue AI task (on commit)
+message accepted
+ref AI worker run
+claim interaction -> RUNNING
+chat.ai_typing_started
+build context: trip, members, timeline/expenses, drafts, recent chat
+chat completion + tool specs
+tool calls + assistant text
+loop [per tool call]
+validate -> create AIActionDraft(NEEDS_INFO | READY)
+create ChatMessage(AI, ai_status); link response; interaction SUCCEEDED | FAILED
+broadcast AI message + chat.ai_typing_stopped
+push AI message + drafts
+Figure 4.14: SD-07 — Chat message with a GoPlanAI mention.
+Page 40 / 114User
+Browser
+Next.js BFF
+AI API
+AI Draft
+Service
+Domain Service
+Timeline/Expense/...
+PostgreSQL
+Database
+Redis
+Chat
+GET /ai/drafts/{id}
+get draft
+draft (status, missing_fields)
+opt [draft = NEEDS_INFO]
+PATCH payload
+merge patch
+validate schema; recompute missing_fields; -> READY if complete
+updated draft
+POST /ai/drafts/{id}/confirm
+confirm draft
+check not expired; status READY; preconditions valid; actor authorized
+execute by action_type (timeline | expense | settlement | transfer)
+apply domain mutation
+alt [domain action succeeds]
+draft = CONFIRMED; save result
+push chat / update event
+confirmed
+[domain error]
+draft = FAILED (error code)
+business error
+Figure 4.15: SD-08 — AI action-draft refinement and confirmation.
+Page 41 / 114User
+Browser
+Next.js BFF
+asset proxy
+Django
+Memories API
+Image
+Service (Pillow)
+File
+Storage
+PostgreSQL
+Database
+POST multipart /trips/{id}/photos
+upload (Bearer)
+assert membership; trip != CANCELLED
+loop [per uploaded file]
+validate type/size/pixels; encode thumbnail + medium WebP
+save thumbnail, medium
+INSERT TripPhoto (uploader snapshots)
+photo list
+ref view asset or download
+GET /thumbnail | /medium | /download
+proxy (Bearer)
+validate membership + variant
+alt [thumbnail | medium]
+image/webp (private, no-store)
+[download]
+read medium file
+stream medium WebP (safe filename)
+Figure 4.16: SD-09 — Photo upload and asset download.
+Page 42 / 114User / Guest
+Browser
+Next.js BFF
+Memories
+Django
+Memories API
+PostgreSQL
+Database
+Celery
+Render Worker
+ffmpeg /
+File Storage
+POST /memories (title, source_mode, photo_ids)
+create memory
+assert membership; trip != CANCELLED; resolve/auto-pick photos; validate count + quota
+INSERT TripMemoryVideo(queued)
+enqueue render task (on commit)
+memory (queued); client polls status
+ref render worker
+claim memory with row lock (queued / stale)
+status = rendering
+stage medium photos; Ken Burns + crossfade + music
+video + poster files
+alt [success]
+status = ready; duration; finished_at
+[failure]
+status = failed; error code
+ref enable + view public share
+POST /memories/{id}/share-link
+enable share
+ensure ready + video + poster exist
+share_enabled = true; share_slug
+GET /share/memories/{slug} (no auth)
+alt [share enabled, ready, assets exist]
+memory detail + video + poster
+[disabled or asset missing]
+404 not found
+Figure 4.17: SD-10 — Memory-video render and public sharing.
+Page 43 / 114Domain
+Service
+Notification
+Service
+PostgreSQL
+Database
+Redis
+Channel Layer
+Realtime
+Consumer
+Browser
+Notifications UI
+create_notification(recipient, type, actor, payload)
+validate + build payload
+INSERT Notification
+group_send notifications_{recipient.id} (on commit)
+notification_push
+push notification
+add notification; unread_count++
+ref user marks read (one / all)
+mark read (via BFF)
+set read_at = now
+push read event to user group
+read sync
+update read state (other tabs)
+Figure 4.18: SD-11 — Notification delivery and read synchronisation.
+Page 44 / 114Chapter 5. Implementation
+5.1 Authentication and Profile Module
+The authentication module supports registration, login, logout, refresh, email ver-
+ification, password reset, password change, profile setup, profile name update, avatar
+update, and current-user loading. The backend stores users in a custom accounts.User
+model with email as the username field and profile fields such as first name, last name,
+display name, identify name, identify code, email verification status, profile completion
+status, and avatar.
+The identity tag combines identify_name and identify_code. This allows users
+to search for each other without exposing internal database identifiers. The profile com-
+pletion constraint ensures that a completed profile contains all required fields.
+On the frontend, authentication screens are implemented under the (auth) route
+group. The auth context manages current-user state and access-token memory. BFF auth
+routes handle login, refresh, logout, registration, verification, password reset, and profile
+setup. The refresh token remains in an HttpOnly cookie managed by the BFF.
+5.2 Friends Module
+The friends module allows users to build a social graph before planning trips to-
+gether. The backend stores pending requests in FriendRequest and accepted relation-
+shipsinFriendship. Servicesenforcerequestlifecyclerulessuchaspreventingduplicate
+active requests, preventing self-requests, and converting accepted requests into friend-
+ships.
+The frontend provides screens for friend list, adding friends, and viewing incom-
+ing/outgoing requests. BFF routes proxy friend operations to Django so the browser
+continues to follow the HTTP architecture rule.
+5.3 Trip Management Module
+The trip module is the center of the application. A trip contains metadata such as
+name, destination, date range, description, currency, timezone, budget estimate, cover
+45image, status, and destination provider information. The system supports PLANNING,
+ONGOING, COMPLETED, and CANCELLED statuses.
+Trip membership is stored in TripMember, with roles CAPTAIN and MEM-
+BER. A trip starts with the creator as an active captain. Invitations are stored in Trip-
+Invitation, and accepting an invitation activates membership through backend services.
+Captains can invite friends, remove members, edit trip information, and control trip life-
+cycle transitions.
+The frontend trip workspace is organized into tabs such as overview, timeline,
+expenses, members, chat, photos, and memories. This creates a focused interface where
+members can move between planning areas without leaving the trip context.
+5.4 Timeline Module
+The timeline module represents itinerary planning. TimelineSection stores trip
+days or date-based sections. TimelineActivity stores individual activities inside a sec-
+tion. Activities support different time modes such as all-day, flexible, exact time, and
+time range. They also support statuses, assignee scope, structured or manual location
+data, notes, meeting points, contact details, booking references, and external links.
+The module also supports custom activity types through TimelineCustomType.
+This lets each trip define its own activity categories while still supporting predefined
+systemtypessuchastransportation,accommodation,food,sightseeing,shopping,check-
+in/check-out, free time, and other.
+Timeline reminders are represented by TimelineActivityReminder. Each re-
+minder stores an offset and a UTC due time so reminder dispatch can be performed
+consistently in the backend.
+5.5 Expense and Settlement Module
+The expense module supports collaborative cost tracking. An Expense stores ti-
+tle, description, total amount, currency, collector, creator, and locking state. Participant
+shares are stored in ExpenseParticipant. Paid or contributed amounts are stored in Ex-
+penseContribution.
+The settlement flow calculates balances from current expenses and contributions.
+A finalized settlement is represented by TripSettlement, and individual transfer instruc-
+Page 46 / 114tions are represented by SettlementTransfer. The model enforces one finalized settle-
+ment per trip. A settlement can be reopened when the trip’s financial data needs further
+changes.
+The module also records important money-related events in ExpenseLedgerEn-
+try. Ledger entries provide a trace of expense creation, updates, deletion, contribution
+changes, settlement finalization, reopening, and transfer status changes.
+5.6 Notification Module
+The notification module stores user notifications in PostgreSQL and supports un-
+read counts and mark-as-read behavior. Notification types include friend requests, ac-
+cepted friends, trip invitations, invitation responses, trip cancellation, member removal,
+and trip timeline reminders.
+When a notification is created, the backend can push it through the realtime chan-
+nel layer to the connected user’s WebSocket group. The frontend notification context
+and notification bell display unread state and notification items.
+5.7 Realtime Chat Module
+Trip chat is implemented as a combination of HTTP APIs and WebSocket push.
+HTTP APIs provide message history, gap fill, updated-since queries, message creation,
+deletion,hiding,andreactions. WebSocketdeliversnewlycreatedmessagesanddeletion
+events to subscribed trip members.
+TheChatMessagemodelstoresthetrip, sender, sendersnapshots, senderkind, AI
+status,content,clientmessageid,timestamps,anddeletionmetadata. Theclientmessage
+id provides idempotency for send retries. MessageReaction stores one reaction per user
+per message, and ChatMessageHiddenForUser stores per-user hidden messages.
+The chat service validates content length, active trip membership, trip mutabil-
+ity, deletion windows, reaction emoji validity, and hidden-message visibility. When a
+message mentions GoPlanAI, the service creates an AI interaction and enqueues AI pro-
+cessing after the database transaction commits.
+Page 47 / 1145.8 AI Assistance Module
+The AI module connects chat to backend-controlled planning actions. The agent
+builds a trip context bundle containing members, timeline data, expenses, settlement
+state, recent chat, active drafts, and target versions for stale-data checks. It sends this
+context and the user’s prompt to the DeepSeek provider using tool-calling.
+The backend defines tool schemas for creating, updating, deleting, and status-
+changing timeline activities; creating, updating, deleting, and setting contributions for
+expenses; finalizing or reopening settlement; marking transfers sent; confirming trans-
+fers received; updating existing drafts; and responding with a plain text message.
+When the provider returns tool calls, the backend validates tool arguments using
+schemas before invoking handlers. Handlers create or update AIActionDraft records
+rather than directly mutating trip data. Confirming a draft later executes the correspond-
+ing backend service operation. This protects the system from accidental AI changes and
+gives users the final decision.
+5.9 Media and Photos Module
+The media module supports trip cover uploads and public media file serving. The
+memories module extends media handling with trip photos. Each trip photo stores up-
+loader snapshots, original dimensions, a thumbnail asset, a medium asset, and times-
+tamps.
+Photo upload validation includes file count, per-file size, total upload size, source
+dimensions, decoded byte budget, image header detection, and allowed web image for-
+mats. This is important because image files are user-controlled input and can consume
+excessive memory if processed without limits.
+The frontend provides photo grid, lightbox, upload review, asset proxying, and
+download flows. Protected photo assets are retrieved through authenticated BFF routes
+so private trip photos are not exposed as unrestricted public files.
+5.10 Memories Module
+The memories module allows trip members to create memory videos from trip
+photos. A memory video stores creator snapshots, title, status, source mode, selected
+Page 48 / 114photo ids, photo count, music key, generated video file, poster file, duration, render error
+fields, render recovery count, Celery task id, and optional public share information.
+Thesystemsupportsmanualphotoselectionandautomaticphotoselection. Mem-
+ory video rendering is queued through Celery and processed in the background. Render
+status can be queued, rendering, ready, or failed. The service enforces limits such as
+minimum/maximum photos and maximum active render jobs per user or trip.
+Ready memory videos can be downloaded privately by trip members. A ready
+memory can also enable a public share slug, allowing a separate public memory page to
+display the video and poster without requiring trip membership.
+5.11 Location Search Integration
+Location search is implemented through frontend BFF route handlers that call the
+HERE API server-side. This keeps the HERE API key out of browser code. Timeline
+activities and trip destinations can store structured provider information such as provider
+id, title, address, latitude, longitude, and country code.
+5.12 Local Infrastructure
+The project uses Podman Compose for local infrastructure. The backend uses
+PostgreSQL for relational persistence, Redis for Channels and Celery, Mailpit for de-
+velopment email, and Daphne/ASGI for WebSocket-capable serving. The frontend runs
+separately through Next.js development or build commands.
+Page 49 / 114Chapter 6. Testing and Evaluation
+6.1 Testing Strategy
+Testing is focused on business rules and integration boundaries. Backend tests
+cover services and APIs where permission, validation, concurrency, money calculation,
+notification, realtime, AI, media, and memory behavior are important. Frontend tests
+cover domain helpers, BFF handlers, hooks, and presentation components.
+Therepositorycontains62backendtestfilesand94frontendtestfiles. Thesetests
+are distributed across accounts, friends, trips, expenses, notifications, realtime, chat, AI,
+media, memories, BFF route handlers, feature hooks, and UI components.
+6.2 Backend Test Coverage
+Backend tests include:
+• Account, profile, and authentication behavior.
+• Friend request lifecycle, validators, and API permissions.
+• Trip creation, listing, detail, update, invitation, accept/decline, captain actions,
+member leave/remove, and concurrency behavior.
+• Timeline section CRUD, activity CRUD, custom types, day synchronization, sta-
+tus updates, reminders, and detail response.
+• Expense APIs, expense services, money normalization, settlement APIs, and
+transfer behavior.
+• Notification services, notification APIs, and realtime notification consumers.
+• WebSocket ticket views, middleware, and consumer behavior.
+• Chat services, APIs, consumers, mentions, message deletion, reactions, and trip
+hooks.
+• AI models, services, tasks, provider integration, agent context, tool schemas, run-
+ner, display payloads, action drafts, and action execution.
+50• Media cover upload, public media serving, trip photo services/APIs, memory
+video services/APIs, streaming, public memory API, tasks, and mutation con-
+currency.
+6.3 Frontend Test Coverage
+Frontend tests include:
+• BFF route handlers for authentication, protected upstream calls, realtime tickets,
+chat messages, reactions, photos, memories, public memory sharing, and location
+search.
+• Authcontext, accountupdatehooks, avatarUI,profilesections, andsecuritycom-
+ponents.
+• Realtime WebSocket manager behavior and chat WebSocket bridge behavior.
+• Chat UI components such as message list, message bubble, composer, rich com-
+poser, AI message content, code block rendering, and AI action cards.
+• Trip UI components such as dashboard, trip cards, create/edit forms, overview
+cards,membertab,timelinetab,expensetab,settlementpanel,phototab,memory
+tab, upload review, and memory sharing dialog.
+• Domain helpers for date-only values, trip countdown, money, expenses, photos,
+memory errors, cover URLs, page size, URL state, and public origin handling.
+6.4 Evaluation
+Theimplementedsystemsatisfiesthemaincapstoneobjective: itprovidesawork-
+ing full-stack group trip planning platform with structured trip data, collaboration, ex-
+pense settlement, realtime communication, AI-assisted draft actions, media upload, and
+memory video generation.
+The strongest technical outcomes are:
+• A clear BFF-based HTTP architecture that separates browser code from direct
+Django API calls.
+• Aservice-orientedbackendstructurethatkeepsbusinessrulesoutofheavyviews.
+Page 51 / 114• Asecurity-consciousauthenticationflowwithHttpOnlyrefreshtokenstorageand
+in-memory access token usage.
+• A trip-centered permission model reused across planning, chat, media, memories,
+and AI actions.
+• Aconfirmation-basedAIdesignthatpreventsAI-generatedtoolcallsfromsilently
+changing important user data.
+• A media pipeline that validates user-uploaded images and handles background
+memory video rendering.
+6.5 Test Results
+The automated test suite was executed on both layers and confirms that the imple-
+mented business behavior works as designed.
+On the backend, the full Django test suite runs over one thousand automated tests
+across accounts, friends, trips, timeline, expenses, settlement, notifications, realtime,
+chat, AI, media, and memories. These tests exercise service rules, API contracts, per-
+mission checks, money calculations, concurrency handling, realtime consumers, and AI
+action drafting, and they pass against the implemented system.
+Onthefrontend,staticanalysisreportsnoissues,theunitandintegrationsuiteruns
+521 tests across 94 test files with all tests passing, and the production build completes
+successfully. Together with the end-to-end walkthrough presented in the Application
+Demonstration chapter, these results show that the main user journey — from account
+onboarding through trip planning, expense settlement, chat, AI-assisted actions, photos,
+and memory videos — functions correctly.
+Page 52 / 114Chapter 7. Application Demonstration
+This chapter presents a visual walkthrough of the implemented GoPlan applica-
+tion. The screenshots were captured from the running system using a seeded demonstra-
+tion account and a sample trip, and they are grouped by functional module in the same
+order as the implemented features. Each figure shows the user interface state described
+in its caption, so the chapter can be read as an end-to-end tour from account onboarding
+to post-trip memories.
+7.1 Authentication and Onboarding
+This module covers account access and the first-run profile setup. The screens
+below show sign-in, registration, password recovery, email verification, and the profile
+completion step that assigns each user a permanent identity tag.
+Figure 7.1: Sign-in screen with empty credential fields.
+53Figure 7.2: Sign-in screen with the account email and password entered.
+Figure 7.3: Registration screen in its empty state.
+Page 54 / 114Figure 7.4: Registration screen with the account email and password entered.
+Figure 7.5: Password-recovery request screen in its empty state.
+Page 55 / 114Figure 7.6: Password-recovery request screen with the account email entered.
+Figure 7.7: Confirmation message shown after submitting a password-recovery request, worded to
+avoid account enumeration.
+Page 56 / 114Figure 7.8: Reset-password screen showing an invalid or expired reset link with an option to request a
+new one.
+Figure 7.9: Email-verification screen waiting for the user to confirm the verification email.
+Page 57 / 114Figure 7.10: Sign-in attempt blocked because the email address is not yet verified, with a
+resend-verification action.
+Figure 7.11: Resend-verification screen confirming the verification email was sent again.
+Page 58 / 114Figure 7.12: Profile-completion onboarding screen with the live profile preview and the
+permanent-identifier notice.
+Figure 7.13: Profile-completion screen with the name and identity fields filled and previewed.
+Page 59 / 1147.2 Trips Dashboard and Notifications
+After signing in, the user lands on the trips dashboard. It lists every trip the user
+participates in, supports status filtering, exposes the identity tag for sharing, and surfaces
+realtime notifications.
+Figure 7.14: Trips dashboard showing all trips of the signed-in user.
+Page 60 / 114Figure 7.15: Trips dashboard filtered to trips in the planning status.
+Figure 7.16: Trips dashboard filtered to ongoing trips.
+Page 61 / 114Figure 7.17: Trips dashboard filtered to completed trips.
+Figure 7.18: Trips dashboard filtered to cancelled trips.
+Page 62 / 114Figure 7.19: Sidebar identity tag with the “copied” feedback after copying it.
+Figure 7.20: Notifications popover opened from the dashboard header.
+Page 63 / 1147.3 Trip Creation and Management
+This module covers creating a trip and managing its metadata. The creation form
+includes destination autocomplete and a cover-image upload; the overview and edit
+screens adapt to the trip lifecycle status.
+Figure 7.21: Trip-creation form in its empty state.
+Page 64 / 114Figure 7.22: Trip-creation form showing destination autocomplete suggestions.
+Figure 7.23: Trip-creation form filled with the trip details.
+Page 65 / 114Figure 7.24: Trip-creation form with an uploaded cover-image preview.
+Figure 7.25: Trip root URL redirecting to the trip overview tab.
+Page 66 / 114Figure 7.26: Trip overview for a trip in the planning status.
+Figure 7.27: Trip overview with the edit action available to the trip captain.
+Page 67 / 114Figure 7.28: Trip overview actions menu.
+Figure 7.29: Trip-cancellation confirmation modal.
+Page 68 / 114Figure 7.30: Trip overview for a trip in the ongoing status.
+Figure 7.31: Trip overview for a completed trip.
+Page 69 / 114Figure 7.32: Trip overview for a cancelled trip.
+Figure 7.33: Trip-edit form loaded with the current trip data.
+Page 70 / 114Figure 7.34: Trip-edit form showing destination autocomplete suggestions.
+Figure 7.35: Trip-edit form with unsaved changes.
+Page 71 / 114Figure 7.36: Trip-edit form with a new cover-image preview.
+7.4 Trip Members
+Trip membership is managed from the members tab, where the captain can invite
+other users by searching their friends.
+Page 72 / 114Figure 7.37: Trip members list.
+Figure 7.38: Invite-member modal.
+Page 73 / 114Figure 7.39: Invite-member modal with the search filter applied.
+7.5 Timeline and Itinerary
+The timeline module organizes the trip into days and activities, with custom ac-
+tivity types, locations, statuses, and a hand-off to the map integration.
+Page 74 / 114Figure 7.40: Timeline (itinerary) overview with the planned days.
+Figure 7.41: Add-day modal.
+Page 75 / 114Figure 7.42: Manage-activity-types modal.
+Figure 7.43: Timeline overview before opening a specific day.
+Page 76 / 114Figure 7.44: Day detail view with its activities.
+Figure 7.45: Add-activity form in its empty state.
+Page 77 / 114Figure 7.46: Add-activity form showing location autocomplete suggestions.
+Figure 7.47: Add-activity form with the additional-details fields expanded.
+Page 78 / 114Figure 7.48: Reopening a day to view its activities.
+Figure 7.49: Edit-activity modal.
+Page 79 / 114Figure 7.50: Delete-activity confirmation modal.
+Figure 7.51: Activity status menu.
+Page 80 / 114Figure 7.52: Timeline activity used as the source for the open-map action.
+Figure 7.53: Day detail with the open-map button visible.
+Page 81 / 1147.6 Map Integration
+Activity locations open in an embedded HERE map, which also provides direc-
+tions.
+Figure 7.54: HERE map view with a selected place opened.
+Page 82 / 114Figure 7.55: HERE map view with the directions panel.
+7.7 Expenses and Settlement
+The expense module records shared costs, tracks contributions, and computes the
+transfers needed to settle the trip, including finalizing and reopening a settlement.
+Page 83 / 114Figure 7.56: Expenses dashboard with the totals and the expense list.
+Figure 7.57: Add-expense dialog in its empty state.
+Page 84 / 114Figure 7.58: Add-expense dialog filled with the expense details.
+Figure 7.59: Expense detail panel.
+Page 85 / 114Figure 7.60: Edit-expense dialog.
+Figure 7.61: Expenses filtered to items needing attention, reflected in the URL state.
+Page 86 / 114Figure 7.62: Expenses filtered to items with missing information, reflected in the URL state.
+Figure 7.63: Settlement panel with the computed transfers.
+Page 87 / 114Figure 7.64: Settlement panel in an action state.
+Figure 7.65: Reopen-settlement confirmation control after a settlement was finalized.
+Page 88 / 1147.8 Trip Photos
+Trip members can upload, browse, and download shared photos through a grid
+view and a lightbox.
+Figure 7.66: Trip photo grid.
+Page 89 / 114Figure 7.67: Photo lightbox viewer.
+Figure 7.68: Photo lightbox with the download action.
+Page 90 / 114Figure 7.69: Photo grid before opening the context menu.
+Figure 7.70: Photo context menu with download and select actions.
+Page 91 / 114Figure 7.71: Photo selection toolbar after selecting photos.
+Figure 7.72: Photo upload source selection.
+Page 92 / 114Figure 7.73: Photo upload review dialog before confirming.
+7.9 Memory Videos
+From the shared photos, the system renders memory videos with Ken Burns mo-
+tion and background music, which can be viewed in-app or shared through a public link.
+Page 93 / 114Figure 7.74: Memory-video grid showing different render statuses.
+Figure 7.75: Create-memory dialog in manual mode.
+Page 94 / 114Figure 7.76: Create-memory dialog in automatic mode.
+Figure 7.77: Create-memory dialog with photos selected in manual mode.
+Page 95 / 114Figure 7.78: Memory-video actions menu.
+Figure 7.79: Memory-video viewer.
+Page 96 / 114Figure 7.80: Actions menu for a ready memory video.
+Figure 7.81: Share dialog for a memory video with the public-link controls.
+Page 97 / 114Figure 7.82: Public memory-video share page.
+7.10 Realtime Chat and AI Assistant
+Eachtriphasarealtimechatroomwithreactionsandmessageactions. Mentioning
+the AI assistant lets it draft timeline and expense actions that members confirm before
+they are applied.
+Page 98 / 114Figure 7.83: Trip chat room.
+Figure 7.84: Chat composer with a typed message.
+Page 99 / 114Figure 7.85: Chat showing the GoPlanAI mention suggestion.
+Figure 7.86: Chat AI prompt composer.
+Page 100 / 114Figure 7.87: Chat message hover actions.
+Figure 7.88: Chat with AI-drafted action cards (a timeline activity and an expense) awaiting
+confirmation, alongside the reaction picker.
+Page 101 / 114Figure 7.89: Chat message selection and context menu.
+7.11 Friends
+The friends module lets users find each other by identity tag, send and manage
+friend requests, and maintain their friends list.
+Page 102 / 114Figure 7.90: Friends list.
+Figure 7.91: Remove-friend confirmation modal.
+Page 103 / 114Figure 7.92: Add-friend search in its empty state.
+Figure 7.93: Add-friend search showing a matched user with a send-request action.
+Page 104 / 114Figure 7.94: Incoming friend requests with accept and decline actions.
+Figure 7.95: Outgoing friend requests with a cancel action.
+Page 105 / 1147.12 Profile, Settings, and Session
+Users manage their personal information, avatar, and password from the profile
+screen. The session screenshots demonstrate cross-tab logout synchronization.
+Figure 7.96: Profile overview with the personal-info and security sections.
+Page 106 / 114Figure 7.97: Change-avatar dialog in its empty state.
+Figure 7.98: Avatar cropper after choosing an image.
+Page 107 / 114Figure 7.99: Profile with edited personal-information fields.
+Figure 7.100: Security section showing the password-strength indicator.
+Page 108 / 114Figure 7.101: Security section with the password-visibility toggle enabled.
+Figure 7.102: Settings page.
+Page 109 / 114Figure 7.103: Session sync: tab B showing the profile before logout.
+Figure 7.104: Session sync: tab A after logging out, redirected to the sign-in screen.
+Page 110 / 114Figure 7.105: Session sync: tab B reflecting the logout after cross-tab synchronization.
+Page 111 / 114Chapter 8. Conclusion and Future Development
+8.1 Conclusion
+This project implemented GoPlan, an AI-driven group trip planning and coordi-
+nation web application. The system centralizes the main needs of group travel planning:
+account onboarding, friend relationships, trip workspace management, itinerary plan-
+ning, expense settlement, notification delivery, realtime chat, AI-assisted actions, photo
+handling, and memory video sharing.
+From a software engineering perspective, the project demonstrates a maintain-
+ablefull-stackarchitectureusingNext.js,DjangoRESTFramework,PostgreSQL,Redis,
+WebSocket, Celery, and AI provider integration. The system applies clear layer bound-
+aries, service-oriented backend logic, BFF-based HTTP integration, security-focused to-
+ken handling, trip-based authorization, and focused automated tests.
+The most important design decision in the final system is the separation between
+AI suggestion and data mutation. GoPlanAI can interpret trip context and create action
+drafts, but it cannot silently change core trip data. Users must confirm drafts through the
+application, and backend services execute only approved actions.
+8.2 Limitations
+The current project still has limitations:
+• Automatedend-to-end(browser-driven)testsacrossthecompleteuserjourneyare
+not yet part of the test suite, although the full journey is shown manually in the
+Application Demonstration chapter.
+• Productiondeployment hardening, monitoring, backup, and operational runbooks
+are not fully covered.
+• The task coordination module is not included in the implemented final scope.
+• AI quality depends on provider availability, prompt quality, context construction,
+and action schema coverage.
+• Memory video rendering depends on background worker resources and media
+112processing performance.
+8.3 Future Development
+Future development can focus on:
+• Adding automated end-to-end (browser-driven) tests for the main demo journey.
+• Implementing task coordination for checklist-style trip responsibilities.
+• Improving deployment automation, observability, logging, and production secu-
+rity configuration.
+• ExpandingAIassistancewithsaferitinerarysuggestions, budgetanalysis, context
+summarization, and multi-step planning support.
+• Adding richer notification coverage for expense changes, memory render com-
+pletion, chat mentions, and AI draft events.
+• Improving media storage scalability by integrating object storage for production
+deployments.
+Page 113 / 114References
+[1] Vercel, ”Next.js Documentation,” https://nextjs.org/docs.
+[2] Meta Open Source, ”React Documentation,” https://react.dev.
+[3] Django Software Foundation, ”Django Documentation,”
+https://docs.djangoproject.com.
+[4] Encode OSS Ltd., ”Django REST Framework Documentation,”
+https://www.django-rest-framework.org.
+[5] Django Channels, ”Channels Documentation,”
+https://channels.readthedocs.io.
+[6] Jazzband, ”Simple JWT Documentation,”
+https://django-rest-framework-simplejwt.readthedocs.io.
+[7] The PostgreSQL Global Development Group, ”PostgreSQL Documentation,”
+https://www.postgresql.org/docs.
+[8] Redis Ltd., ”Redis Documentation,” https://redis.io/docs.
+114

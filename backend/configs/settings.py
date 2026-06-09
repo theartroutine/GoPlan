@@ -197,8 +197,13 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 
 if not DEBUG:
+    # Cloudflare Tunnel terminates TLS at the edge and forwards traffic to Django
+    # over plain HTTP internally. SECURE_SSL_REDIRECT must stay False so that
+    # Next.js Route Handlers (BFF) can call Django at http://localhost:8000 without
+    # being redirected to https://localhost:8000 (which has no listener).
+    # HTTPS enforcement is handled by Cloudflare's "Always Use HTTPS" setting.
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = False
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
@@ -325,7 +330,12 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', '0') == '1'
-DEFAULT_FROM_EMAIL = 'noreply@goplan.app'
+EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', '0') == '1'
+# SMTP auth credentials. Empty by default so Mailpit (no auth) keeps working
+# locally; production SMTP (e.g. Gmail) must set these via env.
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@goplan.app')
 
 # -------- Password Reset --------
 PASSWORD_RESET_TIMEOUT = 3600  # 1 hour

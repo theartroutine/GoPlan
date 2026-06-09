@@ -1,7 +1,14 @@
 "use client";
 
 import { ArrowUp, Loader2 } from "lucide-react";
-import { useState, type ChangeEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
 
 import {
   GOPLAN_AI_MENTION,
@@ -41,6 +48,8 @@ function limitDraftForMode(value: string, hasAIMention: boolean): string {
 }
 
 export function RichComposer({ disabled, isSending, placeholder, onSend }: Props) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const shouldRestoreFocusRef = useRef(false);
   const [hasMention, setHasMention] = useState(false);
   const [draft, setDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -51,6 +60,28 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
   const sending = isSending || localSending;
   const canSubmit =
     !disabled && !sending && (hasMention || normalizedDraft.length > 0);
+
+  const restoreEditorFocus = useCallback((): void => {
+    const focusEditor = () => {
+      const textarea = textareaRef.current;
+      if (!textarea || disabled || textarea.disabled) return;
+      textarea.focus({ preventScroll: true });
+    };
+
+    window.requestAnimationFrame(() => {
+      focusEditor();
+      window.setTimeout(focusEditor, 0);
+    });
+  }, [disabled]);
+
+  useEffect(() => {
+    if (sending || !shouldRestoreFocusRef.current) return;
+
+    shouldRestoreFocusRef.current = false;
+    if (!disabled) {
+      restoreEditorFocus();
+    }
+  }, [disabled, restoreEditorFocus, sending]);
 
   function applyInput(rawValue: string): void {
     const parsed = parseGoPlanAIMention(rawValue);
@@ -90,6 +121,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
       : normalizedDraft;
 
     setLocalSending(true);
+    shouldRestoreFocusRef.current = true;
     setMenuOpen(false);
     setError(null);
     try {
@@ -152,6 +184,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
         <div className="flex min-h-[40px] min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 focus-within:ring-2 focus-within:ring-ring">
           {hasMention && <AIMentionToken />}
           <Textarea
+            ref={textareaRef}
             value={draft}
             rows={1}
             maxLength={hasMention ? MAX_AI_PROMPT_LENGTH : MAX_CONTENT_LENGTH}
