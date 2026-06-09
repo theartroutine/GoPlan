@@ -3,6 +3,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from PIL import Image as _PILImage
 
 # Process-wide hard guard for extreme decompression bombs. Every Image.open path
@@ -24,6 +25,17 @@ def env_bool(name: str, default: bool = False) -> bool:
 def env_list(name: str) -> tuple[str, ...]:
     raw = os.environ.get(name, "")
     return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ImproperlyConfigured(f"{name} must be an integer.") from exc
 
 
 # -------- Core Flags --------
@@ -118,7 +130,7 @@ DATABASES = {
         'PASSWORD': os.environ['DB_PASSWORD'],
         'HOST': os.environ['DB_HOST'],
         'PORT': os.environ['DB_PORT'],
-        'CONN_MAX_AGE': 600,
+        'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 0),
     }
 }
 
@@ -326,7 +338,10 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', '0') == '1'
-DEFAULT_FROM_EMAIL = 'noreply@goplan.app'
+EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', '0') == '1'
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@goplan.app')
 
 # -------- Password Reset --------
 PASSWORD_RESET_TIMEOUT = 3600  # 1 hour
