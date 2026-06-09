@@ -194,7 +194,7 @@ export function RichComposer({ disabled, isSending, placeholder, onSend }: Props
             disabled={disabled || sending}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            className="min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+            className="min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 leading-6 shadow-none focus-visible:ring-0"
             aria-label="Message"
           />
         </div>
