@@ -17,6 +17,9 @@ const extraAllowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS ?? "")
 const enableHsts = process.env.NEXT_ENABLE_HSTS === "1";
 
 const nextConfig: NextConfig = {
+  // Emit a minimal self-contained server bundle (.next/standalone) so the
+  // production image ships without source code and devDependencies.
+  output: "standalone",
   allowedDevOrigins: ["127.0.0.1", "[::1]", ...extraAllowedDevOrigins],
   async headers() {
     const securityHeaders = [
