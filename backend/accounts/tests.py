@@ -1545,3 +1545,30 @@ class TrustedClientIPThrottleTests(AuthAPITestCase):
 
         self.assertEqual(first.status_code, status.HTTP_200_OK)
         self.assertEqual(second.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    @override_settings(
+        DEBUG=False,
+        GOPLAN_INTERNAL_PROXY_SECRET="test-proxy-secret",
+    )
+    def test_invalid_forwarded_client_ip_does_not_affect_throttle_identity(self):
+        self.create_verified_user(email="a@email.com", password="StrongPass#2026")
+        rates = {**DevBypassScopedRateThrottle.THROTTLE_RATES, "auth_login": "1/hour"}
+
+        with patch.object(DevBypassScopedRateThrottle, "THROTTLE_RATES", rates):
+            first = self.client.post(
+                self.login_url,
+                {"email": "a@email.com", "password": "StrongPass#2026"},
+                format="json",
+                HTTP_X_GOPLAN_CLIENT_IP="not-an-ip",
+                HTTP_X_GOPLAN_INTERNAL_PROXY_SECRET="test-proxy-secret",
+            )
+            second = self.client.post(
+                self.login_url,
+                {"email": "a@email.com", "password": "StrongPass#2026"},
+                format="json",
+                HTTP_X_GOPLAN_CLIENT_IP="also-not-an-ip",
+                HTTP_X_GOPLAN_INTERNAL_PROXY_SECRET="test-proxy-secret",
+            )
+
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.status_code, status.HTTP_429_TOO_MANY_REQUESTS)

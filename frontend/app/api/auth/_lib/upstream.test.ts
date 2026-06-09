@@ -60,4 +60,35 @@ describe("callAuthUpstream", () => {
       }),
     );
   });
+
+  it("does not trust client-supplied internal proxy headers", async () => {
+    process.env.GOPLAN_INTERNAL_PROXY_SECRET = "test-proxy-secret";
+    vi.mocked(fetch).mockResolvedValue(
+      new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await callAuthUpstream(
+      "/api/auth/login",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      },
+      new Headers({
+        "X-GoPlan-Client-IP": "203.0.113.17",
+        "X-GoPlan-Internal-Proxy-Secret": "attacker-secret",
+      }),
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.example.com/api/auth/login",
+      expect.objectContaining({
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+  });
 });
