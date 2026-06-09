@@ -210,13 +210,8 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
 
 if not DEBUG:
-    # Cloudflare Tunnel terminates TLS at the edge and forwards traffic to Django
-    # over plain HTTP internally. SECURE_SSL_REDIRECT must stay False so that
-    # Next.js Route Handlers (BFF) can call Django at http://localhost:8000 without
-    # being redirected to https://localhost:8000 (which has no listener).
-    # HTTPS enforcement is handled by Cloudflare's "Always Use HTTPS" setting.
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SECURE_SSL_REDIRECT = False
+    SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", True)
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000

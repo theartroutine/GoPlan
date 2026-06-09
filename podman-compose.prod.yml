@@ -59,15 +59,15 @@ services:
 
   # -------- Next.js Frontend Service --------
   frontend:
-    profiles:
-      - frontend-container
     build:
       context: ./frontend
       dockerfile: Containerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL: http://backend:8000
-        NEXT_PUBLIC_APP_BASE_URL: https://goplan.quangmin.me
-        NEXT_PUBLIC_WS_URL: wss://api.quangmin.me
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8000}
+        NEXT_PUBLIC_APP_BASE_URL: ${NEXT_PUBLIC_APP_BASE_URL:?Set NEXT_PUBLIC_APP_BASE_URL for production}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:?Set NEXT_PUBLIC_WS_URL for production}
+        NEXT_ALLOWED_DEV_ORIGINS: ${NEXT_ALLOWED_DEV_ORIGINS:-}
+        NEXT_ENABLE_HSTS: ${NEXT_ENABLE_HSTS:-1}
     image: frontend-goplan:latest
     container_name: frontend-goplan
     ports:
@@ -77,9 +77,11 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
-      NEXT_PUBLIC_API_BASE_URL: http://backend:8000
-      NEXT_PUBLIC_APP_BASE_URL: https://goplan.quangmin.me
-      NEXT_PUBLIC_WS_URL: wss://api.quangmin.me
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8000}
+      NEXT_PUBLIC_APP_BASE_URL: ${NEXT_PUBLIC_APP_BASE_URL:?Set NEXT_PUBLIC_APP_BASE_URL for production}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:?Set NEXT_PUBLIC_WS_URL for production}
+      NEXT_ALLOWED_DEV_ORIGINS: ${NEXT_ALLOWED_DEV_ORIGINS:-}
+      NEXT_ENABLE_HSTS: ${NEXT_ENABLE_HSTS:-1}
     restart: unless-stopped
     depends_on:
       backend:

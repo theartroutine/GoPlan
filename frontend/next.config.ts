@@ -10,38 +10,49 @@ const scriptSrc = [
   "'unsafe-inline'",
   ...(isDevelopment ? ["'unsafe-eval'"] : []),
 ].join(" ");
+const extraAllowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const enableHsts = process.env.NEXT_ENABLE_HSTS === "1";
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["127.0.0.1", "[::1]", "goplan.quangmin.me"],
+  allowedDevOrigins: ["127.0.0.1", "[::1]", ...extraAllowedDevOrigins],
   async headers() {
+    const securityHeaders = [
+      {
+        key: "Content-Security-Policy",
+        value: [
+          "default-src 'self'",
+          `script-src ${scriptSrc}`,
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob: https:",
+          "media-src 'self' blob:",
+          "connect-src 'self' ws: wss:",
+          "font-src 'self'",
+          "frame-ancestors 'none'",
+        ].join("; "),
+      },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      ...(enableHsts
+        ? [
+            {
+              key: "Strict-Transport-Security",
+              value: "max-age=31536000; includeSubDomains; preload",
+            },
+          ]
+        : []),
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(), geolocation=(self)",
+      },
+    ];
+
     return [
       {
         source: "/:path*",
-        headers: [
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              `script-src ${scriptSrc}`,
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https:",
-              "media-src 'self' blob:",
-              "connect-src 'self' ws: wss:",
-              "font-src 'self'",
-              "frame-ancestors 'none'",
-            ].join("; "),
-          },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          {
-            key: "Strict-Transport-Security",
-            value: "max-age=31536000; includeSubDomains; preload",
-          },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(self)",
-          },
-        ],
+        headers: securityHeaders,
       },
     ];
   },
