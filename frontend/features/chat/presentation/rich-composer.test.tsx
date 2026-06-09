@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { RichComposer } from "@/features/chat/presentation/rich-composer";
@@ -41,6 +41,19 @@ describe("RichComposer", () => {
     fireEvent.keyDown(getEditor(), { key: "Enter" });
 
     expect(onSend).toHaveBeenCalledWith("@GoPlanAI plan day 1");
+  });
+
+  it("returns focus to the message editor after sending with the button", async () => {
+    const onSend = vi.fn().mockResolvedValue("ok");
+    render(<RichComposer disabled={false} isSending={false} onSend={onSend} />);
+
+    inputText("hello");
+    const sendButton = screen.getByRole("button", { name: "Send message" });
+    sendButton.focus();
+    fireEvent.click(sendButton);
+
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith("hello"));
+    await waitFor(() => expect(getEditor()).toHaveFocus());
   });
 
   it("keeps the AI prompt in the composer when the send is blocked", async () => {
