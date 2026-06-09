@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }, request.headers);
 
   if (upstream.kind === "network_error") {
     return NextResponse.json({ detail: upstream.detail }, { status: 503 });

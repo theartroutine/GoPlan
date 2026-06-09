@@ -108,7 +108,10 @@ describe("PATCH /api/auth/avatar", () => {
       formData: vi.fn().mockResolvedValue(formData),
     } as never);
 
-    expect(refreshMock.refreshWithSingleFlight).toHaveBeenCalledWith("refresh-token");
+    expect(refreshMock.refreshWithSingleFlight).toHaveBeenCalledWith(
+      "refresh-token",
+      expect.any(Headers),
+    );
     expect(sessionStateMock.setRefreshToken).toHaveBeenCalledWith(
       jar,
       "fresh-refresh-token",

@@ -1,3 +1,4 @@
+import { mergeHeadersWithTrustedClient } from "@/app/api/_lib/upstream-headers";
 import { API_BASE_URL } from "@/shared/http/config";
 
 const DEFAULT_UPSTREAM_ERROR_DETAIL =
@@ -34,9 +35,13 @@ async function parseResponseBody(response: Response): Promise<unknown> {
 export async function callAuthUpstream(
   path: string,
   init: RequestInit,
+  sourceHeaders?: Headers | null,
 ): Promise<UpstreamCallResult> {
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, init);
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: mergeHeadersWithTrustedClient(init.headers, sourceHeaders),
+    });
     const data = await parseResponseBody(response);
 
     return {

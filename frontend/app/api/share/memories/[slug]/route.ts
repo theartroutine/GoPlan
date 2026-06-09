@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { mergeHeadersWithTrustedClient } from "@/app/api/_lib/upstream-headers";
 import { API_BASE_URL } from "@/shared/http/config";
 
 type RouteContext = { params: Promise<{ slug: string }> };
@@ -97,7 +98,7 @@ function normalizePublicMemoryPayload(
   };
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   const { slug } = await context.params;
   const encodedSlug = encodeURIComponent(slug);
 
@@ -106,6 +107,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       `${API_BASE_URL}/api/public/memories/${encodedSlug}`,
       {
         method: "GET",
+        headers: mergeHeadersWithTrustedClient(undefined, request.headers),
         cache: "no-store",
       },
     );

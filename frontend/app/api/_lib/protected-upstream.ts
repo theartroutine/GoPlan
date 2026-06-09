@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { refreshWithSingleFlight } from "@/app/api/auth/_lib/refresh";
@@ -67,6 +67,7 @@ export async function protectedUpstreamCall(
   options: ProtectedCallOptions,
 ): Promise<ProtectedCallResult> {
   const jar = await cookies();
+  const sourceHeaders = await headers();
   const refreshToken = jar.get(REFRESH_COOKIE_NAME)?.value;
 
   const fullPath = options.query
@@ -101,7 +102,7 @@ export async function protectedUpstreamCall(
         Authorization: options.authorization,
       },
       body: options.body,
-    });
+    }, sourceHeaders);
 
     if (upstream.kind !== "network_error" && upstream.ok) {
       clearRefreshAuthErrorMarker(jar);
@@ -148,7 +149,7 @@ export async function protectedUpstreamCall(
     };
   }
 
-  const refreshResult = await refreshWithSingleFlight(refreshToken);
+  const refreshResult = await refreshWithSingleFlight(refreshToken, sourceHeaders);
   const failureResponse = handleRefreshFailure(jar, refreshResult);
   if (failureResponse) return { ok: false, response: failureResponse };
 
@@ -168,7 +169,7 @@ export async function protectedUpstreamCall(
     method: options.method,
     headers: buildHeaders(refreshResult.accessToken),
     body: options.body,
-  });
+  }, sourceHeaders);
 
   if (retryUpstream.kind === "network_error") {
     clearRefreshAuthErrorMarker(jar);

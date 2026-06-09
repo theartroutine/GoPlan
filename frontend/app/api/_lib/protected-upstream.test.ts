@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const nextHeadersMock = vi.hoisted(() => ({
   cookies: vi.fn(),
+  headers: vi.fn(),
 }));
 
 const refreshMock = vi.hoisted(() => ({
@@ -51,6 +52,7 @@ describe("protectedUpstreamCall", () => {
     vi.resetModules();
     vi.resetAllMocks();
     nextHeadersMock.cookies.mockResolvedValue(jar);
+    nextHeadersMock.headers.mockResolvedValue(new Headers());
     sessionStateMock.handleRefreshFailure.mockReturnValue(null);
     jar.get.mockReturnValue(undefined);
   });
