@@ -33,7 +33,7 @@ vi.mock("@/shared/http/config", () => ({
 import { POST } from "@/app/api/trips/cover-upload/route";
 
 describe("POST /api/trips/cover-upload", () => {
-  const maxUploadBytes = 5 * 1024 * 1024;
+  const maxUploadBytes = 10 * 1024 * 1024;
   const jar = {
     get: vi.fn(),
   };
@@ -107,7 +107,7 @@ describe("POST /api/trips/cover-upload", () => {
     expect(response.status).toBe(413);
     expect(fetch).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
-      detail: "File too large. Maximum size is 5 MB.",
+      detail: "File too large. Maximum size is 10 MB.",
       error_code: "FILE_TOO_LARGE",
     });
   });

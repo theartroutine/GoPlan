@@ -1,63 +1,21 @@
 from __future__ import annotations
 
-import os
 import uuid
 
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from media.image_validation import (
-    ALLOWED_WEB_IMAGE_FORMATS,
-    CONTENT_TYPE_FORMATS,
-    ImageValidationError,
-    detect_image_content_type_from_header,
-    validate_pillow_image,
-)
+from media.image_validation import ImageValidationError
 from media.services import (
     PUBLIC_MEDIA_CACHE_CONTROL,
     PublicMediaNotFoundError,
     open_public_media_file,
+    process_trip_cover,
 )
-
-MAX_SIZE_BYTES = settings.UPLOAD_MAX_BYTES
-EXTENSION_MAP = {
-    "image/jpeg": ".jpg",
-    "image/png":  ".png",
-    "image/webp": ".webp",
-}
-
-
-def _max_source_pixels() -> int:
-    return int(getattr(settings, "UPLOAD_MAX_SOURCE_PIXELS", 4_000_000))
-
-
-# -------- Magic Byte Detection --------
-
-def _detect_content_type(file_bytes: bytes) -> str | None:
-    """Detect image type from magic bytes. Returns MIME type or None."""
-    return detect_image_content_type_from_header(file_bytes)
-
-
-def _validate_image_payload(image_file, expected_content_type: str) -> bool:
-    """Parse and verify the uploaded image before storing it as public media."""
-    expected_format = CONTENT_TYPE_FORMATS.get(expected_content_type)
-    if expected_format is None:
-        return False
-    try:
-        validate_pillow_image(
-            image_file,
-            expected_format=expected_format,
-            allowed_formats=ALLOWED_WEB_IMAGE_FORMATS,
-            max_source_pixels=_max_source_pixels(),
-            reject_animated=False,
-        )
-    except ImageValidationError:
-        return False
-
-    return True
 
 
 # -------- Views --------
@@ -74,40 +32,18 @@ class TripCoverUploadAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Read first 12 bytes for magic detection, then seek back
-        header = file.read(12)
-        file.seek(0)
-        detected_type = _detect_content_type(header)
-
-        if detected_type is None:
+        try:
+            processed = process_trip_cover(file)
+        except ImageValidationError as exc:
             return Response(
-                {"detail": "Unsupported file type. Use JPEG, PNG, or WebP.", "error_code": "INVALID_TYPE"},
+                {"detail": exc.detail, "error_code": exc.error_code},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if file.size > MAX_SIZE_BYTES:
-            return Response(
-                {"detail": "File too large. Maximum size is 5 MB.", "error_code": "FILE_TOO_LARGE"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not _validate_image_payload(file, detected_type):
-            return Response(
-                {"detail": "Unsupported or invalid image file.", "error_code": "INVALID_TYPE"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        ext = EXTENSION_MAP[detected_type]
-        filename = f"{uuid.uuid4()}{ext}"
-        save_dir = os.path.join(settings.MEDIA_ROOT, "trip-covers")
-        os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, filename)
-
-        with open(save_path, "wb") as dest:
-            for chunk in file.chunks():
-                dest.write(chunk)
-
-        url = f"{settings.MEDIA_URL}trip-covers/{filename}"
+        saved_path = default_storage.save(
+            f"trip-covers/{uuid.uuid4()}.webp", processed,
+        )
+        url = f"{settings.MEDIA_URL}{saved_path}"
         return Response({"url": url}, status=status.HTTP_201_CREATED)
 
 

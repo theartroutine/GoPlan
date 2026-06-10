@@ -13,8 +13,15 @@ type Props = Omit<ImageProps, "src" | "onError"> & {
 };
 
 export function TripCoverImage({ coverUrl, alt, ...rest }: Props) {
-  const initial = getTripCoverUrl(coverUrl);
-  const [src, setSrc] = useState(initial);
+  const target = getTripCoverUrl(coverUrl);
+  const [src, setSrc] = useState(target);
+  // Re-sync when the coverUrl prop changes (e.g. right after an upload);
+  // useState only seeds on mount, so without this the preview never updates.
+  const [prevTarget, setPrevTarget] = useState(target);
+  if (target !== prevTarget) {
+    setPrevTarget(target);
+    setSrc(target);
+  }
 
   return (
     <Image
