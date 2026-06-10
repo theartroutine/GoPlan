@@ -16,6 +16,7 @@ from ai.agent.intent import (
     prompt_requests_timeline_activity_creation,
     timeline_activity_repair_arguments,
 )
+from ai.agent.text import decode_unicode_escapes
 from ai.agent.tools import openai_tool_params, resolve_tool
 from ai.deepseek import (
     DeepSeekProviderError,
@@ -240,7 +241,11 @@ def run_goplan_ai_agent(*, interaction) -> AgentRunResult:
 
     messages = [
         {"role": "system", "content": _v2_system_prompt()},
-        {"role": "system", "content": "CONTEXT:\n" + json.dumps(context, default=str)},
+        {
+            "role": "system",
+            "content": "CONTEXT:\n"
+            + json.dumps(context, ensure_ascii=False, default=str),
+        },
         {"role": "user", "content": interaction.prompt},
     ]
     tools = openai_tool_params()
@@ -355,6 +360,8 @@ def run_goplan_ai_agent(*, interaction) -> AgentRunResult:
         interaction_id=interaction_id,
         drafts_created=drafts_created,
     )
+    if message_text is not None:
+        message_text = decode_unicode_escapes(message_text)
     return AgentRunResult(
         drafts_created=drafts_created,
         message_text=message_text,

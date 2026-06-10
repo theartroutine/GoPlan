@@ -92,6 +92,56 @@ class RunnerTests(TestCase):
         self.assertEqual(draft.required_confirmation, "CAPTAIN")
 
     @patch("ai.agent.runner.complete_with_tools")
+    def test_context_message_keeps_non_ascii_characters_raw(self, mock_complete):
+        self.trip.name = "Chuyến đi \N{SMILING FACE WITH SMILING EYES}"
+        self.trip.save(update_fields=["name"])
+        mock_complete.return_value = DeepSeekToolResult(
+            text=None,
+            tool_calls=[
+                ToolCallParsed(
+                    id="c1",
+                    name="respond_to_user",
+                    arguments_json='{"message":"Hi."}',
+                ),
+            ],
+            usage=DeepSeekUsage(1, 1, 2),
+            finish_reason="tool_calls",
+        )
+
+        run_goplan_ai_agent(interaction=self.interaction)
+
+        context_content = mock_complete.call_args.kwargs["messages"][1]["content"]
+        self.assertIn(self.trip.name, context_content)
+        self.assertNotIn("\\u", context_content)
+
+    @patch("ai.agent.runner.complete_with_tools")
+    def test_message_text_decodes_literal_unicode_escapes(self, mock_complete):
+        # JSON string "Hi \\ud83d\\ude0a" -> tool arg text with literal
+        # escape sequences, as emitted by the model when it mimics
+        # ASCII-escaped context instead of writing the emoji itself.
+        bs = "\\"
+        escaped_message = f"Hi {bs}{bs}ud83d{bs}{bs}ude0a"
+        mock_complete.return_value = DeepSeekToolResult(
+            text=None,
+            tool_calls=[
+                ToolCallParsed(
+                    id="c1",
+                    name="respond_to_user",
+                    arguments_json='{"message":"' + escaped_message + '"}',
+                ),
+            ],
+            usage=DeepSeekUsage(1, 1, 2),
+            finish_reason="tool_calls",
+        )
+
+        result = run_goplan_ai_agent(interaction=self.interaction)
+
+        self.assertEqual(
+            result.message_text,
+            "Hi \N{SMILING FACE WITH SMILING EYES}",
+        )
+
+    @patch("ai.agent.runner.complete_with_tools")
     def test_unknown_tool_returns_tool_unknown_error(self, mock_complete):
         mock_complete.return_value = DeepSeekToolResult(
             text=None,
