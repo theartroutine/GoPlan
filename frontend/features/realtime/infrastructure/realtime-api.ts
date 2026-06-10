@@ -5,11 +5,19 @@ type WsTicketResponse = {
 };
 
 export async function bffWsTicket(): Promise<WsTicketResponse> {
-  const res = await bff.post<WsTicketResponse>("/api/realtime/ws-ticket");
+  const res = await bff.post<WsTicketResponse>(
+    "/api/realtime/ws-ticket",
+    undefined,
+    { suppressThrottleToast: true },
+  );
   return res.data;
 }
 
 export async function bffRefreshWsTicket(): Promise<WsTicketResponse> {
-  const res = await bff.post<WsTicketResponse>("/api/realtime/ws-ticket/refresh");
+  const res = await bff.post<WsTicketResponse>(
+    "/api/realtime/ws-ticket/refresh",
+    undefined,
+    { suppressThrottleToast: true },
+  );
   return res.data;
 }

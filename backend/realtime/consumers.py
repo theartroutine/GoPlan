@@ -52,10 +52,13 @@ class BaseConsumer(AsyncJsonWebsocketConsumer):
     async def receive_json(self, content, **kwargs):
         if self.scope["user"].is_anonymous:
             return
-        if not await self._ensure_current_session():
-            return
+        # Heartbeat fast path: answer ping without the session DB check so a
+        # busy backend never stalls pong past the client timeout. Session
+        # validity is still enforced on business messages and push handlers.
         if content.get("type") == "ping":
             await self.send_json({"type": "pong"})
+            return
+        if not await self._ensure_current_session():
             return
         await self.handle_message(content)
 
