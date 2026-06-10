@@ -10,6 +10,9 @@ psycopg[binary]==3.2.9
 daphne==4.1.2
 channels==4.3.2
 channels-redis==4.3.0
+# Explicit pin: django.core.cache RedisCache (throttle counters) imports redis
+# directly; do not rely on it only as a transitive channels-redis dependency.
+redis==7.4.0
 PyJWT==2.12.1
 
 # -------- Async Task Worker --------

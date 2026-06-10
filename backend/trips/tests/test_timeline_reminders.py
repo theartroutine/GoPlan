@@ -28,6 +28,17 @@ def _auth(user):
     return {"HTTP_AUTHORIZATION": f"Bearer {AccessToken.for_user(user)}"}
 
 
+# Reminder generation skips offsets whose due time is already in the past
+# (services.replace_unsent_activity_reminders compares against timezone.now()).
+# The fixtures pin the trip to 2026-06-01, so any test that expects reminders
+# to exist must freeze "now" before that date or it becomes a time bomb.
+FROZEN_NOW = datetime(2026, 5, 31, 12, 0, tzinfo=dt_timezone.utc)
+
+
+def _frozen_now():
+    return patch("trips.services.timezone.now", return_value=FROZEN_NOW)
+
+
 class TimelineReminderGenerationTests(APITestCase):
 
     def setUp(self):
@@ -41,19 +52,20 @@ class TimelineReminderGenerationTests(APITestCase):
         self.section = self.trip.timeline_sections.get(section_date=date(2026, 6, 1))
 
     def test_create_timed_activity_generates_timezone_correct_reminders(self):
-        activity = create_timeline_activity(
-            self.trip.id,
-            self.section.id,
-            actor=self.captain,
-            data={
-                "title": "Bus to Da Lat",
-                "time_mode": TimelineActivityTimeMode.AT_TIME,
-                "start_time": time(9, 0),
-                "system_type": "TRANSPORTATION",
-                "location_mode": "MANUAL",
-                "reminder_offsets_minutes": [120, 30],
-            },
-        )
+        with _frozen_now():
+            activity = create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data={
+                    "title": "Bus to Da Lat",
+                    "time_mode": TimelineActivityTimeMode.AT_TIME,
+                    "start_time": time(9, 0),
+                    "system_type": "TRANSPORTATION",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [120, 30],
+                },
+            )
 
         reminders = list(activity.reminders.order_by("-offset_minutes_before"))
         self.assertEqual([r.offset_minutes_before for r in reminders], [120, 30])
@@ -130,29 +142,31 @@ class TimelineReminderGenerationTests(APITestCase):
         self.assertEqual(TimelineActivityReminder.objects.count(), 0)
 
     def test_patch_start_time_regenerates_unsent_reminders_only(self):
-        activity = create_timeline_activity(
-            self.trip.id,
-            self.section.id,
-            actor=self.captain,
-            data={
-                "title": "Breakfast",
-                "time_mode": TimelineActivityTimeMode.AT_TIME,
-                "start_time": time(9, 0),
-                "system_type": "FOOD",
-                "location_mode": "MANUAL",
-                "reminder_offsets_minutes": [120, 30],
-            },
-        )
+        with _frozen_now():
+            activity = create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data={
+                    "title": "Breakfast",
+                    "time_mode": TimelineActivityTimeMode.AT_TIME,
+                    "start_time": time(9, 0),
+                    "system_type": "FOOD",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [120, 30],
+                },
+            )
         sent = activity.reminders.get(offset_minutes_before=30)
         sent.sent_at = timezone.now()
         sent.save(update_fields=["sent_at"])
 
-        patch_timeline_activity(
-            self.trip.id,
-            activity.id,
-            actor=self.captain,
-            data={"start_time": time(10, 0)},
-        )
+        with _frozen_now():
+            patch_timeline_activity(
+                self.trip.id,
+                activity.id,
+                actor=self.captain,
+                data={"start_time": time(10, 0)},
+            )
 
         sent_reminders = list(activity.reminders.filter(sent_at__isnull=False))
         unsent_reminders = list(activity.reminders.filter(sent_at__isnull=True))
@@ -196,21 +210,22 @@ class TimelineReminderGenerationTests(APITestCase):
         self.assertFalse(activity.reminders.filter(sent_at__isnull=True).exists())
 
     def test_trip_timezone_change_regenerates_unsent_reminders(self):
-        activity = create_timeline_activity(
-            self.trip.id,
-            self.section.id,
-            actor=self.captain,
-            data={
-                "title": "Museum",
-                "time_mode": TimelineActivityTimeMode.AT_TIME,
-                "start_time": time(9, 0),
-                "system_type": "SIGHTSEEING",
-                "location_mode": "MANUAL",
-                "reminder_offsets_minutes": [30],
-            },
-        )
+        with _frozen_now():
+            activity = create_timeline_activity(
+                self.trip.id,
+                self.section.id,
+                actor=self.captain,
+                data={
+                    "title": "Museum",
+                    "time_mode": TimelineActivityTimeMode.AT_TIME,
+                    "start_time": time(9, 0),
+                    "system_type": "SIGHTSEEING",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [30],
+                },
+            )
 
-        update_trip(self.trip, timezone="UTC")
+            update_trip(self.trip, timezone="UTC")
 
         reminder = activity.reminders.get()
         self.assertEqual(
@@ -220,59 +235,67 @@ class TimelineReminderGenerationTests(APITestCase):
 
     def test_timeline_response_returns_configured_offsets(self):
         url = f"/api/trips/{self.trip.id}/timeline/sections/{self.section.id}/activities"
-        response = self.client.post(
-            url,
-            {
-                "title": "Coffee",
-                "time_mode": "AT_TIME",
-                "start_time": "09:00:00",
-                "system_type": "FOOD",
-                "location_mode": "MANUAL",
-                "reminder_offsets_minutes": [120, 30],
-            },
-            format="json",
-            **_auth(self.captain),
-        )
+        with _frozen_now():
+            response = self.client.post(
+                url,
+                {
+                    "title": "Coffee",
+                    "time_mode": "AT_TIME",
+                    "start_time": "09:00:00",
+                    "system_type": "FOOD",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [120, 30],
+                },
+                format="json",
+                **_auth(self.captain),
+            )
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["activity"]["reminder_offsets_minutes"], [120, 30])
 
     def test_sent_offsets_are_not_serialized_or_recreated_after_removal(self):
         url = f"/api/trips/{self.trip.id}/timeline/sections/{self.section.id}/activities"
-        create_response = self.client.post(
-            url,
-            {
-                "title": "Coffee",
-                "time_mode": "AT_TIME",
-                "start_time": "09:00:00",
-                "system_type": "FOOD",
-                "location_mode": "MANUAL",
-                "reminder_offsets_minutes": [30],
-            },
-            format="json",
-            **_auth(self.captain),
-        )
+        with _frozen_now():
+            create_response = self.client.post(
+                url,
+                {
+                    "title": "Coffee",
+                    "time_mode": "AT_TIME",
+                    "start_time": "09:00:00",
+                    "system_type": "FOOD",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [30],
+                },
+                format="json",
+                **_auth(self.captain),
+            )
         self.assertEqual(create_response.status_code, 201)
         activity_id = create_response.data["activity"]["id"]
+        self.assertEqual(
+            TimelineActivityReminder.objects.filter(activity_id=activity_id).count(),
+            1,
+        )
         TimelineActivityReminder.objects.filter(activity_id=activity_id).update(
             sent_at=timezone.now()
         )
 
-        remove_response = self.client.patch(
-            f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}",
-            {"reminder_offsets_minutes": []},
-            format="json",
-            **_auth(self.captain),
-        )
+        with _frozen_now():
+            remove_response = self.client.patch(
+                f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}",
+                {"reminder_offsets_minutes": []},
+                format="json",
+                **_auth(self.captain),
+            )
         self.assertEqual(remove_response.status_code, 200)
         self.assertEqual(remove_response.data["activity"]["reminder_offsets_minutes"], [])
 
-        edit_response = self.client.patch(
-            f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}",
-            {"start_time": "10:00:00"},
-            format="json",
-            **_auth(self.captain),
-        )
+        with _frozen_now():
+            edit_response = self.client.patch(
+                f"/api/trips/{self.trip.id}/timeline/activities/{activity_id}",
+                {"start_time": "10:00:00"},
+                format="json",
+                **_auth(self.captain),
+            )
         self.assertEqual(edit_response.status_code, 200)
         self.assertEqual(edit_response.data["activity"]["reminder_offsets_minutes"], [])
         self.assertFalse(
@@ -329,19 +352,20 @@ class TimelineReminderGenerationTests(APITestCase):
 
     def test_patch_to_flexible_clears_unsent_reminders_and_serialized_offsets(self):
         url = f"/api/trips/{self.trip.id}/timeline/sections/{self.section.id}/activities"
-        create_response = self.client.post(
-            url,
-            {
-                "title": "Coffee",
-                "time_mode": "AT_TIME",
-                "start_time": "09:00:00",
-                "system_type": "FOOD",
-                "location_mode": "MANUAL",
-                "reminder_offsets_minutes": [120, 30],
-            },
-            format="json",
-            **_auth(self.captain),
-        )
+        with _frozen_now():
+            create_response = self.client.post(
+                url,
+                {
+                    "title": "Coffee",
+                    "time_mode": "AT_TIME",
+                    "start_time": "09:00:00",
+                    "system_type": "FOOD",
+                    "location_mode": "MANUAL",
+                    "reminder_offsets_minutes": [120, 30],
+                },
+                format="json",
+                **_auth(self.captain),
+            )
         self.assertEqual(create_response.status_code, 201)
         activity_id = create_response.data["activity"]["id"]
         self.assertEqual(

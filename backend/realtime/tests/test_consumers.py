@@ -82,6 +82,29 @@ class RealtimeConsumerTests(TransactionTestCase):
 
         await communicator.disconnect()
 
+    async def test_ping_pong_skips_session_check_after_auth_revocation(self):
+        # Heartbeat must stay cheap: ping is answered without a session DB
+        # check, so a revoked session still gets pong. Revocation is enforced
+        # on business messages and push handlers instead.
+        user = await _create_user(email="ping-revoked@example.com")
+        ticket = await _issue_ws_ticket(user)
+
+        communicator = WebsocketCommunicator(
+            _build_application(),
+            "ws/realtime",
+            subprotocols=[settings.WS_SUBPROTOCOL, ticket],
+        )
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+
+        await _increment_auth_version(user)
+        await communicator.send_json_to({"type": "ping"})
+
+        response = await communicator.receive_json_from()
+        self.assertEqual(response, {"type": "pong"})
+
+        await communicator.disconnect()
+
     async def test_open_socket_closes_when_auth_version_is_revoked(self):
         user = await _create_user(email="open-revoked@example.com")
         ticket = await _issue_ws_ticket(user)
@@ -95,7 +118,7 @@ class RealtimeConsumerTests(TransactionTestCase):
         self.assertTrue(connected)
 
         await _increment_auth_version(user)
-        await communicator.send_json_to({"type": "ping"})
+        await communicator.send_json_to({"type": "chat.subscribe", "trip_id": ""})
 
         response = await communicator.receive_json_from()
         self.assertEqual(response, {"type": "auth_error", "code": "auth_failed"})

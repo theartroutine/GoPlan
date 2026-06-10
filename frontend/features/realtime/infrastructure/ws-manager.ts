@@ -9,9 +9,13 @@ import {
 const DEFAULT_WS_BASE_URL = "ws://localhost:8000";
 const WS_SUBPROTOCOL = "goplan.realtime.v1";
 const HEARTBEAT_INTERVAL_MS = 25_000;
-const HEARTBEAT_TIMEOUT_MS = 10_000;
+// Generous on purpose: a momentarily busy backend (or a proxied hop) must not
+// kill a healthy socket — every reconnect costs a one-time throttled ticket.
+const HEARTBEAT_TIMEOUT_MS = 30_000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const MAX_BACKOFF_MS = 30_000;
+const THROTTLE_FALLBACK_DELAY_MS = 30_000;
+const MAX_THROTTLE_DELAY_MS = 300_000;
 const SOFT_AUTH_ERROR_CODE = "refresh_auth_soft_failed";
 
 type MessageListener = (data: WsMessage) => void;
@@ -192,6 +196,11 @@ export class WebSocketManager {
         return;
       }
 
+      if (this.isThrottleError(error)) {
+        this.scheduleThrottledReconnect(error);
+        return;
+      }
+
       this.scheduleReconnect();
     }
   }
@@ -296,11 +305,50 @@ export class WebSocketManager {
         return;
       }
 
+      if (this.isThrottleError(error)) {
+        this.scheduleThrottledReconnect(error);
+        return;
+      }
+
       this.scheduleReconnect();
     }
   }
 
   // -------- Reconnect --------
+
+  /**
+   * 429 on a ticket endpoint is not a network failure: retrying early can
+   * never succeed and keeps the bucket full. Wait out Retry-After without
+   * consuming reconnect attempts so a throttled client always recovers.
+   */
+  private scheduleThrottledReconnect(error: unknown): void {
+    this.clearReconnectTimer();
+    this.setStatus("reconnecting");
+
+    const jitter = Math.random() * 1000;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, this.throttleRetryDelayMs(error) + jitter);
+  }
+
+  private isThrottleError(error: unknown): boolean {
+    return axios.isAxiosError(error) && error.response?.status === 429;
+  }
+
+  private throttleRetryDelayMs(error: unknown): number {
+    if (!axios.isAxiosError(error)) return THROTTLE_FALLBACK_DELAY_MS;
+
+    const rawHeader = (
+      error.response?.headers as Record<string, unknown> | undefined
+    )?.["retry-after"];
+    const seconds = Number.parseInt(String(rawHeader), 10);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return THROTTLE_FALLBACK_DELAY_MS;
+    }
+
+    return Math.min(seconds * 1000, MAX_THROTTLE_DELAY_MS);
+  }
 
   private scheduleReconnect(): void {
     if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {

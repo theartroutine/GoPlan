@@ -3,6 +3,17 @@ import { toast } from "sonner";
 
 import { tokenManager } from "@/features/auth/infrastructure/token-manager";
 
+declare module "axios" {
+  export interface AxiosRequestConfig {
+    /**
+     * Skip the global "Too many requests" toast for this request. Use for
+     * background calls (e.g. WebSocket ticket fetches) whose failure is
+     * already surfaced elsewhere (connection banner).
+     */
+    suppressThrottleToast?: boolean;
+  }
+}
+
 const bff = axios.create({
   baseURL: "",
   timeout: 10_000,
@@ -58,6 +69,7 @@ bff.interceptors.response.use(
   (error: unknown) => {
     if (error && typeof error === "object" && "response" in error) {
       const axiosError = error as {
+        config?: { suppressThrottleToast?: boolean };
         response?: {
           headers?: Record<string, unknown>;
           status?: number;
@@ -66,7 +78,11 @@ bff.interceptors.response.use(
       if (axiosError.response?.headers) {
         captureAccessToken(axiosError.response.headers);
       }
-      if (axiosError.response?.status === 429 && axiosError.response.headers) {
+      if (
+        axiosError.response?.status === 429 &&
+        axiosError.response.headers &&
+        !axiosError.config?.suppressThrottleToast
+      ) {
         toast.error(getRetryAfterMessage(axiosError.response.headers));
       }
     }
