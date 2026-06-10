@@ -9,11 +9,16 @@ import {
   getBoolean,
   getString,
 } from "@/app/api/auth/_lib/upstream";
+import { resolvePublicAppBaseUrl } from "@/shared/http/public-origin";
 
 export async function GET(request: NextRequest) {
+  // Behind a tunnel/reverse proxy the Host header may carry the internal
+  // service address, so request.url is not a safe base for browser redirects.
+  const appBaseUrl = await resolvePublicAppBaseUrl();
+
   const token = request.nextUrl.searchParams.get("token");
   if (!token) {
-    return NextResponse.redirect(new URL("/login?verify_error=invalid", request.url));
+    return NextResponse.redirect(new URL("/login?verify_error=invalid", appBaseUrl));
   }
 
   const upstream = await callAuthUpstream("/api/auth/verify-email", {
@@ -23,11 +28,11 @@ export async function GET(request: NextRequest) {
   }, request.headers);
 
   if (upstream.kind === "network_error") {
-    return NextResponse.redirect(new URL("/login?verify_error=invalid", request.url));
+    return NextResponse.redirect(new URL("/login?verify_error=invalid", appBaseUrl));
   }
 
   if (!upstream.ok) {
-    return NextResponse.redirect(new URL("/login?verify_error=invalid", request.url));
+    return NextResponse.redirect(new URL("/login?verify_error=invalid", appBaseUrl));
   }
 
   const payload = asObject(upstream.data);
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
   const refreshTokenValue = getString(tokens, "refresh");
 
   if (!userPayload || !accessToken || !refreshTokenValue) {
-    return NextResponse.redirect(new URL("/login?verify_error=invalid", request.url));
+    return NextResponse.redirect(new URL("/login?verify_error=invalid", appBaseUrl));
   }
 
   const jar = await cookies();
@@ -47,8 +52,8 @@ export async function GET(request: NextRequest) {
 
   const requiresProfileSetup = getBoolean(userObj, "requires_profile_setup");
   if (requiresProfileSetup) {
-    return NextResponse.redirect(new URL("/setup-profile?verified=true", request.url));
+    return NextResponse.redirect(new URL("/setup-profile?verified=true", appBaseUrl));
   }
 
-  return NextResponse.redirect(new URL("/?verified=true", request.url));
+  return NextResponse.redirect(new URL("/?verified=true", appBaseUrl));
 }
