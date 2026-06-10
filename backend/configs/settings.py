@@ -1,4 +1,5 @@
 import os
+import sys
 
 from datetime import timedelta
 from pathlib import Path
@@ -223,6 +224,30 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 
+# -------- Cache (throttle counters, shared state) --------
+# DRF throttling stores its counters in the default cache. It must live in
+# Redis so counts are consistent across worker processes and survive restarts;
+# LocMemCache would silently reset on every autoreload/deploy.
+REDIS_CACHE_URL = os.environ.get('REDIS_CACHE_URL', 'redis://localhost:6379/3')
+
+TESTING = 'test' in sys.argv
+
+if TESTING:
+    # Tests must stay hermetic: no Redis dependency, and throttle counters
+    # must never leak between test runs.
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_CACHE_URL,
+        }
+    }
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # REST Framework Defaults
@@ -239,12 +264,12 @@ REST_FRAMEWORK = {
         'accounts.throttling.DevBypassScopedRateThrottle',
     ),
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/hour',
-        'user': '1000/hour',
+        'anon': '30/minute',
+        'user': '60/minute',
         'auth_login': '20/hour',
         'auth_register': '10/hour',
-        'auth_refresh': '60/hour',
-        'auth_me': '300/hour',
+        'auth_refresh': '10/minute',
+        'auth_me': '30/minute',
         'auth_logout': '30/hour',
         'auth_profile_setup': '20/hour',
         'auth_profile_name': '60/hour',
@@ -254,7 +279,7 @@ REST_FRAMEWORK = {
         'auth_password_reset_confirm': '10/hour',
         'auth_avatar': '10/hour',
         'auth_password_change': '5/hour',
-        'realtime_ws_ticket': '120/hour',
+        'realtime_ws_ticket': '20/minute',
         'notifications_list': '120/hour',
         'notifications_unread_count': '300/hour',
         'notifications_mark_read': '120/hour',
@@ -316,6 +341,16 @@ REST_FRAMEWORK = {
         'ws_ticket_refresh': '20/minute',
     },
 }
+
+if TESTING:
+    # The anon bucket is keyed by REMOTE_ADDR, which is always 127.0.0.1 in
+    # tests, so the whole suite shares one bucket and would trip it. Scoped
+    # per-endpoint rates keep production values; dedicated throttle tests
+    # patch rates and clear the cache themselves.
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+        **REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'],
+        'anon': '1000/minute',
+    }
 
 if not DEBUG:
     REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] = (
