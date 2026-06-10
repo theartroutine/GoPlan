@@ -49,7 +49,9 @@ services:
       dockerfile: Containerfile
     image: backend:latest
     container_name: backend-goplan
-    command: bash -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 configs.asgi:application"
+    # Dev only: runserver serves the same ASGI app via the daphne integration
+    # (HTTP + WebSocket) and auto-reloads on code changes. Prod keeps daphne.
+    command: bash -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
     ports:
       - "8000:8000"
     volumes:

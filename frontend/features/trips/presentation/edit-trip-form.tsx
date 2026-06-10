@@ -13,7 +13,10 @@ import {
   TRIP_DESCRIPTION_MAX_LENGTH,
 } from "@/features/trips/domain/trip-description";
 import type { TripDetail, UpdateTripPayload } from "@/features/trips/domain/types";
-import { bffUpdateTrip } from "@/features/trips/infrastructure/trips-api";
+import {
+  bffUpdateTrip,
+  extractBffErrorDetail,
+} from "@/features/trips/infrastructure/trips-api";
 import { BudgetEstimateInput } from "@/features/trips/presentation/budget-estimate-input";
 import { CoverImagePicker } from "@/features/trips/presentation/cover-image-picker";
 import { CurrencySelect } from "@/features/trips/presentation/currency-select";
@@ -150,8 +153,13 @@ export function EditTripForm({
       await bffUpdateTrip(trip.id, payload);
       await onSaved?.();
       router.push(`/trips/${trip.id}/overview`);
-    } catch {
-      setError("Failed to update trip. Please check your inputs and try again.");
+    } catch (err) {
+      setError(
+        extractBffErrorDetail(
+          err,
+          "Failed to update trip. Please check your inputs and try again.",
+        ),
+      );
     } finally {
       setLoading(false);
     }
