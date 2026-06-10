@@ -3,7 +3,10 @@
 import { useRef, useState } from "react";
 import { Upload } from "lucide-react";
 
-import { bffUploadTripCover } from "@/features/trips/infrastructure/trips-api";
+import {
+  bffUploadTripCover,
+  extractBffErrorDetail,
+} from "@/features/trips/infrastructure/trips-api";
 import { TripCoverImage } from "@/features/trips/presentation/trip-cover-image";
 import { Button } from "@/shared/ui/button";
 
@@ -28,8 +31,13 @@ export function CoverImagePicker({ coverUrl, onChange }: Props) {
     try {
       const url = await bffUploadTripCover(file);
       onChange(url);
-    } catch {
-      setUploadError("Failed to upload. Try a different image (JPEG/PNG/WebP, max 5 MB).");
+    } catch (error) {
+      setUploadError(
+        extractBffErrorDetail(
+          error,
+          "Failed to upload. Try a different image (JPEG/PNG/WebP, max 10 MB).",
+        ),
+      );
     } finally {
       setUploading(false);
       // Reset so the same file can be re-selected

@@ -11,14 +11,15 @@ import {
 import { mergeHeadersWithTrustedClient } from "@/app/api/_lib/upstream-headers";
 import { API_BASE_URL } from "@/shared/http/config";
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+// Must match TRIP_COVER_MAX_BYTES on the Django side.
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_COVER_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
 ]);
 const FILE_TOO_LARGE_PAYLOAD = {
-  detail: "File too large. Maximum size is 5 MB.",
+  detail: "File too large. Maximum size is 10 MB.",
   error_code: "FILE_TOO_LARGE",
 };
 const UNSUPPORTED_MEDIA_PAYLOAD = {

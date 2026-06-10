@@ -19,6 +19,8 @@ import type {
   TripListResponse,
   UpdateTripPayload,
 } from "@/features/trips/domain/types";
+import axios from "axios";
+
 import { bff } from "@/shared/http/bff-client";
 
 export async function bffListTrips(cursor?: string): Promise<TripListResponse> {
@@ -194,6 +196,14 @@ export async function bffDeleteTimelineCustomType(
   typeId: string,
 ): Promise<void> {
   await bff.delete(`/api/trips/${tripId}/timeline/custom-types/${typeId}`);
+}
+
+export function extractBffErrorDetail(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const detail: unknown = error.response?.data?.detail;
+    if (typeof detail === "string" && detail.length > 0) return detail;
+  }
+  return fallback;
 }
 
 export async function bffUploadTripCover(file: File): Promise<string> {

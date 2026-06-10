@@ -50,7 +50,29 @@ class TripCoverUploadTests(APITestCase):
         self.assertEqual(res.status_code, 201)
         self.assertIn("url", res.data)
         self.assertTrue(res.data["url"].startswith("/media/trip-covers/"))
-        self.assertTrue(res.data["url"].endswith(".jpg"))
+        self.assertTrue(res.data["url"].endswith(".webp"))
+
+    def test_upload_phone_sized_photo_is_downscaled(self):
+        """A 12 MP camera photo must be accepted and downscaled, not rejected."""
+        import os
+
+        from django.conf import settings
+
+        buf = _fake_image(dimensions=(4032, 3024))
+        res = self.client.post(
+            UPLOAD_URL,
+            {"file": buf},
+            format="multipart",
+            **_auth(self.user),
+        )
+        self.assertEqual(res.status_code, 201)
+
+        saved_path = os.path.join(
+            settings.MEDIA_ROOT, res.data["url"].removeprefix("/media/"),
+        )
+        with Image.open(saved_path) as saved:
+            self.assertEqual(saved.format, "WEBP")
+            self.assertLessEqual(max(saved.size), settings.TRIP_COVER_MAX_EDGE)
 
     def test_upload_requires_auth_401(self):
         buf = _fake_image()
@@ -84,7 +106,7 @@ class TripCoverUploadTests(APITestCase):
             **_auth(self.user),
         )
         self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.data["error_code"], "INVALID_TYPE")
+        self.assertEqual(res.data["error_code"], "UNSUPPORTED_IMAGE_TYPE")
 
     def test_upload_rejects_malformed_image_with_valid_magic_bytes(self):
         from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -105,10 +127,10 @@ class TripCoverUploadTests(APITestCase):
             **_auth(self.user),
         )
         self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.data["error_code"], "INVALID_TYPE")
+        self.assertEqual(res.data["error_code"], "PHOTO_INVALID_IMAGE")
 
     def test_upload_too_large_400(self):
-        buf = _fake_image(size_bytes=6 * 1024 * 1024)  # 6 MB
+        buf = _fake_image(size_bytes=11 * 1024 * 1024)  # over the 10 MB limit
         res = self.client.post(
             UPLOAD_URL,
             {"file": buf},
@@ -118,7 +140,7 @@ class TripCoverUploadTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.data["error_code"], "FILE_TOO_LARGE")
 
-    @override_settings(UPLOAD_MAX_SOURCE_PIXELS=100)
+    @override_settings(TRIP_COVER_MAX_SOURCE_PIXELS=100)
     def test_upload_rejects_oversized_source_pixels(self):
         buf = _fake_image(dimensions=(11, 10))
         res = self.client.post(
@@ -129,4 +151,4 @@ class TripCoverUploadTests(APITestCase):
         )
 
         self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.data["error_code"], "INVALID_TYPE")
+        self.assertEqual(res.data["error_code"], "PHOTO_DIMENSIONS_TOO_LARGE")
