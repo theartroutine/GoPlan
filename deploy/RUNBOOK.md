@@ -113,6 +113,19 @@ authenticated realtime flow.
 
 ## 2. Deploy an update
 
+### Branch model
+
+- `main` — application source of truth. Features and fixes are developed on
+  branches off `main` and merged via PR. Never deployed directly.
+- `production` (this branch) — always `main` plus production deploy config
+  only (this runbook, the prod compose file, the frontend Containerfile, env
+  templates). Never merged back into `main`; no feature work happens here.
+- A release = on the dev machine: `git checkout production && git merge main
+  && git push`. Merge conflicts are resolved there, never on this host — this
+  host only ever pulls a clean fast-forward.
+
+### Update commands
+
 ```sh
 cd GoPlan
 git pull
