@@ -35,6 +35,7 @@ describe("UploadReviewDialog", () => {
         open
         files={files}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -58,6 +59,7 @@ describe("UploadReviewDialog", () => {
         open
         files={files}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={onRemoveFile}
@@ -76,6 +78,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -93,6 +96,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[makeFile("a.jpg")]}
         uploading={false}
+        optimizing={false}
         error="Network error."
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -113,6 +117,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[makeFile("a.jpg")]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -135,6 +140,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[existing]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={onAddFiles}
         onRemoveFile={vi.fn()}
@@ -171,6 +177,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[file]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -186,6 +193,7 @@ describe("UploadReviewDialog", () => {
         open={false}
         files={[file]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
