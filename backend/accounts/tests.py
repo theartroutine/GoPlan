@@ -13,6 +13,8 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
+from django.core.cache import cache
+
 from accounts.models import EmailVerificationToken
 from accounts.services import generate_email_verification_token
 from test_helpers import (
@@ -35,6 +37,11 @@ class AuthAPITestCase(APITestCase):
     password_reset_confirm_url = "/api/auth/password-reset/confirm"
     refresh_url = "/api/auth/refresh"
     logout_url = "/api/auth/logout"
+
+    def setUp(self) -> None:
+        # Throttle counters live in the cache and persist across tests;
+        # reset them so per-scope limits don't leak between test methods.
+        cache.clear()
 
     @staticmethod
     def issue_tokens_for_user(user):
@@ -135,6 +142,64 @@ class AuthAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         mock_send.assert_called_once_with(existing_user)
+
+    @patch("accounts.serializers.send_account_exists_email")
+    @patch("accounts.serializers.send_verification_email")
+    def test_register_duplicate_verified_email_sends_account_exists_email(
+        self, mock_send_verification, mock_send_account_exists
+    ):
+        existing_user = self.create_verified_user(
+            email="owner@example.com", password="StrongPass#2026"
+        )
+        payload = {"email": "OWNER@EXAMPLE.COM", "password": "StrongPass#2026"}
+
+        response = self.client.post(self.register_url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        mock_send_account_exists.assert_called_once_with(existing_user)
+        mock_send_verification.assert_not_called()
+
+    @patch("accounts.serializers.send_account_exists_email")
+    @patch("accounts.serializers.send_verification_email")
+    def test_register_duplicate_staff_or_superuser_sends_no_email(
+        self, mock_send_verification, mock_send_account_exists
+    ):
+        staff_user = User.objects.create_user(
+            email="staff@example.com", password="StrongPass#2026"
+        )
+        staff_user.is_staff = True
+        staff_user.save(update_fields=["is_staff"])
+        superuser = User.objects.create_superuser(
+            email="admin@example.com", password="StrongPass#2026"
+        )
+
+        for email in (staff_user.email, superuser.email):
+            with self.subTest(email=email):
+                payload = {"email": email, "password": "StrongPass#2026"}
+                response = self.client.post(self.register_url, payload, format="json")
+
+                self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+
+        mock_send_account_exists.assert_not_called()
+        mock_send_verification.assert_not_called()
+
+    def test_send_account_exists_email_contains_login_and_reset_links(self):
+        from django.core import mail
+
+        from accounts.services import send_account_exists_email
+
+        user = self.create_verified_user(
+            email="owner@example.com", password="StrongPass#2026"
+        )
+
+        send_account_exists_email(user)
+
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.to, [user.email])
+        self.assertIn("already have", message.subject + message.body)
+        self.assertIn("/login", message.body)
+        self.assertIn("/forgot-password", message.body)
 
     @patch("accounts.serializers.send_verification_email")
     def test_register_normalizes_email_to_lowercase(self, mock_send):
