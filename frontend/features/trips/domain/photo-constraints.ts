@@ -6,22 +6,12 @@ export const TRIP_PHOTO_MAX_BODY_BYTES =
   TRIP_PHOTO_MAX_TOTAL_UPLOAD_BYTES + TRIP_PHOTO_MAX_MULTIPART_OVERHEAD_BYTES;
 
 export const TRIP_PHOTO_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-export const TRIP_PHOTO_HEIC_TYPES = new Set(["image/heic", "image/heif"]);
 export const TRIP_PHOTO_GENERIC_BINARY_TYPES = new Set([
   "application/octet-stream",
   "binary/octet-stream",
 ]);
 
 type PhotoFileLike = Pick<File, "name" | "size" | "type">;
-
-export function isTripPhotoHeicFile(file: PhotoFileLike): boolean {
-  const lowerName = file.name.toLowerCase();
-  return (
-    TRIP_PHOTO_HEIC_TYPES.has(file.type) ||
-    lowerName.endsWith(".heic") ||
-    lowerName.endsWith(".heif")
-  );
-}
 
 export function isTripPhotoSvgFile(file: PhotoFileLike): boolean {
   return file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");

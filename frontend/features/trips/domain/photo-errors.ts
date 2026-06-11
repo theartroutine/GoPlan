@@ -8,7 +8,6 @@ import {
   TRIP_PHOTO_MAX_FILES,
   TRIP_PHOTO_MAX_TOTAL_UPLOAD_BYTES,
   hasKnownUnsupportedTripPhotoMime,
-  isTripPhotoHeicFile,
   isTripPhotoSvgFile,
   totalTripPhotoFileBytes,
 } from "@/features/trips/domain/photo-constraints";
@@ -18,8 +17,6 @@ type PhotoValidationResult =
   | { ok: false; message: string };
 
 const ERROR_MESSAGES: Record<string, string> = {
-  HEIC_UNSUPPORTED:
-    "HEIC photos are not supported yet. Convert them to JPEG, PNG, or WebP and try again.",
   NO_FILES: "Choose at least one photo.",
   PHOTO_DIMENSIONS_TOO_LARGE:
     "That photo is too large to process. Use an image under 45 megapixels.",
@@ -32,7 +29,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   TOO_MANY_FILES: "Upload up to 20 photos at a time.",
   TRIP_TERMINAL: "Cancelled trips cannot change photos.",
   UNSUPPORTED_IMAGE_TYPE:
-    "Use JPEG, PNG, or WebP photos. SVG and other formats are not supported.",
+    "Use JPEG, PNG, WebP, or HEIC photos. SVG and other formats are not supported.",
 };
 
 export function getTripPhotoErrorMessage(error: unknown, fallback: string): string {
@@ -57,9 +54,6 @@ export function validateTripPhotoFiles(files: File[]): PhotoValidationResult {
   for (const file of files) {
     if (file.size > TRIP_PHOTO_MAX_FILE_BYTES) {
       return { ok: false, message: ERROR_MESSAGES.PHOTO_TOO_LARGE };
-    }
-    if (isTripPhotoHeicFile(file)) {
-      return { ok: false, message: ERROR_MESSAGES.HEIC_UNSUPPORTED };
     }
     if (isTripPhotoSvgFile(file) || hasKnownUnsupportedTripPhotoMime(file)) {
       return { ok: false, message: ERROR_MESSAGES.UNSUPPORTED_IMAGE_TYPE };
