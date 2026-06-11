@@ -222,7 +222,7 @@ describe("BFF /api/trips/[tripId]/photos", () => {
     });
   });
 
-  it("rejects HEIC with a clear unsupported-format payload", async () => {
+  it("rejects raw HEIC as a generic unsupported type (UI converts HEIC before upload)", async () => {
     const { POST } = await import("@/app/api/trips/[tripId]/photos/route");
     const formData = new FormData();
     formData.append("files", new File(["heic"], "photo.heic", { type: "image/heic" }));
@@ -234,8 +234,8 @@ describe("BFF /api/trips/[tripId]/photos", () => {
     expect(response.status).toBe(415);
     expect(fetch).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
-      detail: "HEIC images are not supported yet. Convert to JPEG, PNG, or WebP.",
-      error_code: "HEIC_UNSUPPORTED",
+      detail: "Unsupported image format. Use JPEG, PNG, or WebP.",
+      error_code: "UNSUPPORTED_IMAGE_TYPE",
     });
   });
 
