@@ -124,6 +124,19 @@ class AuthAPITestCase(APITestCase):
         self.assertNotIn("email", duplicate_response.data)
 
     @patch("accounts.serializers.send_verification_email")
+    def test_register_duplicate_unverified_email_resends_verification(self, mock_send):
+        existing_user = User.objects.create_user(
+            email="owner@example.com",
+            password="StrongPass#2026",
+        )
+        payload = {"email": "OWNER@EXAMPLE.COM", "password": "StrongPass#2026"}
+
+        response = self.client.post(self.register_url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        mock_send.assert_called_once_with(existing_user)
+
+    @patch("accounts.serializers.send_verification_email")
     def test_register_normalizes_email_to_lowercase(self, mock_send):
         payload = {"email": "Owner@Example.Com", "password": "StrongPass#2026"}
         response = self.client.post(self.register_url, payload, format="json")

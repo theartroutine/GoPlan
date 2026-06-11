@@ -45,6 +45,13 @@ IDENTITY_FIELD_LABELS = {
 }
 
 
+def send_verification_email_safely(user: User) -> None:
+    try:
+        send_verification_email(user)
+    except (SMTPException, OSError):
+        logger.exception("Failed to send verification email for user %s", user.pk)
+
+
 def normalize_whitespace(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value)
     return " ".join(normalized.strip().split())
@@ -125,13 +132,15 @@ class RegisterSerializer(serializers.Serializer):
                     password=validated_data["password"],
                 )
         except IntegrityError:
-            return User(email=validated_data["email"])
+            try:
+                user = User.objects.get(email=validated_data["email"])
+            except User.DoesNotExist:
+                return User(email=validated_data["email"])
 
-        try:
-            send_verification_email(user)
-        except (SMTPException, OSError):
-            logger.exception("Failed to send verification email for user %s", user.pk)
+            if user.email_verified or user.is_staff or user.is_superuser:
+                return user
 
+        send_verification_email_safely(user)
         return user
 
 
@@ -213,10 +222,7 @@ class ResendVerificationSerializer(serializers.Serializer):
         if user.email_verified or user.is_staff or user.is_superuser:
             return  # Already verified or admin — no email sent
 
-        try:
-            send_verification_email(user)
-        except (SMTPException, OSError):
-            logger.exception("Failed to send verification email for user %s", user.pk)
+        send_verification_email_safely(user)
 
 
 class RefreshTokenSerializer(serializers.Serializer):
