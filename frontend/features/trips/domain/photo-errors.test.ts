@@ -23,6 +23,23 @@ describe("photo-errors", () => {
     );
   });
 
+  it("maps backend HEIC_UNSUPPORTED to the decode-failure copy", () => {
+    const error = {
+      isAxiosError: true,
+      response: {
+        status: 415,
+        data: {
+          detail: "HEIC images are not supported yet.",
+          error_code: "HEIC_UNSUPPORTED",
+        },
+      },
+    };
+
+    expect(getTripPhotoErrorMessage(error, "Upload failed.")).toBe(
+      "Could not read this photo. Convert it to JPEG and try again.",
+    );
+  });
+
   it("validates selected files before upload", () => {
     expect(validateTripPhotoFiles([])).toEqual({
       ok: false,

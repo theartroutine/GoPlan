@@ -17,6 +17,10 @@ type PhotoValidationResult =
   | { ok: false; message: string };
 
 const ERROR_MESSAGES: Record<string, string> = {
+  // Django still emits this code when raw HEIC bytes slip past the BFF MIME
+  // checks (e.g. empty/generic MIME); the UI converts HEIC client-side, so
+  // reaching this mapping means the photo could not be preprocessed.
+  HEIC_UNSUPPORTED: "Could not read this photo. Convert it to JPEG and try again.",
   NO_FILES: "Choose at least one photo.",
   PHOTO_DIMENSIONS_TOO_LARGE:
     "That photo is too large to process. Use an image under 45 megapixels.",
