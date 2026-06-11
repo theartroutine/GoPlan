@@ -23,6 +23,7 @@ from accounts.tokens import RefreshToken
 from accounts.services import (
     complete_profile_identity,
     reset_user_password,
+    send_account_exists_email,
     send_password_reset_email,
     send_verification_email,
     update_display_name,
@@ -50,6 +51,13 @@ def send_verification_email_safely(user: User) -> None:
         send_verification_email(user)
     except (SMTPException, OSError):
         logger.exception("Failed to send verification email for user %s", user.pk)
+
+
+def send_account_exists_email_safely(user: User) -> None:
+    try:
+        send_account_exists_email(user)
+    except (SMTPException, OSError):
+        logger.exception("Failed to send account-exists email for user %s", user.pk)
 
 
 def normalize_whitespace(value: str) -> str:
@@ -137,7 +145,16 @@ class RegisterSerializer(serializers.Serializer):
             except User.DoesNotExist:
                 return User(email=validated_data["email"])
 
-            if user.email_verified or user.is_staff or user.is_superuser:
+            # Staff/superuser duplicates stay silent: anonymous requests must
+            # not be able to generate email to admin inboxes.
+            if user.is_staff or user.is_superuser:
+                return user
+
+            # Verified owner gets a "you already have an account" email so they
+            # are pointed to log in / reset password instead of waiting for a
+            # verification email that will never arrive. Response stays uniform.
+            if user.email_verified:
+                send_account_exists_email_safely(user)
                 return user
 
         send_verification_email_safely(user)

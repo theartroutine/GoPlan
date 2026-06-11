@@ -190,6 +190,22 @@ def send_verification_email(user: User) -> None:
     )
 
 
+def send_account_exists_email(user: User) -> None:
+    body = render_to_string(
+        "accounts/account_exists.txt",
+        {
+            "login_url": f"{settings.FRONTEND_BASE_URL}/login",
+            "password_reset_url": f"{settings.FRONTEND_BASE_URL}/forgot-password",
+        },
+    )
+    send_mail(
+        subject="You already have a GoPlan account",
+        message=body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+    )
+
+
 def build_user_payload(user: User) -> dict:
     return {
         "id": str(user.id),
