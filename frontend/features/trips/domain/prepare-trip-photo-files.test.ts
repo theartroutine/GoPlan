@@ -74,4 +74,25 @@ describe("prepareTripPhotoFiles", () => {
 
     expect(result).toEqual({ ok: false, message: "Upload up to 20 photos at a time." });
   });
+
+  it("validates total upload size on the processed output, not the input", async () => {
+    const input = [
+      new File(["a"], "a.jpg", { type: "image/jpeg" }),
+      new File(["b"], "b.jpg", { type: "image/jpeg" }),
+    ];
+    // Small inputs grow past the 50 MiB total budget after processing; the
+    // total check runs before the per-file check, so this exercises it.
+    const bigChunk = new Uint8Array(26 * 1024 * 1024);
+    const preprocess = vi.fn().mockImplementation((file: File) =>
+      Promise.resolve({
+        ok: true,
+        file: new File([bigChunk], file.name, { type: "image/jpeg" }),
+        wasProcessed: true,
+      }),
+    );
+
+    const result = await prepareTripPhotoFiles(input, preprocess);
+
+    expect(result).toEqual({ ok: false, message: "Upload up to 50 MiB of photos at a time." });
+  });
 });
