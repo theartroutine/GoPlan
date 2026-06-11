@@ -8,12 +8,17 @@ const avatarHookMock = vi.hoisted(() => ({
 }));
 
 const imageMock = vi.hoisted(() => ({
-  loadImageElement: vi.fn(),
   renderCroppedImageToWebP: vi.fn(),
+}));
+
+const imagePreprocessMock = vi.hoisted(() => ({
+  preprocessImageFile: vi.fn(),
+  IMAGE_INPUT_ACCEPT: "image/jpeg,image/png,image/webp,image/heic,.heic,.heif",
 }));
 
 vi.mock("@/features/account/application/use-update-avatar", () => avatarHookMock);
 vi.mock("@/shared/lib/image", () => imageMock);
+vi.mock("@/shared/lib/image-preprocess", () => imagePreprocessMock);
 vi.mock("react-easy-crop", () => ({
   default: (props: {
     onCropComplete: (
@@ -29,10 +34,6 @@ vi.mock("react-easy-crop", () => ({
   },
 }));
 
-function mockLoadedImage(width: number, height: number): HTMLImageElement {
-  return { naturalWidth: width, naturalHeight: height } as HTMLImageElement;
-}
-
 describe("AvatarEditDialog", () => {
   const upload = vi.fn();
 
@@ -43,7 +44,9 @@ describe("AvatarEditDialog", () => {
       uploading: false,
       error: null,
     });
-    imageMock.loadImageElement.mockResolvedValue(mockLoadedImage(512, 512));
+    imagePreprocessMock.preprocessImageFile.mockImplementation(
+      async (file: File) => ({ ok: true as const, file, wasProcessed: false }),
+    );
     imageMock.renderCroppedImageToWebP.mockResolvedValue(
       new Blob(["avatar"], { type: "image/webp" }),
     );
@@ -91,8 +94,11 @@ describe("AvatarEditDialog", () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
-  it("rejects source images above the avatar dimension limit before cropping", async () => {
-    imageMock.loadImageElement.mockResolvedValue(mockLoadedImage(6000, 6000));
+  it("shows a local error when the file type is unsupported", async () => {
+    imagePreprocessMock.preprocessImageFile.mockResolvedValue({
+      ok: false,
+      code: "UNSUPPORTED",
+    });
 
     render(<AvatarEditDialog open onOpenChange={vi.fn()} />);
     const input = document.querySelector('input[type="file"]');
@@ -102,12 +108,14 @@ describe("AvatarEditDialog", () => {
 
     fireEvent.change(input, {
       target: {
-        files: [new File(["avatar"], "huge.png", { type: "image/png" })],
+        files: [new File(["avatar"], "image.bmp", { type: "image/bmp" })],
       },
     });
 
     expect(
-      await screen.findByText("Avatar image must be at most 1024x1024 pixels."),
+      await screen.findByText(
+        "Selected file must be a JPEG, PNG, WebP, or HEIC image.",
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("cropper")).not.toBeInTheDocument();
     expect(upload).not.toHaveBeenCalled();
@@ -117,7 +125,9 @@ describe("AvatarEditDialog", () => {
     render(<AvatarEditDialog open onOpenChange={vi.fn()} />);
 
     expect(
-      screen.getByText("Choose a JPEG, PNG, or WebP image, then crop it into a square avatar."),
+      screen.getByText(
+        "Choose a JPEG, PNG, WebP, or HEIC image, then crop it into a square avatar.",
+      ),
     ).toBeInTheDocument();
   });
 });
