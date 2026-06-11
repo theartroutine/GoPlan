@@ -7,8 +7,15 @@ import {
   bffUploadTripCover,
   extractBffErrorDetail,
 } from "@/features/trips/infrastructure/trips-api";
+import {
+  IMAGE_INPUT_ACCEPT,
+  preprocessImageFile,
+} from "@/shared/lib/image-preprocess";
 import { TripCoverImage } from "@/features/trips/presentation/trip-cover-image";
 import { Button } from "@/shared/ui/button";
+
+// Mirrors backend TRIP_COVER_MAX_EDGE / TRIP_COVER_MAX_BYTES.
+const COVER_PREPROCESS_TARGET = { maxEdgePx: 2560, maxBytes: 10 * 1024 * 1024 };
 
 type Props = {
   /** URL shown in the preview. Empty string falls back to app default placeholder. */
@@ -29,13 +36,22 @@ export function CoverImagePicker({ coverUrl, onChange }: Props) {
     setUploadError(null);
     setUploading(true);
     try {
-      const url = await bffUploadTripCover(file);
+      const result = await preprocessImageFile(file, COVER_PREPROCESS_TARGET);
+      if (!result.ok) {
+        setUploadError(
+          result.code === "UNSUPPORTED"
+            ? "Use a JPEG, PNG, WebP, or HEIC image."
+            : "Could not read this photo. Convert it to JPEG and try again.",
+        );
+        return;
+      }
+      const url = await bffUploadTripCover(result.file);
       onChange(url);
     } catch (error) {
       setUploadError(
         extractBffErrorDetail(
           error,
-          "Failed to upload. Try a different image (JPEG/PNG/WebP, max 10 MB).",
+          "Failed to upload. Try a different image (JPEG, PNG, WebP, or HEIC).",
         ),
       );
     } finally {
@@ -73,7 +89,7 @@ export function CoverImagePicker({ coverUrl, onChange }: Props) {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept={IMAGE_INPUT_ACCEPT}
           className="hidden"
           onChange={handleFileChange}
         />

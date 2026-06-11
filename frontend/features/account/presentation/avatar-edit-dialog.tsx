@@ -5,10 +5,11 @@ import Cropper, { type Area } from "react-easy-crop";
 import { toast } from "sonner";
 
 import { useUpdateAvatar } from "@/features/account/application/use-update-avatar";
+import { renderCroppedImageToWebP } from "@/shared/lib/image";
 import {
-  loadImageElement,
-  renderCroppedImageToWebP,
-} from "@/shared/lib/image";
+  IMAGE_INPUT_ACCEPT,
+  preprocessImageFile,
+} from "@/shared/lib/image-preprocess";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -24,8 +25,9 @@ type Props = {
 };
 
 const TARGET_PX = 512;
-const MAX_SOURCE_DIMENSION_PX = 1024;
-const ALLOWED_SOURCE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+// The preprocessed source only feeds the cropper locally (never uploaded);
+// these bounds keep huge camera photos workable in memory.
+const AVATAR_SOURCE_TARGET = { maxEdgePx: 2048, maxBytes: 10 * 1024 * 1024 };
 
 export function AvatarEditDialog({ open, onOpenChange }: Props) {
   const { upload, uploading, error } = useUpdateAvatar();
@@ -34,9 +36,13 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
   // Render+upload spans an async gap before `uploading` flips on; this ref
   // blocks re-entry during that window so a double-click can't fire two encodes.
   const submittingRef = useRef(false);
+  // Bumped on dialog close and on every new pick; an in-flight preprocess
+  // whose token no longer matches must not commit state (stale-image guard).
+  const pickTokenRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -51,37 +57,30 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
     setZoom(1);
     setCroppedAreaPixels(null);
     setLocalError(null);
+    setProcessing(true);
 
-    if (file.type && !ALLOWED_SOURCE_TYPES.has(file.type)) {
-      setLocalError("Selected file must be a JPEG, PNG, or WebP image.");
-      return;
-    }
-
-    const nextFileUrl = URL.createObjectURL(file);
+    const token = ++pickTokenRef.current;
     try {
-      const image = await loadImageElement(nextFileUrl);
-      if (
-        image.naturalWidth > MAX_SOURCE_DIMENSION_PX ||
-        image.naturalHeight > MAX_SOURCE_DIMENSION_PX
-      ) {
-        URL.revokeObjectURL(nextFileUrl);
+      const result = await preprocessImageFile(file, AVATAR_SOURCE_TARGET);
+      if (pickTokenRef.current !== token) return; // dialog closed or pick superseded
+      if (!result.ok) {
         setLocalError(
-          `Avatar image must be at most ${MAX_SOURCE_DIMENSION_PX}x${MAX_SOURCE_DIMENSION_PX} pixels.`,
+          result.code === "UNSUPPORTED"
+            ? "Selected file must be a JPEG, PNG, WebP, or HEIC image."
+            : "Could not read this photo. Convert it to JPEG and try again.",
         );
         return;
       }
-    } catch {
-      URL.revokeObjectURL(nextFileUrl);
-      setLocalError("Selected file could not be read as an image.");
-      return;
+      setFileUrl(URL.createObjectURL(result.file));
+    } finally {
+      setProcessing(false);
     }
-
-    setFileUrl(nextFileUrl);
   }, [fileUrl]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!next) {
+        pickTokenRef.current += 1; // invalidate any in-flight preprocess
         if (fileUrl) URL.revokeObjectURL(fileUrl);
         setFileUrl(null);
         setCrop({ x: 0, y: 0 });
@@ -128,18 +127,19 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>Change avatar</DialogTitle>
           <DialogDescription className="sr-only">
-            Choose a JPEG, PNG, or WebP image, then crop it into a square avatar.
+            Choose a JPEG, PNG, WebP, or HEIC image, then crop it into a square avatar.
           </DialogDescription>
         </DialogHeader>
 
         {!fileUrl ? (
           <>
             <label className="flex h-40 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-border text-sm text-muted-foreground hover:border-primary">
-              Click to choose an image
+              {processing ? "Optimizing image…" : "Click to choose an image"}
               <input
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept={IMAGE_INPUT_ACCEPT}
                 className="hidden"
+                disabled={processing}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) void handleFile(file);

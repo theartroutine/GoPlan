@@ -11,7 +11,6 @@ import {
   TRIP_PHOTO_MAX_FILES,
   TRIP_PHOTO_MAX_TOTAL_UPLOAD_BYTES,
   hasKnownUnsupportedTripPhotoMime,
-  isTripPhotoHeicFile,
   isTripPhotoSvgFile,
   totalTripPhotoFileBytes,
 } from "@/features/trips/domain/photo-constraints";
@@ -79,15 +78,6 @@ function validateFiles(files: File[]): NextResponse | null {
           error_code: "PHOTO_TOO_LARGE",
         },
         { status: 413 },
-      );
-    }
-    if (isTripPhotoHeicFile(file)) {
-      return NextResponse.json(
-        {
-          detail: "HEIC images are not supported yet. Convert to JPEG, PNG, or WebP.",
-          error_code: "HEIC_UNSUPPORTED",
-        },
-        { status: 415 },
       );
     }
     if (isTripPhotoSvgFile(file) || hasKnownUnsupportedTripPhotoMime(file)) {

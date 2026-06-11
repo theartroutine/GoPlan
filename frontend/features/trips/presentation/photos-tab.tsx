@@ -13,6 +13,8 @@ import {
   getTripPhotoErrorMessage,
   validateTripPhotoFiles,
 } from "@/features/trips/domain/photo-errors";
+import { prepareTripPhotoFiles } from "@/features/trips/domain/prepare-trip-photo-files";
+import { IMAGE_INPUT_ACCEPT } from "@/shared/lib/image-preprocess";
 import {
   bffDeleteTripPhoto,
   bffDownloadTripPhoto,
@@ -61,6 +63,7 @@ export function PhotosTab() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -168,31 +171,45 @@ export function PhotosTab() {
     }
   }
 
-  function handleFilesSelected(files: File[]) {
-    const validation = validateTripPhotoFiles(files);
+  async function handleFilesSelected(files: File[]) {
+    if (optimizing) return;
     setUploadError(null);
     setError(null);
-
-    if (!validation.ok) {
-      setUploadError(validation.message);
-      return;
+    setOptimizing(true);
+    try {
+      const result = await prepareTripPhotoFiles(files);
+      if (!result.ok) {
+        setUploadError(result.message);
+        return;
+      }
+      setStagedFiles(result.files);
+    } finally {
+      setOptimizing(false);
     }
-
-    setStagedFiles(files);
   }
 
-  function handleStageAddFiles(extra: File[]) {
-    setStagedFiles((current) => {
-      const base = current ?? [];
-      const next = [...base, ...extra];
-      const validation = validateTripPhotoFiles(next);
-      if (!validation.ok) {
-        setUploadError(validation.message);
-        return current;
+  async function handleStageAddFiles(extra: File[]) {
+    if (optimizing) return;
+    setOptimizing(true);
+    try {
+      const result = await prepareTripPhotoFiles(extra);
+      if (!result.ok) {
+        setUploadError(result.message);
+        return;
       }
-      setUploadError(null);
-      return next;
-    });
+      setStagedFiles((current) => {
+        const next = [...(current ?? []), ...result.files];
+        const validation = validateTripPhotoFiles(next);
+        if (!validation.ok) {
+          setUploadError(validation.message);
+          return current;
+        }
+        setUploadError(null);
+        return next;
+      });
+    } finally {
+      setOptimizing(false);
+    }
   }
 
   function handleStageRemove(index: number) {
@@ -208,7 +225,7 @@ export function PhotosTab() {
   }
 
   function handleStageCancel() {
-    if (uploading) return;
+    if (uploading || optimizing) return;
     setStagedFiles(null);
     setUploadError(null);
   }
@@ -378,15 +395,15 @@ export function PhotosTab() {
             type="button"
             className="mt-4"
             onClick={() => emptyStateInputRef.current?.click()}
-            disabled={uploading}
+            disabled={uploading || optimizing}
           >
             <Upload />
-            Upload photos
+            {optimizing ? "Optimizing…" : "Upload photos"}
           </Button>
           <input
             ref={emptyStateInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept={IMAGE_INPUT_ACCEPT}
             multiple
             className="hidden"
             onChange={(event) => {
@@ -484,15 +501,20 @@ export function PhotosTab() {
           onCancel={handleExitSelection}
         />
       ) : (
-        <UploadFab onFilesSelected={handleFilesSelected} uploading={uploading} />
+        <UploadFab
+          onFilesSelected={(files) => void handleFilesSelected(files)}
+          uploading={uploading}
+          optimizing={optimizing}
+        />
       )}
 
       <UploadReviewDialog
         open={stagedFiles !== null}
         files={stagedFiles ?? []}
         uploading={uploading}
+        optimizing={optimizing}
         error={uploadError}
-        onAddFiles={handleStageAddFiles}
+        onAddFiles={(extra) => void handleStageAddFiles(extra)}
         onRemoveFile={handleStageRemove}
         onCancel={handleStageCancel}
         onConfirm={() => void handleStageConfirm()}
