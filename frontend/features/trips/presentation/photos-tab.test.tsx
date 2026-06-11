@@ -314,7 +314,7 @@ describe("PhotosTab", () => {
 
     expect(
       await screen.findByText(
-        "HEIC photos are not supported yet. Convert them to JPEG, PNG, or WebP and try again.",
+        "Use JPEG, PNG, WebP, or HEIC photos. SVG and other formats are not supported.",
       ),
     ).toBeInTheDocument();
     expect(photosApiMock.bffUploadTripPhotos).not.toHaveBeenCalled();
