@@ -6,7 +6,24 @@ import {
 } from "@/features/trips/domain/photo-errors";
 
 describe("photo-errors", () => {
-  it("maps HEIC_UNSUPPORTED to user-friendly copy", () => {
+  it("maps UNSUPPORTED_IMAGE_TYPE to user-friendly copy", () => {
+    const error = {
+      isAxiosError: true,
+      response: {
+        status: 415,
+        data: {
+          detail: "Unsupported image format.",
+          error_code: "UNSUPPORTED_IMAGE_TYPE",
+        },
+      },
+    };
+
+    expect(getTripPhotoErrorMessage(error, "Upload failed.")).toBe(
+      "Use JPEG, PNG, WebP, or HEIC photos. SVG and other formats are not supported.",
+    );
+  });
+
+  it("maps backend HEIC_UNSUPPORTED to the decode-failure copy", () => {
     const error = {
       isAxiosError: true,
       response: {
@@ -19,7 +36,7 @@ describe("photo-errors", () => {
     };
 
     expect(getTripPhotoErrorMessage(error, "Upload failed.")).toBe(
-      "HEIC photos are not supported yet. Convert them to JPEG, PNG, or WebP and try again.",
+      "Could not read this photo. Convert it to JPEG and try again.",
     );
   });
 
@@ -35,8 +52,7 @@ describe("photo-errors", () => {
       ]),
     ).toEqual({
       ok: false,
-      message:
-        "HEIC photos are not supported yet. Convert them to JPEG, PNG, or WebP and try again.",
+      message: "Use JPEG, PNG, WebP, or HEIC photos. SVG and other formats are not supported.",
     });
 
     expect(
@@ -45,7 +61,7 @@ describe("photo-errors", () => {
       ]),
     ).toEqual({
       ok: false,
-      message: "Use JPEG, PNG, or WebP photos. SVG and other formats are not supported.",
+      message: "Use JPEG, PNG, WebP, or HEIC photos. SVG and other formats are not supported.",
     });
 
     expect(

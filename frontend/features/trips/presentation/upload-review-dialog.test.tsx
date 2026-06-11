@@ -35,6 +35,7 @@ describe("UploadReviewDialog", () => {
         open
         files={files}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -58,6 +59,7 @@ describe("UploadReviewDialog", () => {
         open
         files={files}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={onRemoveFile}
@@ -76,6 +78,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -93,6 +96,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[makeFile("a.jpg")]}
         uploading={false}
+        optimizing={false}
         error="Network error."
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -113,6 +117,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[makeFile("a.jpg")]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -135,6 +140,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[existing]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={onAddFiles}
         onRemoveFile={vi.fn()}
@@ -164,6 +170,28 @@ describe("UploadReviewDialog", () => {
     expect(onAddFiles.mock.calls[0][0][0].name).toBe("c.jpg");
   });
 
+  it("shows the optimizing status and disables actions while preprocessing", () => {
+    render(
+      <UploadReviewDialog
+        open
+        files={[makeFile("a.jpg")]}
+        uploading={false}
+        optimizing
+        error={null}
+        onAddFiles={vi.fn()}
+        onRemoveFile={vi.fn()}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Optimizing photos…");
+    expect(screen.getByRole("button", { name: "Upload 1 photo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add more" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove a.jpg" })).toBeDisabled();
+  });
+
   it("revokes object URLs for staged files when the file list changes or the dialog closes", () => {
     const file = makeFile("a.jpg");
     const { rerender } = render(
@@ -171,6 +199,7 @@ describe("UploadReviewDialog", () => {
         open
         files={[file]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
@@ -186,6 +215,7 @@ describe("UploadReviewDialog", () => {
         open={false}
         files={[file]}
         uploading={false}
+        optimizing={false}
         error={null}
         onAddFiles={vi.fn()}
         onRemoveFile={vi.fn()}
