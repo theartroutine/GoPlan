@@ -5,6 +5,7 @@
 import { Loader2, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
+import { IMAGE_INPUT_ACCEPT } from "@/shared/lib/image-preprocess";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -32,6 +33,7 @@ export type UploadReviewDialogProps = {
   open: boolean;
   files: File[];
   uploading: boolean;
+  optimizing: boolean;
   error: string | null;
   onAddFiles: (extra: File[]) => void;
   onRemoveFile: (index: number) => void;
@@ -43,6 +45,7 @@ export function UploadReviewDialog({
   open,
   files,
   uploading,
+  optimizing,
   error,
   onAddFiles,
   onRemoveFile,
@@ -74,7 +77,7 @@ export function UploadReviewDialog({
       : `${count} photos · ${formatBytes(totalBytes)}`;
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && !uploading && onCancel()}>
+    <Dialog open={open} onOpenChange={(next) => !next && !uploading && !optimizing && onCancel()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Review photos</DialogTitle>
@@ -96,7 +99,7 @@ export function UploadReviewDialog({
                 type="button"
                 aria-label={`Remove ${file.name}`}
                 onClick={() => onRemoveFile(index)}
-                disabled={uploading}
+                disabled={uploading || optimizing}
                 className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80 disabled:opacity-50"
               >
                 <X className="size-3.5" />
@@ -107,7 +110,7 @@ export function UploadReviewDialog({
             <input
               ref={addMoreInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept={IMAGE_INPUT_ACCEPT}
               multiple
               className="hidden"
               onChange={(event) => {
@@ -124,7 +127,7 @@ export function UploadReviewDialog({
               type="button"
               aria-label="Add more"
               onClick={() => addMoreInputRef.current?.click()}
-              disabled={uploading}
+              disabled={uploading || optimizing}
               className="flex h-full w-full flex-col items-center justify-center gap-1 text-xs disabled:opacity-50"
             >
               <Plus className="size-5" />
@@ -132,6 +135,12 @@ export function UploadReviewDialog({
             </button>
           </div>
         </div>
+
+        {optimizing ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            Optimizing photos…
+          </p>
+        ) : null}
 
         {error ? (
           <div
@@ -143,10 +152,10 @@ export function UploadReviewDialog({
         ) : null}
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={uploading}>
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={uploading || optimizing}>
             Cancel
           </Button>
-          <Button type="button" onClick={onConfirm} disabled={uploading || count === 0}>
+          <Button type="button" onClick={onConfirm} disabled={uploading || optimizing || count === 0}>
             {uploading ? <Loader2 className="animate-spin" /> : null}
             {uploadLabel}
           </Button>

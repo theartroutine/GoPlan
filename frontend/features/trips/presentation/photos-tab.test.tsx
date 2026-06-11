@@ -21,6 +21,20 @@ vi.mock("@/features/trips/presentation/trip-context", () => ({
   }),
 }));
 
+// Keep real validation logic but stub preprocessing as identity (jsdom lacks createImageBitmap).
+vi.mock("@/features/trips/domain/prepare-trip-photo-files", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/features/trips/domain/prepare-trip-photo-files")>();
+  return {
+    ...original,
+    prepareTripPhotoFiles: vi.fn((files: File[]) =>
+      original.prepareTripPhotoFiles(files, (file) =>
+        Promise.resolve({ ok: true, file, wasProcessed: false }),
+      ),
+    ),
+  };
+});
+
+import { prepareTripPhotoFiles } from "@/features/trips/domain/prepare-trip-photo-files";
 import { PhotosTab } from "@/features/trips/presentation/photos-tab";
 
 const PHOTO: TripPhoto = {
@@ -291,11 +305,15 @@ describe("PhotosTab", () => {
     });
   });
 
-  it("rejects HEIC before upload with user-friendly copy", async () => {
+  it("surfaces preprocess failure copy when a photo cannot be read", async () => {
     photosApiMock.bffListTripPhotos.mockResolvedValueOnce({
       results: [],
       nextCursor: null,
       previousCursor: null,
+    });
+    vi.mocked(prepareTripPhotoFiles).mockResolvedValueOnce({
+      ok: false,
+      message: "Could not read this photo. Convert it to JPEG and try again.",
     });
 
     render(<PhotosTab />);
@@ -308,13 +326,13 @@ describe("PhotosTab", () => {
     }
     fireEvent.change(targetInput, {
       target: {
-        files: [new File(["heic"], "memory.heic", { type: "image/heic" })],
+        files: [new File(["bad"], "broken.jpg", { type: "image/jpeg" })],
       },
     });
 
     expect(
       await screen.findByText(
-        "Use JPEG, PNG, WebP, or HEIC photos. SVG and other formats are not supported.",
+        "Could not read this photo. Convert it to JPEG and try again.",
       ),
     ).toBeInTheDocument();
     expect(photosApiMock.bffUploadTripPhotos).not.toHaveBeenCalled();
