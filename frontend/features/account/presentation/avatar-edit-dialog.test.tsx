@@ -121,6 +121,69 @@ describe("AvatarEditDialog", () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
+  it("shows a local error when the file cannot be decoded", async () => {
+    imagePreprocessMock.preprocessImageFile.mockResolvedValue({
+      ok: false,
+      code: "UNREADABLE",
+    });
+
+    render(<AvatarEditDialog open onOpenChange={vi.fn()} />);
+    const input = document.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("Avatar file input was not rendered.");
+    }
+
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["broken"], "broken.heic", { type: "image/heic" })],
+      },
+    });
+
+    expect(
+      await screen.findByText(
+        "Could not read this photo. Convert it to JPEG and try again.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("cropper")).not.toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("ignores a preprocess result that resolves after the dialog closes", async () => {
+    let resolvePreprocess:
+      | ((value: { ok: true; file: File; wasProcessed: boolean }) => void)
+      | undefined;
+    imagePreprocessMock.preprocessImageFile.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePreprocess = resolve;
+        }),
+    );
+    const onOpenChange = vi.fn();
+    const { rerender } = render(
+      <AvatarEditDialog open onOpenChange={onOpenChange} />,
+    );
+    const input = document.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("Avatar file input was not rendered.");
+    }
+
+    const file = new File(["avatar"], "avatar.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    // Close the dialog while preprocessing is still in flight.
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    rerender(<AvatarEditDialog open={false} onOpenChange={onOpenChange} />);
+
+    resolvePreprocess?.({ ok: true, file, wasProcessed: false });
+    rerender(<AvatarEditDialog open onOpenChange={onOpenChange} />);
+
+    // Reopened dialog must show the empty picker, not a stale cropper.
+    expect(
+      await screen.findByText("Click to choose an image"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("cropper")).not.toBeInTheDocument();
+  });
+
   it("renders an accessible description for the avatar dialog", () => {
     render(<AvatarEditDialog open onOpenChange={vi.fn()} />);
 

@@ -40,6 +40,9 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
   // Render+upload spans an async gap before `uploading` flips on; this ref
   // blocks re-entry during that window so a double-click can't fire two encodes.
   const submittingRef = useRef(false);
+  // Bumped on dialog close and on every new pick; an in-flight preprocess
+  // whose token no longer matches must not commit state (stale-image guard).
+  const pickTokenRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -56,8 +59,10 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
     setLocalError(null);
     setProcessing(true);
 
+    const token = ++pickTokenRef.current;
     try {
       const result = await preprocessImageFile(file, AVATAR_SOURCE_TARGET);
+      if (pickTokenRef.current !== token) return; // dialog closed or pick superseded
       if (!result.ok) {
         setLocalError(
           result.code === "UNSUPPORTED"
@@ -75,6 +80,7 @@ export function AvatarEditDialog({ open, onOpenChange }: Props) {
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!next) {
+        pickTokenRef.current += 1; // invalidate any in-flight preprocess
         if (fileUrl) URL.revokeObjectURL(fileUrl);
         setFileUrl(null);
         setCrop({ x: 0, y: 0 });
