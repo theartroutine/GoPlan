@@ -145,6 +145,9 @@ export async function preprocessImageFile(
       if (encoded.size <= target.maxBytes) break;
     }
     if (!encoded || encoded.size > target.maxBytes) {
+      // Budget exhausted even at the lowest quality step. Practically
+      // unreachable at 2560px WebP except when the encoder ignores quality
+      // (e.g. old Safari falls back to lossless PNG bytes for toBlob WebP).
       return { ok: false, code: "UNREADABLE" };
     }
     return {
