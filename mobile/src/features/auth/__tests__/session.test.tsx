@@ -98,4 +98,20 @@ describe('SessionProvider', () => {
     const { result } = await renderHook(useSession, { wrapper });
     await waitFor(() => expect(result.current.status).toBe('signedOut'));
   });
+
+  it('starts in restoring state until refresh settles', async () => {
+    let resolveRefresh!: (value: string | null) => void;
+    mockRefresh.mockReturnValue(
+      new Promise<string | null>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+    mockFetchMe.mockResolvedValue(user);
+    const { result } = await renderHook(useSession, { wrapper });
+    expect(result.current.status).toBe('restoring');
+    await act(async () => {
+      resolveRefresh('access-1');
+    });
+    await waitFor(() => expect(result.current.status).toBe('signedIn'));
+  });
 });
