@@ -7,7 +7,7 @@ describe('Button', () => {
   it('fires onPress when enabled', async () => {
     const onPress = jest.fn();
     await render(<Button title="Sign in" onPress={onPress} />);
-    fireEvent.press(screen.getByText('Sign in'));
+    await fireEvent.press(screen.getByText('Sign in'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
@@ -15,7 +15,7 @@ describe('Button', () => {
     const onPress = jest.fn();
     await render(<Button title="Sign in" onPress={onPress} loading />);
     expect(screen.queryByText('Sign in')).toBeNull();
-    fireEvent.press(screen.getByTestId('button-pressable'));
+    await fireEvent.press(screen.getByTestId('button-pressable'));
     expect(onPress).not.toHaveBeenCalled();
   });
 });
@@ -32,8 +32,8 @@ describe('FormError', () => {
   it('shows message errors and hides field errors', async () => {
     const { rerender } = await render(<FormError error={{ kind: 'message', message: 'Invalid email or password.' }} />);
     expect(screen.getByText('Invalid email or password.')).toBeTruthy();
-    rerender(<FormError error={{ kind: 'field', message: 'x', fieldErrors: {} }} />);
+    await rerender(<FormError error={{ kind: 'field', message: 'x', fieldErrors: {} }} />);
     expect(screen.queryByText('x')).toBeNull();
-    rerender(<FormError error={null} />);
+    await rerender(<FormError error={null} />);
   });
 });

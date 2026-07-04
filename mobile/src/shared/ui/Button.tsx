@@ -15,7 +15,8 @@ export function Button({ title, onPress, loading = false, disabled = false, vari
     <Pressable
       testID="button-pressable"
       accessibilityRole="button"
-      onPress={!blocked ? onPress : () => {}}
+      accessibilityState={{ disabled: blocked }}
+      onPress={blocked ? () => {} : onPress}
       style={({ pressed }) => [
         styles.base,
         variant === 'primary' ? styles.primary : styles.secondary,
