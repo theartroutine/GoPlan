@@ -1,15 +1,3 @@
-import { StyleSheet, Text } from 'react-native';
-import { colors, typography } from '@/shared/theme/tokens';
-import { Screen } from '@/shared/ui/Screen';
+import { VerifyEmailScreen } from '@/features/auth/screens/VerifyEmailScreen';
 
-export default function VerifyEmailScreen() {
-  return (
-    <Screen>
-      <Text style={styles.placeholder}>Verify email will live here.</Text>
-    </Screen>
-  );
-}
-
-const styles = StyleSheet.create({
-  placeholder: { ...typography.body, color: colors.textMuted },
-});
+export default VerifyEmailScreen;
