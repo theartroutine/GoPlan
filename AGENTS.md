@@ -3,7 +3,7 @@
 ## 1. Authority
 
 - This is the root instruction file for Codex. Layer-specific details live in `frontend/AGENTS.md`, `backend/AGENTS.md`, and `mobile/AGENTS.md`.
-- When working inside `frontend/` or `backend/`, apply the scoped AGENTS.md first; this file governs cross-layer rules and defaults.
+- When working inside `frontend/`, `backend/`, or `mobile/`, apply the scoped AGENTS.md first; this file governs cross-layer rules and defaults.
 - Keep runtime truth, architecture invariants, and security rules aligned with `CLAUDE.md`. Do not let only one manual introduce a feature-specific exception.
 
 ## 2. Project Context

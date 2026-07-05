@@ -3,7 +3,7 @@
 ## 1. Authority
 
 - This is the root instruction file. Layer-specific details live in `frontend/CLAUDE.md`, `backend/CLAUDE.md`, and `mobile/CLAUDE.md`.
-- When working inside `frontend/` or `backend/`, apply the scoped CLAUDE.md first; this file governs cross-layer rules and defaults.
+- When working inside `frontend/`, `backend/`, or `mobile/`, apply the scoped CLAUDE.md first; this file governs cross-layer rules and defaults.
 - Keep runtime truth, architecture invariants, and security rules aligned with `AGENTS.md`. Do not let only one manual introduce a feature-specific exception.
 
 ## 2. Project Context
