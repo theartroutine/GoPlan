@@ -20,13 +20,21 @@ GoPlan's mobile app — Expo (React Native) client for the GoPlan group trip pla
 
    The backend must be running (Podman Compose, repo root) and the phone must be on the same Wi-Fi network.
 
-3. Start the dev server
+3. Install the dev build on the iPhone (first time only)
+
+   ```bash
+   npx expo run:ios --device
+   ```
+
+   Requires Xcode and a USB cable. App Store Expo Go is capped at SDK 54 and cannot run this project. Rebuild with the same command when a native dependency is added, `app.json` changes, the free-account signature expires (7 days), or the Wi-Fi network changes (the Metro URL is baked into the build).
+
+4. Start the dev server (daily workflow, no cable)
 
    ```bash
    npx expo start
    ```
 
-   Scan the QR code with the iPhone camera to open the app in [Expo Go](https://expo.dev/go).
+   Open the installed GoPlan app on the iPhone — it connects to Metro automatically and hot-reloads code changes.
 
 ## Quality gates
 
