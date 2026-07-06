@@ -9,8 +9,8 @@ export function ProfileScreen() {
   if (!user) {
     return null;
   }
-  const identify =
-    user.identify_name && user.identify_tag ? `${user.identify_name}#${user.identify_tag}` : null;
+  // Backend's identify_tag is already the full "identify_name#identify_code" value.
+  const identify = user.identify_tag;
   return (
     <Screen>
       <View style={styles.card}>
