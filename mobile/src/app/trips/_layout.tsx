@@ -1,0 +1,95 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Redirect, Stack, useRouter } from 'expo-router';
+import { Pressable, StyleSheet, Text } from 'react-native';
+import { useSession } from '@/features/auth/session';
+import { colors, spacing, typography } from '@/shared/theme/tokens';
+import { LoadingScreen } from '@/shared/ui/LoadingScreen';
+
+interface HeaderActionProps {
+  label: string;
+  accessibilityLabel: string;
+  showBackIcon?: boolean;
+  onPress: () => void;
+}
+
+function HeaderAction({ label, accessibilityLabel, showBackIcon = false, onPress }: HeaderActionProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      hitSlop={spacing.sm}
+      onPress={onPress}
+      style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
+    >
+      {showBackIcon ? <Ionicons name="chevron-back" size={22} color={colors.primary} /> : null}
+      <Text style={styles.headerActionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export default function TripsLayout() {
+  const router = useRouter();
+  const { status, user } = useSession();
+  if (status === 'restoring') {
+    return <LoadingScreen />;
+  }
+  if (status === 'signedOut') {
+    return <Redirect href="/(auth)/login" />;
+  }
+  if (user?.requires_profile_setup) {
+    return <Redirect href="/(auth)/profile-setup" />;
+  }
+
+  const leaveTripsRoute = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/(tabs)');
+  };
+
+  return (
+    <Stack screenOptions={{ headerShown: true }}>
+      <Stack.Screen
+        name="create"
+        options={{
+          title: 'New Trip',
+          presentation: 'modal',
+          headerLeft: () => (
+            <HeaderAction
+              label="Cancel"
+              accessibilityLabel="Cancel trip creation"
+              onPress={leaveTripsRoute}
+            />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="[tripId]/index"
+        options={{
+          title: 'Trip',
+          headerLeft: () => (
+            <HeaderAction
+              label="Trips"
+              accessibilityLabel="Back to Trips"
+              showBackIcon
+              onPress={leaveTripsRoute}
+            />
+          ),
+        }}
+      />
+    </Stack>
+  );
+}
+
+const styles = StyleSheet.create({
+  headerAction: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: -spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  headerActionPressed: { opacity: 0.55 },
+  headerActionText: { ...typography.body, color: colors.primary },
+});
