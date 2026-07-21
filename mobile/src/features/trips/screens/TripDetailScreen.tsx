@@ -1,19 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { type ComponentProps, useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { type ComponentProps, useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { resolveMediaUrl } from '@/shared/api/base-url';
 import { type ApiError, normalizeApiError } from '@/shared/api/errors';
 import { colors, radii, spacing, typography } from '@/shared/theme/tokens';
 import { Button } from '@/shared/ui/Button';
 import { LoadingScreen } from '@/shared/ui/LoadingScreen';
-import { getTripDetail } from '../api';
+import { cancelTrip, completeTrip, leaveTrip, startTrip } from '../api';
 import { MemberRow } from '../components/MemberRow';
 import { StatusBadge } from '../components/StatusBadge';
+import { TripActions, type TripDisplayAction } from '../components/TripActions';
 import { formatDateRange } from '../dates';
-import type { TripDetailResponse } from '../types';
+import { useTripDetail } from '../hooks/useTripDetail';
+import { publishTripEvent } from '../tripEvents';
 
 const budgetFormatter = new Intl.NumberFormat('en-US');
 
@@ -24,11 +26,6 @@ function formatBudget(budget: string, currencyCode: string): string {
   }
   return `${budgetFormatter.format(amount)} ${currencyCode}`;
 }
-
-type TripDetailState =
-  | { status: 'loading' }
-  | { status: 'ready'; detail: TripDetailResponse }
-  | { status: 'error'; error: ApiError };
 
 interface DetailRowProps {
   icon: ComponentProps<typeof Ionicons>['name'];
@@ -47,65 +44,106 @@ function DetailRow({ icon, value, showDivider = false }: DetailRowProps) {
   );
 }
 
-async function fetchTripDetailState(tripId: string | undefined): Promise<TripDetailState> {
-  if (!tripId) {
-    return { status: 'error', error: normalizeApiError(new Error('Missing trip id.')) };
-  }
-  try {
-    return { status: 'ready', detail: await getTripDetail(tripId) };
-  } catch (error) {
-    return { status: 'error', error: normalizeApiError(error) };
-  }
-}
-
 export function TripDetailScreen() {
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
-  const [state, setState] = useState<TripDetailState>({ status: 'loading' });
+  const router = useRouter();
+  const { detail, status, error, refreshing, refresh, applyStatus } = useTripDetail(tripId);
+  const [mutationError, setMutationError] = useState<ApiError | null>(null);
+  const [mutatingAction, setMutatingAction] = useState<TripDisplayAction | null>(null);
+  const mutationLockRef = useRef(false);
 
-  const retry = useCallback(() => {
-    setState({ status: 'loading' });
-    void fetchTripDetailState(tripId).then(setState);
-  }, [tripId]);
-
-  useEffect(() => {
-    let active = true;
-    void fetchTripDetailState(tripId).then((nextState) => {
-      if (active) {
-        setState(nextState);
+  const handleAction = useCallback(
+    async (action: TripDisplayAction) => {
+      if (action === 'edit') {
+        router.push(`/trips/${tripId}/edit`);
+        return;
       }
-    });
-    return () => {
-      active = false;
-    };
-  }, [tripId]);
+      if (!tripId || mutationLockRef.current) {
+        return;
+      }
 
-  if (state.status === 'loading') {
+      mutationLockRef.current = true;
+      setMutationError(null);
+      setMutatingAction(action);
+      try {
+        if (action === 'leave') {
+          await leaveTrip(tripId);
+          publishTripEvent({ type: 'removed', tripId });
+          router.dismissTo('/(tabs)');
+          return;
+        }
+
+        const nextStatus =
+          action === 'start'
+            ? await startTrip(tripId)
+            : action === 'complete'
+              ? await completeTrip(tripId)
+              : await cancelTrip(tripId);
+        applyStatus(nextStatus);
+        publishTripEvent({ type: 'statusChanged', tripId, status: nextStatus });
+        void refresh('silent');
+      } catch (caught) {
+        setMutationError(normalizeApiError(caught));
+      } finally {
+        mutationLockRef.current = false;
+        setMutatingAction(null);
+      }
+    },
+    [applyStatus, refresh, router, tripId],
+  );
+
+  if (status === 'loading') {
     return <LoadingScreen />;
   }
 
-  if (state.status === 'error') {
-    const notFound = state.error.status === 404;
+  if (status === 'error' || !detail) {
+    const displayError = error ?? normalizeApiError(new Error('Missing trip detail.'));
+    const notFound = displayError.status === 404;
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.centered}>
           <Ionicons name={notFound ? 'help-circle-outline' : 'cloud-offline-outline'} size={44} color={colors.textMuted} />
           <Text style={styles.sectionTitle}>{notFound ? 'Trip not found' : 'Could not load trip'}</Text>
           <Text style={styles.muted}>
-            {notFound ? 'This trip does not exist or you are not a member of it.' : state.error.message}
+            {notFound ? 'This trip does not exist or you are not a member of it.' : displayError.message}
           </Text>
-          {notFound ? null : <Button title="Try again" onPress={retry} />}
+          {notFound ? null : <Button title="Try again" onPress={() => void refresh('initial')} />}
         </View>
       </SafeAreaView>
     );
   }
 
-  const { trip, members } = state.detail;
+  const { trip, members, my_membership: membership } = detail;
   const coverUrl = resolveMediaUrl(trip.cover_image_url || null);
+  const inlineError = mutationError ?? error;
 
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
       <Stack.Screen options={{ title: trip.name }} />
       <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+        {inlineError ? (
+          <View accessibilityRole="alert" style={styles.inlineError}>
+            <Ionicons name="alert-circle-outline" size={20} color={colors.danger} />
+            <Text style={styles.inlineErrorText}>{inlineError.message}</Text>
+            {!mutationError ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Retry refreshing trip"
+                hitSlop={spacing.sm}
+                onPress={() => void refresh('silent')}
+                style={({ pressed }) => [styles.retryButton, pressed && styles.retryButtonPressed]}
+              >
+                <Text style={styles.retryText}>Retry</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+        {refreshing ? (
+          <View accessibilityLabel="Refreshing trip" style={styles.refreshingRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.refreshingText}>Refreshing…</Text>
+          </View>
+        ) : null}
         {coverUrl ? (
           <Image source={{ uri: coverUrl }} style={styles.cover} contentFit="cover" transition={150} />
         ) : (
@@ -130,6 +168,18 @@ export function TripDetailScreen() {
             <DetailRow icon="wallet-outline" value={formatBudget(trip.budget_estimate, trip.currency_code)} />
           ) : null}
         </View>
+        <TripActions
+          trip={trip}
+          membership={membership}
+          isMutating={mutatingAction !== null}
+          onAction={handleAction}
+        />
+        {mutatingAction ? (
+          <View accessibilityLabel="Updating trip" style={styles.refreshingRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.refreshingText}>Updating trip…</Text>
+          </View>
+        ) : null}
         {trip.description ? (
           <View style={styles.section}>
             <Text accessibilityRole="header" style={styles.sectionTitle}>
@@ -195,4 +245,21 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.heading, color: colors.text },
   muted: { ...typography.body, color: colors.textMuted, textAlign: 'center' },
   membersCard: { paddingVertical: 0 },
+  inlineError: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    borderRadius: radii.md,
+    backgroundColor: colors.dangerSoft,
+  },
+  inlineErrorText: { ...typography.caption, color: colors.danger, flex: 1 },
+  retryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.xs },
+  retryButtonPressed: { opacity: 0.55 },
+  retryText: { ...typography.label, color: colors.danger },
+  refreshingRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  refreshingText: { ...typography.caption, color: colors.textMuted },
 });

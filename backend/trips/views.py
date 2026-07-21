@@ -208,6 +208,11 @@ class TripDetailUpdateAPIView(APIView):
                 {"detail": str(exc), "error_code": exc.error_code},
                 status=status.HTTP_409_CONFLICT,
             )
+        except TripTerminalError as exc:
+            return Response(
+                {"detail": str(exc), "error_code": exc.error_code},
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response({"trip": TripDetailSerializer(updated).data})
 
 

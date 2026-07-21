@@ -1,13 +1,24 @@
 jest.mock('@/shared/api/client', () => ({
-  apiClient: { get: jest.fn(), post: jest.fn() },
+  apiClient: { get: jest.fn(), patch: jest.fn(), post: jest.fn() },
 }));
 
 // eslint-disable-next-line import/first
 import { apiClient } from '@/shared/api/client';
 // eslint-disable-next-line import/first
-import { createTrip, extractCursor, getTripDetail, listTrips } from '../api';
+import {
+  cancelTrip,
+  completeTrip,
+  createTrip,
+  extractCursor,
+  getTripDetail,
+  leaveTrip,
+  listTrips,
+  startTrip,
+  updateTrip,
+} from '../api';
 
 const mockGet = apiClient.get as jest.MockedFunction<typeof apiClient.get>;
+const mockPatch = apiClient.patch as jest.MockedFunction<typeof apiClient.patch>;
 const mockPost = apiClient.post as jest.MockedFunction<typeof apiClient.post>;
 
 describe('extractCursor', () => {
@@ -72,5 +83,34 @@ describe('trips api', () => {
 
     expect(mockGet).toHaveBeenCalledWith('/trips/t1');
     expect(detail).toEqual(payload);
+  });
+
+  it('updateTrip patches the payload and unwraps trip', async () => {
+    mockPatch.mockResolvedValue({ data: { trip: { id: 't1', name: 'Updated trip' } } } as never);
+
+    const trip = await updateTrip('t1', { name: 'Updated trip', budget_estimate: null });
+
+    expect(mockPatch).toHaveBeenCalledWith('/trips/t1', { name: 'Updated trip', budget_estimate: null });
+    expect(trip).toEqual({ id: 't1', name: 'Updated trip' });
+  });
+
+  it.each([
+    ['start', startTrip, 'ONGOING'],
+    ['complete', completeTrip, 'COMPLETED'],
+    ['cancel', cancelTrip, 'CANCELLED'],
+  ] as const)('%sTrip posts to the lifecycle endpoint and unwraps status', async (action, request, status) => {
+    mockPost.mockResolvedValue({ data: { status } } as never);
+
+    await expect(request('t1')).resolves.toBe(status);
+
+    expect(mockPost).toHaveBeenCalledWith(`/trips/t1/${action}`);
+  });
+
+  it('leaveTrip posts to the leave endpoint', async () => {
+    mockPost.mockResolvedValue({ data: {} } as never);
+
+    await expect(leaveTrip('t1')).resolves.toBeUndefined();
+
+    expect(mockPost).toHaveBeenCalledWith('/trips/t1/leave');
   });
 });

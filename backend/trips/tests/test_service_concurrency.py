@@ -10,7 +10,14 @@ from django.test import TransactionTestCase
 from friends.models import Friendship
 from test_helpers import create_completed_user
 from trips.models import InvitationStatus, MemberStatus, Trip, TripInvitation, TripMember, TripRole, TripStatus
-from trips.services import InviteError, InvitationError, accept_invitation, send_trip_invitations
+from trips.services import (
+    InviteError,
+    InvitationError,
+    TripTerminalError,
+    accept_invitation,
+    send_trip_invitations,
+    update_trip,
+)
 
 
 def _make_friendship(user_a, user_b):
@@ -147,6 +154,45 @@ class TripServiceConcurrencyTests(TransactionTestCase):
         self.assertFalse(TripMember.objects.filter(trip=trip, user=invitee, status=MemberStatus.ACTIVE).exists())
         invitation.refresh_from_db()
         self.assertEqual(invitation.status, InvitationStatus.PENDING)
+
+    def test_update_trip_waits_for_terminal_trip_transition(self):
+        captain = create_completed_user("cap-edit@example.com", "captain_edit", "CAP004")
+        trip = _make_trip(captain, status=TripStatus.ONGOING)
+
+        transition_started = threading.Event()
+        allow_commit = threading.Event()
+
+        def close_trip_worker():
+            with transaction.atomic():
+                locked_trip = Trip.objects.select_for_update().get(pk=trip.pk)
+                locked_trip.status = TripStatus.COMPLETED
+                locked_trip.save(update_fields=["status"])
+                transition_started.set()
+                if not allow_commit.wait(timeout=5):
+                    raise AssertionError("Timed out waiting to commit terminal trip transition.")
+
+        close_thread, close_outcome = self._run_in_thread(close_trip_worker)
+        self.assertTrue(transition_started.wait(timeout=5))
+
+        update_thread, update_outcome = self._run_in_thread(
+            lambda: update_trip(trip, name="Edited after completion")
+        )
+
+        time.sleep(0.2)
+        self.assertTrue(update_thread.is_alive())
+
+        allow_commit.set()
+        update_thread.join(timeout=5)
+        close_thread.join(timeout=5)
+
+        self.assertFalse(close_thread.is_alive())
+        self.assertIsNone(close_outcome.get("error"))
+        self.assertFalse(update_thread.is_alive())
+        self.assertIsInstance(update_outcome.get("error"), TripTerminalError)
+
+        trip.refresh_from_db()
+        self.assertEqual(trip.status, TripStatus.COMPLETED)
+        self.assertEqual(trip.name, "T")
 
     def test_send_trip_invitations_converts_integrity_error_to_business_error(self):
         captain = create_completed_user("cap3@example.com", "captain3", "CAP003")
