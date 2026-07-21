@@ -1,0 +1,198 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { Stack, useLocalSearchParams } from 'expo-router';
+import { type ComponentProps, useCallback, useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { resolveMediaUrl } from '@/shared/api/base-url';
+import { type ApiError, normalizeApiError } from '@/shared/api/errors';
+import { colors, radii, spacing, typography } from '@/shared/theme/tokens';
+import { Button } from '@/shared/ui/Button';
+import { LoadingScreen } from '@/shared/ui/LoadingScreen';
+import { getTripDetail } from '../api';
+import { MemberRow } from '../components/MemberRow';
+import { StatusBadge } from '../components/StatusBadge';
+import { formatDateRange } from '../dates';
+import type { TripDetailResponse } from '../types';
+
+const budgetFormatter = new Intl.NumberFormat('en-US');
+
+function formatBudget(budget: string, currencyCode: string): string {
+  const amount = Number(budget);
+  if (Number.isNaN(amount)) {
+    return `${budget} ${currencyCode}`;
+  }
+  return `${budgetFormatter.format(amount)} ${currencyCode}`;
+}
+
+type TripDetailState =
+  | { status: 'loading' }
+  | { status: 'ready'; detail: TripDetailResponse }
+  | { status: 'error'; error: ApiError };
+
+interface DetailRowProps {
+  icon: ComponentProps<typeof Ionicons>['name'];
+  value: string;
+  showDivider?: boolean;
+}
+
+function DetailRow({ icon, value, showDivider = false }: DetailRowProps) {
+  return (
+    <View style={[styles.infoRow, showDivider && styles.rowDivider]}>
+      <View style={styles.infoIcon}>
+        <Ionicons name={icon} size={18} color={colors.primary} />
+      </View>
+      <Text style={styles.infoText}>{value}</Text>
+    </View>
+  );
+}
+
+async function fetchTripDetailState(tripId: string | undefined): Promise<TripDetailState> {
+  if (!tripId) {
+    return { status: 'error', error: normalizeApiError(new Error('Missing trip id.')) };
+  }
+  try {
+    return { status: 'ready', detail: await getTripDetail(tripId) };
+  } catch (error) {
+    return { status: 'error', error: normalizeApiError(error) };
+  }
+}
+
+export function TripDetailScreen() {
+  const { tripId } = useLocalSearchParams<{ tripId: string }>();
+  const [state, setState] = useState<TripDetailState>({ status: 'loading' });
+
+  const retry = useCallback(() => {
+    setState({ status: 'loading' });
+    void fetchTripDetailState(tripId).then(setState);
+  }, [tripId]);
+
+  useEffect(() => {
+    let active = true;
+    void fetchTripDetailState(tripId).then((nextState) => {
+      if (active) {
+        setState(nextState);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [tripId]);
+
+  if (state.status === 'loading') {
+    return <LoadingScreen />;
+  }
+
+  if (state.status === 'error') {
+    const notFound = state.error.status === 404;
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.centered}>
+          <Ionicons name={notFound ? 'help-circle-outline' : 'cloud-offline-outline'} size={44} color={colors.textMuted} />
+          <Text style={styles.sectionTitle}>{notFound ? 'Trip not found' : 'Could not load trip'}</Text>
+          <Text style={styles.muted}>
+            {notFound ? 'This trip does not exist or you are not a member of it.' : state.error.message}
+          </Text>
+          {notFound ? null : <Button title="Try again" onPress={retry} />}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const { trip, members } = state.detail;
+  const coverUrl = resolveMediaUrl(trip.cover_image_url || null);
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
+      <Stack.Screen options={{ title: trip.name }} />
+      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+        {coverUrl ? (
+          <Image source={{ uri: coverUrl }} style={styles.cover} contentFit="cover" transition={150} />
+        ) : (
+          <View style={styles.coverFallback}>
+            <Ionicons name="airplane-outline" size={32} color={colors.primary} />
+          </View>
+        )}
+        <View style={styles.sectionHeader}>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>
+            Overview
+          </Text>
+          <StatusBadge status={trip.status} />
+        </View>
+        <View style={styles.card}>
+          <DetailRow icon="location-outline" value={trip.destination} showDivider />
+          <DetailRow
+            icon="calendar-outline"
+            value={formatDateRange(trip.start_date, trip.end_date)}
+            showDivider={Boolean(trip.budget_estimate)}
+          />
+          {trip.budget_estimate ? (
+            <DetailRow icon="wallet-outline" value={formatBudget(trip.budget_estimate, trip.currency_code)} />
+          ) : null}
+        </View>
+        {trip.description ? (
+          <View style={styles.section}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              Description
+            </Text>
+            <View style={styles.card}>
+              <Text style={styles.description}>{trip.description}</Text>
+            </View>
+          </View>
+        ) : null}
+        <View style={styles.section}>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>
+            Members ({members.length})
+          </Text>
+          <View style={[styles.card, styles.membersCard]}>
+            {members.map((member, index) => (
+              <MemberRow key={member.membership_id} member={member} showDivider={index < members.length - 1} />
+            ))}
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.surface },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.lg },
+  content: { padding: spacing.md, paddingBottom: spacing.xl, gap: spacing.md },
+  cover: { height: 180, width: '100%', borderRadius: radii.lg },
+  coverFallback: {
+    height: 80,
+    width: '100%',
+    borderRadius: radii.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+  },
+  section: { gap: spacing.sm },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  card: {
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.background,
+  },
+  infoRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  infoIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+  },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  infoText: { ...typography.body, color: colors.text, flexShrink: 1 },
+  description: { ...typography.body, color: colors.text, paddingVertical: spacing.md },
+  sectionTitle: { ...typography.heading, color: colors.text },
+  muted: { ...typography.body, color: colors.textMuted, textAlign: 'center' },
+  membersCard: { paddingVertical: 0 },
+});

@@ -21,6 +21,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Trips',
+          headerShown: false,
           tabBarIcon: ({ color, size }) => <Ionicons name="airplane-outline" color={color} size={size} />,
         }}
       />

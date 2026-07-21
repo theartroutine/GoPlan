@@ -7,7 +7,7 @@ GoPlan's mobile app — Expo (React Native) client for the GoPlan group trip pla
 1. Install dependencies
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 2. Configure the backend URL
@@ -23,7 +23,7 @@ GoPlan's mobile app — Expo (React Native) client for the GoPlan group trip pla
 3. Install the dev build on the iPhone (first time only)
 
    ```bash
-   npx expo run:ios --device
+   pnpm exec expo run:ios --device
    ```
 
    Requires Xcode and a USB cable. App Store Expo Go is capped at SDK 54 and cannot run this project. Rebuild with the same command when a native dependency is added, `app.json` changes, the free-account signature expires (7 days), or the Wi-Fi network changes (the Metro URL is baked into the build).
@@ -31,7 +31,7 @@ GoPlan's mobile app — Expo (React Native) client for the GoPlan group trip pla
 4. Start the dev server (daily workflow, no cable)
 
    ```bash
-   npx expo start
+   pnpm exec expo start
    ```
 
    Open the installed GoPlan app on the iPhone — it connects to Metro automatically and hot-reloads code changes.
@@ -39,9 +39,9 @@ GoPlan's mobile app — Expo (React Native) client for the GoPlan group trip pla
 ## Quality gates
 
 ```bash
-npm run lint
-npm run typecheck
-npm test
+pnpm lint
+pnpm typecheck
+pnpm test
 ```
 
 ## Conventions

@@ -15,9 +15,9 @@ This file applies to `frontend/` and overrides root `AGENTS.md` for frontend-spe
 
 ```bash
 # Run from frontend/
-npm run dev
-npm run lint
-npm run build
+pnpm dev
+pnpm lint
+pnpm build
 ```
 
 ## 4. Code Conventions

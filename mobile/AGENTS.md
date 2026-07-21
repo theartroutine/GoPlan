@@ -17,17 +17,17 @@ This file applies to `mobile/` and overrides root `AGENTS.md` for mobile-specifi
 
 ```bash
 # Run from mobile/
-npx expo start               # Metro dev server; then open the installed GoPlan dev build on the iPhone (same Wi-Fi, no cable)
-npx expo run:ios --device    # build + install the dev build via Xcode (cable required)
-npm run lint
-npm run typecheck
-npm test
+pnpm exec expo start               # Metro dev server; then open the installed GoPlan dev build on the iPhone (same Wi-Fi, no cable)
+pnpm exec expo run:ios --device    # build + install the dev build via Xcode (cable required)
+pnpm lint
+pnpm typecheck
+pnpm test
 ```
 
 Dev setup: copy `.env.example` to `.env`, set `EXPO_PUBLIC_API_URL` to the Mac's LAN IP
 (`ipconfig getifaddr en0`); Mac and phone must share the same Wi-Fi network.
 
-Rebuild (`npx expo run:ios --device`) is only needed when: a dependency with native code is
+Rebuild (`pnpm exec expo run:ios --device`) is only needed when: a dependency with native code is
 added, `app.json` changes, the free-account signature expires (7 days), or the Wi-Fi
 network/IP changes (the Metro URL is baked into the build). Pure-JS dependencies and all
 TS/TSX changes need no rebuild — Metro hot-reloads them.
@@ -45,7 +45,7 @@ TS/TSX changes need no rebuild — Metro hot-reloads them.
 
 ## 5. Quality Gates
 
-Every change: `npm run lint` + `npm run typecheck` + `npm test`.
+Every change: `pnpm lint` + `pnpm typecheck` + `pnpm test`.
 Auth or navigation-gate changes additionally require a manual run on the iPhone (login → tabs → relaunch → logout).
 
 ## 6. Skill Usage
@@ -56,6 +56,6 @@ Auth or navigation-gate changes additionally require a manual run on the iPhone 
 
 ## 7. Constraints
 
-- The dev target is a development build installed via `npx expo run:ios --device`. App Store Expo Go is capped at SDK 54 and cannot run this project — do not point users at Expo Go.
+- The dev target is a development build installed via `pnpm exec expo run:ios --device`. App Store Expo Go is capped at SDK 54 and cannot run this project — do not point users at Expo Go.
 - The debug dev build loads its JS bundle from Metro at launch; without a reachable Metro the app shows a connection error. This is expected in development.
 - iOS ATS allows the plain-HTTP LAN setup in debug builds only; release/TestFlight distribution requires HTTPS — treat that as a release-time task, not a dev concern.
