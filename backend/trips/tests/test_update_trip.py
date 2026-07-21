@@ -4,7 +4,7 @@ from rest_framework.test import APITestCase
 from accounts.tokens import AccessToken
 from test_helpers import create_completed_user
 from trips.models import MemberStatus, Trip, TripMember, TripRole, TripStatus
-from trips.services import TimelineSectionDateConflictError
+from trips.services import TimelineSectionDateConflictError, TripTerminalError
 
 
 def _auth(user):
@@ -130,6 +130,22 @@ class UpdateTripTests(APITestCase):
 
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["error_code"], "SECTION_DATE_CONFLICT")
+
+    @patch("trips.views.update_trip")
+    def test_captain_update_maps_terminal_race_to_409(self, mock_update_trip):
+        mock_update_trip.side_effect = TripTerminalError(
+            "This trip is in a terminal state. No further changes are allowed."
+        )
+
+        res = self.client.patch(
+            self._url(),
+            {"name": "New Name"},
+            format="json",
+            **_auth(self.captain),
+        )
+
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["error_code"], "TRIP_TERMINAL")
 
     def test_trip_detail_response_includes_timezone(self):
         res = self.client.get(self._url(), **_auth(self.captain))

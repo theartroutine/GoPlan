@@ -78,6 +78,20 @@ export default function TripsLayout() {
           ),
         }}
       />
+      <Stack.Screen
+        name="[tripId]/edit"
+        options={{
+          title: 'Edit Trip',
+          presentation: 'modal',
+          headerLeft: () => (
+            <HeaderAction
+              label="Cancel"
+              accessibilityLabel="Cancel trip editing"
+              onPress={leaveTripsRoute}
+            />
+          ),
+        }}
+      />
     </Stack>
   );
 }

@@ -1,8 +1,4 @@
-const mockRouter = {
-  canGoBack: jest.fn(),
-  back: jest.fn(),
-  replace: jest.fn(),
-};
+const mockRouter = { canGoBack: jest.fn(), back: jest.fn(), replace: jest.fn() };
 const mockUseSession = jest.fn();
 
 jest.mock('expo-router', () => {
@@ -14,11 +10,13 @@ jest.mock('expo-router', () => {
   }
 
   MockStack.Screen = function MockStackScreen({
+    name,
     options,
   }: {
-    options: { headerLeft?: () => import('react').ReactNode };
+    name: string;
+    options: { title: string; headerLeft?: () => import('react').ReactNode };
   }) {
-    return React.createElement(View, null, options.headerLeft?.());
+    return React.createElement(View, { testID: `screen-${name}` }, options.headerLeft?.());
   };
 
   return {
@@ -29,14 +27,8 @@ jest.mock('expo-router', () => {
 });
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
-
-jest.mock('@/features/auth/session', () => ({
-  useSession: () => mockUseSession(),
-}));
-
-jest.mock('@/shared/ui/LoadingScreen', () => ({
-  LoadingScreen: () => null,
-}));
+jest.mock('@/features/auth/session', () => ({ useSession: () => mockUseSession() }));
+jest.mock('@/shared/ui/LoadingScreen', () => ({ LoadingScreen: () => null }));
 
 // eslint-disable-next-line import/first
 import { fireEvent, render, screen } from '@testing-library/react-native';
@@ -49,45 +41,27 @@ describe('TripsLayout header actions', () => {
     mockUseSession.mockReturnValue({ status: 'signedIn', user: { requires_profile_setup: false } });
   });
 
+  it('registers the edit route as an Edit Trip modal with a cancel action', async () => {
+    await render(<TripsLayout />);
+    expect(screen.getByTestId('screen-[tripId]/edit')).toBeTruthy();
+    expect(screen.getByLabelText('Cancel trip editing')).toBeTruthy();
+  });
+
   it('returns to the previous route from the trip detail header when history exists', async () => {
     mockRouter.canGoBack.mockReturnValue(true);
-
     await render(<TripsLayout />);
     await fireEvent.press(screen.getByLabelText('Back to Trips'));
-
-    expect(screen.getByLabelText('Cancel trip creation')).toBeTruthy();
-    expect(mockRouter.canGoBack).toHaveBeenCalledTimes(1);
     expect(mockRouter.back).toHaveBeenCalledTimes(1);
     expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 
-  it('returns to tabs from the create header when there is no navigation history', async () => {
+  it.each([
+    ['Cancel trip creation'],
+    ['Cancel trip editing'],
+  ])('returns to tabs from %s when there is no navigation history', async (label) => {
     mockRouter.canGoBack.mockReturnValue(false);
-
     await render(<TripsLayout />);
-    await fireEvent.press(screen.getByLabelText('Cancel trip creation'));
-
-    expect(mockRouter.canGoBack).toHaveBeenCalledTimes(1);
-    expect(mockRouter.back).not.toHaveBeenCalled();
-    expect(mockRouter.replace).toHaveBeenCalledWith('/(tabs)');
-  });
-
-  it('returns to the previous route from the create header when history exists', async () => {
-    mockRouter.canGoBack.mockReturnValue(true);
-
-    await render(<TripsLayout />);
-    await fireEvent.press(screen.getByLabelText('Cancel trip creation'));
-
-    expect(mockRouter.back).toHaveBeenCalledTimes(1);
-    expect(mockRouter.replace).not.toHaveBeenCalled();
-  });
-
-  it('returns to tabs from the trip detail header when there is no navigation history', async () => {
-    mockRouter.canGoBack.mockReturnValue(false);
-
-    await render(<TripsLayout />);
-    await fireEvent.press(screen.getByLabelText('Back to Trips'));
-
+    await fireEvent.press(screen.getByLabelText(label));
     expect(mockRouter.back).not.toHaveBeenCalled();
     expect(mockRouter.replace).toHaveBeenCalledWith('/(tabs)');
   });

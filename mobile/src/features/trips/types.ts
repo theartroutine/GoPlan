@@ -77,3 +77,22 @@ export interface CreateTripInput {
   currency_code?: string;
   budget_estimate?: string;
 }
+
+export interface UpdateTripInput {
+  name?: string;
+  destination?: string;
+  destination_provider?: string;
+  destination_provider_id?: string;
+  destination_lat?: string | null;
+  destination_lng?: string | null;
+  destination_country_code?: string;
+  cover_image_url?: string;
+  start_date?: string;
+  end_date?: string;
+  description?: string;
+  currency_code?: string;
+  timezone?: string;
+  budget_estimate?: string | null;
+}
+
+export type TripAction = 'start' | 'complete' | 'cancel' | 'leave';

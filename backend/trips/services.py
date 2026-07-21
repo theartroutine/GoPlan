@@ -319,6 +319,7 @@ def update_trip(trip, *, name=_UNSET, destination=_UNSET,
     """
     with transaction.atomic():
         trip = Trip.objects.select_for_update().get(pk=trip.pk)
+        _assert_not_terminal(trip)
         old_timezone = trip.timezone
 
         if name is not _UNSET:                       trip.name = name

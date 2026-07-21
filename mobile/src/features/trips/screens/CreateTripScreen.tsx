@@ -10,10 +10,8 @@ import { Screen } from '@/shared/ui/Screen';
 import { TextField } from '@/shared/ui/TextField';
 import { createTrip } from '../api';
 import { formatDateParam } from '../dates';
+import { TRIP_CURRENCY_CODES } from '../options';
 import type { CreateTripInput } from '../types';
-
-// Mirrors SUPPORTED_TRIP_CURRENCY_CODES on the backend.
-const CURRENCIES = ['VND', 'USD', 'EUR', 'JPY', 'KRW', 'SGD', 'THB', 'AUD', 'GBP', 'CAD'];
 
 function FormSection({ title, children }: PropsWithChildren<{ title: string }>) {
   return (
@@ -166,7 +164,7 @@ export function CreateTripScreen() {
             <Text style={styles.currencyHint}>Swipe for more</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.currencyRow}>
-            {CURRENCIES.map((code) => (
+            {TRIP_CURRENCY_CODES.map((code) => (
               <Pressable
                 key={code}
                 accessibilityRole="button"
