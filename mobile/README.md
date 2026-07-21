@@ -14,27 +14,48 @@ GoPlan's mobile app — Expo (React Native) client for the GoPlan group trip pla
 
    ```bash
    cp .env.example .env
-   # Set EXPO_PUBLIC_API_URL to your Mac's LAN IP, e.g. http://192.168.1.23:8000
-   # Find it with: ipconfig getifaddr en0
+   # Default Simulator value:
+   # EXPO_PUBLIC_API_URL=http://127.0.0.1:8000
    ```
 
-   The backend must be running (Podman Compose, repo root) and the phone must be on the same Wi-Fi network.
+   The backend must be running on Mac port `8000` (normally through Podman Compose from the repository root). The iOS Simulator can reach it through `127.0.0.1`.
 
-3. Install the dev build on the iPhone (first time only)
+3. Verify and boot the existing iPhone 17 Pro Max Simulator
 
    ```bash
-   pnpm exec expo run:ios --device
+   xcrun simctl list runtimes
+   xcrun simctl list devices available
+   xcrun simctl boot "iPhone 17 Pro Max" # only when its state is Shutdown
+   open -a Simulator
+   xcrun simctl bootstatus "iPhone 17 Pro Max" -b
    ```
 
-   Requires Xcode and a USB cable. App Store Expo Go is capped at SDK 54 and cannot run this project. Rebuild with the same command when a native dependency is added, `app.json` changes, the free-account signature expires (7 days), or the Wi-Fi network changes (the Metro URL is baked into the build).
+   Reuse the installed device/runtime. Do not create a duplicate Simulator, download another runtime, or erase/delete Simulator data without approval.
 
-4. Start the dev server (daily workflow, no cable)
+4. Build and install the development client (first time or after native changes)
 
    ```bash
-   pnpm exec expo start
+   pnpm exec expo run:ios --device "iPhone 17 Pro Max" --configuration Debug
    ```
 
-   Open the installed GoPlan app on the iPhone — it connects to Metro automatically and hot-reloads code changes.
+   Use the installed GoPlan development build, not App Store Expo Go. Rebuild when native dependencies, `app.json`/config plugins, entitlements, or files under `ios/` change.
+
+5. Start the dev server (daily workflow; no native rebuild)
+
+   ```bash
+   pnpm exec expo start --dev-client --localhost
+   xcrun simctl launch "iPhone 17 Pro Max" com.anonymous.goplan
+   ```
+
+   Metro hot-reloads JS/TS, styles, and ordinary app changes. `EXPO_PUBLIC_` changes need a full reload, not a native rebuild; use `--clear` only if Metro retains a stale value.
+
+6. Shut down the Simulator after testing to release RAM without deleting app data
+
+   ```bash
+   xcrun simctl shutdown "iPhone 17 Pro Max"
+   ```
+
+For the complete simulator workflow and the authorized `@Computer` fallback when no suitable E2E/simulator-control tool is available, see `AGENTS.md` / `CLAUDE.md` in this folder.
 
 ## Quality gates
 
