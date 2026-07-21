@@ -85,10 +85,10 @@ Execution context:
 
 | Change Type | Required | Recommended |
 |---|---|---|
-| Frontend-only | `npm run lint` | `npm run build` for route/state changes |
+| Frontend-only | `pnpm lint` | `pnpm build` for route/state changes |
 | Backend-only | `python manage.py test <app>` | Migration flow when schema changes |
-| Cross-layer | Backend tests + `npm run lint` | `npm run build` when frontend impacted |
-| Mobile-only | `npm run lint` + `npm run typecheck` + `npm test` | Manual device run for auth/navigation changes |
+| Cross-layer | Backend tests + `pnpm lint` | `pnpm build` when frontend impacted |
+| Mobile-only | `pnpm lint` + `pnpm typecheck` + `pnpm test` | Manual device run for auth/navigation changes |
 
 When checks cannot run, report: command attempted, failure reason, risk level, manual verification path.
 
