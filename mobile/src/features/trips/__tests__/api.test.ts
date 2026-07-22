@@ -5,11 +5,12 @@ jest.mock('@/shared/api/client', () => ({
 // eslint-disable-next-line import/first
 import { apiClient } from '@/shared/api/client';
 // eslint-disable-next-line import/first
+import { extractCursor } from '@/shared/api/pagination';
+// eslint-disable-next-line import/first
 import {
   cancelTrip,
   completeTrip,
   createTrip,
-  extractCursor,
   getTripDetail,
   leaveTrip,
   listTrips,
