@@ -1,4 +1,5 @@
 import { apiClient } from '@/shared/api/client';
+import { extractCursor, type CursorPaginatedResponse } from '@/shared/api/pagination';
 import type {
   CreateTripInput,
   Trip,
@@ -9,23 +10,8 @@ import type {
   UpdateTripInput,
 } from './types';
 
-interface CursorPaginatedResponse {
-  next: string | null;
-  previous: string | null;
-  results: TripListItem[];
-}
-
-// DRF CursorPagination returns absolute URLs; the client only needs the cursor value.
-export function extractCursor(url: string | null): string | null {
-  if (!url) {
-    return null;
-  }
-  const match = /[?&]cursor=([^&]+)/.exec(url);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
 export async function listTrips(cursor?: string | null): Promise<TripListPage> {
-  const { data } = await apiClient.get<CursorPaginatedResponse>('/trips/', {
+  const { data } = await apiClient.get<CursorPaginatedResponse<TripListItem>>('/trips/', {
     params: cursor ? { cursor } : undefined,
   });
   return { items: data.results, nextCursor: extractCursor(data.next) };
