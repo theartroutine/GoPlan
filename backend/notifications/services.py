@@ -1,8 +1,10 @@
 import logging
+import uuid
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.db import transaction
+from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from notifications.models import Notification, NotificationType
@@ -125,7 +127,128 @@ def _build_actor_payload(user):
     }
 
 
-def build_notification_payload(notification):
+def resolve_trip_invitation_statuses(
+    notifications,
+    *,
+    recipient_id,
+) -> dict[uuid.UUID, str]:
+    """Resolve output-only invitation statuses for a notification collection.
+
+    Notification records intentionally retain their original JSON payload. The
+    current invitation status is joined at read time so accepted, declined, or
+    cancelled invitations cannot become actionable again after a refresh.
+
+    The lookup is fail-closed: malformed legacy payloads and references that do
+    not belong to the notification recipient are omitted from the result.
+    """
+    from trips.models import (
+        InvitationStatus,
+        MemberStatus,
+        TripInvitation,
+        TripMember,
+        TripStatus,
+    )
+
+    parsed_by_notification_id: dict[uuid.UUID, tuple[uuid.UUID, uuid.UUID]] = {}
+    invitation_ids: set[uuid.UUID] = set()
+
+    for notification in notifications:
+        if notification.type != NotificationType.TRIP_INVITATION:
+            continue
+        if notification.recipient_id != recipient_id:
+            continue
+
+        try:
+            payload = validate_notification_payload(
+                NotificationType.TRIP_INVITATION,
+                notification.payload,
+            )
+            invitation_id = uuid.UUID(payload["invitation_id"])
+            trip_id = uuid.UUID(payload["trip_id"])
+        except (NotificationPayloadValidationError, TypeError, ValueError):
+            continue
+
+        parsed_by_notification_id[notification.id] = (invitation_id, trip_id)
+        invitation_ids.add(invitation_id)
+
+    if not invitation_ids:
+        return {}
+
+    active_membership = TripMember.objects.filter(
+        trip_id=OuterRef("trip_id"),
+        user_id=OuterRef("invitee_id"),
+        status=MemberStatus.ACTIVE,
+    )
+    invitations = {
+        row["id"]: row
+        for row in (
+            TripInvitation.objects.filter(
+                id__in=invitation_ids,
+                invitee_id=recipient_id,
+            )
+            .annotate(invitee_is_active=Exists(active_membership))
+            .values(
+                "id",
+                "trip_id",
+                "status",
+                "trip__status",
+                "invitee_is_active",
+            )
+        )
+    }
+
+    valid_statuses = set(InvitationStatus.values)
+    terminal_trip_statuses = {TripStatus.COMPLETED, TripStatus.CANCELLED}
+    resolved: dict[uuid.UUID, str] = {}
+
+    for notification_id, (invitation_id, payload_trip_id) in (
+        parsed_by_notification_id.items()
+    ):
+        invitation = invitations.get(invitation_id)
+        if invitation is None or invitation["trip_id"] != payload_trip_id:
+            continue
+
+        invitation_status = invitation["status"]
+        if invitation_status not in valid_statuses:
+            continue
+        if invitation_status == InvitationStatus.PENDING:
+            if invitation["trip__status"] in terminal_trip_statuses:
+                invitation_status = InvitationStatus.CANCELLED
+            elif invitation["invitee_is_active"]:
+                invitation_status = InvitationStatus.ACCEPTED
+
+        resolved[notification_id] = invitation_status
+
+    return resolved
+
+
+def _build_serialized_payload(notification, invitation_status: str | None) -> dict:
+    """Copy persisted JSON and add safe, server-derived output fields."""
+    payload = (
+        dict(notification.payload)
+        if isinstance(notification.payload, dict)
+        else {}
+    )
+
+    if notification.type != NotificationType.TRIP_INVITATION:
+        return payload
+
+    # Never trust a legacy/persisted value for this output-only field.
+    payload.pop("invitation_status", None)
+    if invitation_status is None:
+        # All malformed, missing, mismatched, and foreign references collapse
+        # to the same neutral representation.
+        return {}
+
+    payload["invitation_status"] = invitation_status
+    return payload
+
+
+def build_notification_payload(
+    notification,
+    *,
+    invitation_status: str | None = None,
+):
     """Single source of truth for notification serialization.
 
     Used by both the REST serializer and WebSocket message builder.
@@ -134,7 +257,7 @@ def build_notification_payload(notification):
         "id": str(notification.id),
         "notification_type": notification.type,
         "actor": _build_actor_payload(notification.actor),
-        "payload": notification.payload,
+        "payload": _build_serialized_payload(notification, invitation_status),
         "is_read": notification.read_at is not None,
         "read_at": (
             notification.read_at.isoformat() if notification.read_at else None
@@ -149,10 +272,17 @@ def build_ws_notification_message(notification):
     The outer ``type`` field is used by wsManager for routing.
     The inner ``notification`` dict carries the business payload.
     """
+    invitation_statuses = resolve_trip_invitation_statuses(
+        [notification],
+        recipient_id=notification.recipient_id,
+    )
     return {
         "type": "notification",
         "event": "created",
-        "notification": build_notification_payload(notification),
+        "notification": build_notification_payload(
+            notification,
+            invitation_status=invitation_statuses.get(notification.id),
+        ),
     }
 
 

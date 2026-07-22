@@ -1,7 +1,21 @@
 import type {
   TripInvitationPayload,
+  TripInvitationStatus,
   TripTimelineReminderPayload,
 } from "@/features/notifications/domain/types";
+
+const TRIP_INVITATION_STATUSES = new Set<string>([
+  "PENDING",
+  "ACCEPTED",
+  "DECLINED",
+  "CANCELLED",
+]);
+
+function isTripInvitationStatus(
+  value: unknown,
+): value is TripInvitationStatus {
+  return typeof value === "string" && TRIP_INVITATION_STATUSES.has(value);
+}
 
 export function parseTripInvitationPayload(
   raw: unknown
@@ -14,7 +28,8 @@ export function parseTripInvitationPayload(
     typeof p.trip_name !== "string" ||
     typeof p.destination !== "string" ||
     typeof p.start_date !== "string" ||
-    typeof p.end_date !== "string"
+    typeof p.end_date !== "string" ||
+    !isTripInvitationStatus(p.invitation_status)
   ) {
     return null;
   }
@@ -25,6 +40,7 @@ export function parseTripInvitationPayload(
     destination: p.destination,
     start_date: p.start_date,
     end_date: p.end_date,
+    invitation_status: p.invitation_status,
   };
 }
 

@@ -15,6 +15,8 @@ from trips.services import (
     InvitationError,
     TripTerminalError,
     accept_invitation,
+    cancel_trip,
+    complete_trip,
     send_trip_invitations,
     update_trip,
 )
@@ -112,7 +114,12 @@ class TripServiceConcurrencyTests(TransactionTestCase):
         self.assertIn("completed or cancelled", str(invite_outcome["error"]))
         self.assertFalse(TripInvitation.objects.filter(trip=trip).exists())
 
-    def test_accept_invitation_waits_for_terminal_trip_transition(self):
+    def _assert_accept_loses_to_terminal_transition(
+        self,
+        *,
+        transition,
+        terminal_status,
+    ):
         captain = create_completed_user("cap2@example.com", "captain2", "CAP002")
         invitee = create_completed_user("inv2@example.com", "invitee2", "INV002")
         trip = _make_trip(captain, status=TripStatus.ONGOING)
@@ -120,20 +127,24 @@ class TripServiceConcurrencyTests(TransactionTestCase):
 
         transition_started = threading.Event()
         allow_commit = threading.Event()
+        original_save = Trip.save
 
-        def close_trip_worker():
-            with transaction.atomic():
-                locked_trip = Trip.objects.select_for_update().get(pk=trip.pk)
-                locked_trip.status = TripStatus.COMPLETED
-                locked_trip.save(update_fields=["status"])
+        def blocking_terminal_save(instance, *args, **kwargs):
+            result = original_save(instance, *args, **kwargs)
+            if instance.pk == trip.pk and instance.status == terminal_status:
                 transition_started.set()
                 if not allow_commit.wait(timeout=5):
                     raise AssertionError("Timed out waiting to commit terminal trip transition.")
+            return result
 
-        close_thread, close_outcome = self._run_in_thread(close_trip_worker)
-        self.assertTrue(transition_started.wait(timeout=5))
+        with patch.object(Trip, "save", new=blocking_terminal_save), patch(
+            "trips.services.create_notification"
+        ):
+            close_thread, close_outcome = self._run_in_thread(
+                lambda: transition(trip.id, captain)
+            )
+            self.assertTrue(transition_started.wait(timeout=5))
 
-        with patch("trips.services.create_notification"):
             accept_thread, accept_outcome = self._run_in_thread(
                 lambda: accept_invitation(invitation_id=invitation.pk, actor=invitee)
             )
@@ -143,17 +154,28 @@ class TripServiceConcurrencyTests(TransactionTestCase):
 
             allow_commit.set()
             accept_thread.join(timeout=5)
-
-        close_thread.join(timeout=5)
+            close_thread.join(timeout=5)
 
         self.assertFalse(close_thread.is_alive())
         self.assertIsNone(close_outcome.get("error"))
         self.assertFalse(accept_thread.is_alive())
         self.assertIsInstance(accept_outcome.get("error"), InvitationError)
-        self.assertIn("no longer open to new members", str(accept_outcome["error"]))
+        self.assertIn("no longer pending", str(accept_outcome["error"]))
         self.assertFalse(TripMember.objects.filter(trip=trip, user=invitee, status=MemberStatus.ACTIVE).exists())
         invitation.refresh_from_db()
-        self.assertEqual(invitation.status, InvitationStatus.PENDING)
+        self.assertEqual(invitation.status, InvitationStatus.CANCELLED)
+
+    def test_accept_invitation_does_not_deadlock_with_complete_trip(self):
+        self._assert_accept_loses_to_terminal_transition(
+            transition=lambda trip_id, actor: complete_trip(trip_id, actor),
+            terminal_status=TripStatus.COMPLETED,
+        )
+
+    def test_accept_invitation_does_not_deadlock_with_cancel_trip(self):
+        self._assert_accept_loses_to_terminal_transition(
+            transition=lambda trip_id, actor: cancel_trip(trip_id, actor),
+            terminal_status=TripStatus.CANCELLED,
+        )
 
     def test_update_trip_waits_for_terminal_trip_transition(self):
         captain = create_completed_user("cap-edit@example.com", "captain_edit", "CAP004")

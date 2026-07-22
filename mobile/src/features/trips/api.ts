@@ -2,8 +2,10 @@ import { apiClient } from '@/shared/api/client';
 import { extractCursor, type CursorPaginatedResponse } from '@/shared/api/pagination';
 import type {
   CreateTripInput,
+  InvitableFriend,
   Trip,
   TripDetailResponse,
+  TripInvitation,
   TripListItem,
   TripListPage,
   TripStatus,
@@ -55,4 +57,33 @@ export function cancelTrip(tripId: string): Promise<TripStatus> {
 
 export async function leaveTrip(tripId: string): Promise<void> {
   await apiClient.post(`/trips/${tripId}/leave`);
+}
+
+export async function listInvitableFriends(tripId: string): Promise<InvitableFriend[]> {
+  const { data } = await apiClient.get<{ users: InvitableFriend[] }>(
+    `/trips/${tripId}/invitations/invitable-friends`,
+  );
+  return data.users;
+}
+
+export async function listPendingInvitations(tripId: string): Promise<TripInvitation[]> {
+  const { data } = await apiClient.get<{ invitations: TripInvitation[] }>(
+    `/trips/${tripId}/invitations`,
+  );
+  return data.invitations;
+}
+
+export async function sendTripInvitations(
+  tripId: string,
+  inviteeIds: string[],
+): Promise<TripInvitation[]> {
+  const { data } = await apiClient.post<{ invitations: TripInvitation[] }>(
+    `/trips/${tripId}/invitations`,
+    { invitee_ids: inviteeIds },
+  );
+  return data.invitations;
+}
+
+export async function removeTripMember(tripId: string, userId: string): Promise<void> {
+  await apiClient.delete(`/trips/${tripId}/members/${userId}`);
 }

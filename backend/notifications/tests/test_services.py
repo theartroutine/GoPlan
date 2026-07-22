@@ -10,18 +10,43 @@ from notifications.models import Notification, NotificationType
 from notifications.services import (
     NotificationNotFoundError,
     NotificationPayloadValidationError,
+    build_notification_payload,
+    build_ws_notification_message,
     create_notification,
     mark_all_notifications_read,
     mark_notification_read,
+    resolve_trip_invitation_statuses,
     validate_notification_payload,
 )
 from test_helpers import create_verified_user
+from trips.models import InvitationStatus, Trip, TripInvitation
 
 TEST_CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels.layers.InMemoryChannelLayer",
     },
 }
+
+
+def _make_trip(inviter):
+    return Trip.objects.create(
+        created_by=inviter,
+        name="Da Nang",
+        destination="Da Nang",
+        start_date="2026-05-01",
+        end_date="2026-05-05",
+    )
+
+
+def _trip_invitation_payload(trip, invitation_id):
+    return {
+        "trip_id": str(trip.id),
+        "trip_name": trip.name,
+        "destination": trip.destination,
+        "start_date": str(trip.start_date),
+        "end_date": str(trip.end_date),
+        "invitation_id": str(invitation_id),
+    }
 
 
 # -------- create_notification --------
@@ -108,6 +133,23 @@ class NotificationPayloadValidationTests(APITestCase):
                 {"trip_id": "trip-1", "trip_name": 123},
             )
 
+    def test_validate_trip_payload_rejects_output_only_status(self):
+        payload = {
+            "trip_id": "trip-1",
+            "trip_name": "Da Nang",
+            "destination": "Da Nang",
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-05",
+            "invitation_id": "invitation-1",
+            "invitation_status": InvitationStatus.PENDING,
+        }
+
+        with self.assertRaises(NotificationPayloadValidationError):
+            validate_notification_payload(
+                NotificationType.TRIP_INVITATION,
+                payload,
+            )
+
     def test_create_notification_does_not_persist_invalid_payload(self):
         recipient = create_verified_user()
 
@@ -138,6 +180,69 @@ class NotificationPayloadValidationTests(APITestCase):
         )
 
         self.assertEqual(result, payload)
+
+
+class TripInvitationPayloadBuilderTests(APITestCase):
+
+    def setUp(self):
+        self.recipient = create_verified_user(email="invitee@example.com")
+        self.inviter = create_verified_user(email="inviter@example.com")
+        self.trip = _make_trip(self.inviter)
+
+    def test_rest_and_websocket_use_same_server_derived_payload(self):
+        invitation = TripInvitation.objects.create(
+            trip=self.trip,
+            inviter=self.inviter,
+            invitee=self.recipient,
+            status=InvitationStatus.PENDING,
+        )
+        stored_payload = _trip_invitation_payload(self.trip, invitation.id)
+        notification = Notification.objects.create(
+            recipient=self.recipient,
+            actor=self.inviter,
+            type=NotificationType.TRIP_INVITATION,
+            payload=stored_payload,
+        )
+        TripInvitation.objects.filter(pk=invitation.id).update(
+            status=InvitationStatus.ACCEPTED
+        )
+        statuses = resolve_trip_invitation_statuses(
+            [notification],
+            recipient_id=self.recipient.id,
+        )
+
+        rest_payload = build_notification_payload(
+            notification,
+            invitation_status=statuses[notification.id],
+        )
+        websocket_payload = build_ws_notification_message(notification)[
+            "notification"
+        ]
+
+        self.assertEqual(websocket_payload, rest_payload)
+        self.assertEqual(
+            rest_payload["payload"]["invitation_status"],
+            InvitationStatus.ACCEPTED,
+        )
+        self.assertIsNot(rest_payload["payload"], notification.payload)
+        notification.refresh_from_db()
+        self.assertEqual(notification.payload, stored_payload)
+        self.assertNotIn("invitation_status", notification.payload)
+
+    def test_websocket_missing_invitation_is_neutral(self):
+        notification = Notification.objects.create(
+            recipient=self.recipient,
+            actor=self.inviter,
+            type=NotificationType.TRIP_INVITATION,
+            payload=_trip_invitation_payload(self.trip, self.trip.id),
+        )
+
+        websocket_payload = build_ws_notification_message(notification)
+
+        self.assertEqual(
+            websocket_payload["notification"]["payload"],
+            {},
+        )
 
 
 @override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)

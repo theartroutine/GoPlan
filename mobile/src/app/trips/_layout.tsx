@@ -92,6 +92,20 @@ export default function TripsLayout() {
           ),
         }}
       />
+      <Stack.Screen
+        name="[tripId]/invite"
+        options={{
+          title: 'Invite Friends',
+          presentation: 'formSheet',
+          headerLeft: () => (
+            <HeaderAction
+              label="Cancel"
+              accessibilityLabel="Cancel member invitation"
+              onPress={leaveTripsRoute}
+            />
+          ),
+        }}
+      />
     </Stack>
   );
 }

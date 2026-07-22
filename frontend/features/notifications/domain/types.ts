@@ -4,6 +4,12 @@ export type NotificationActor = {
   identify_tag: string | null;
 };
 
+export type TripInvitationStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "CANCELLED";
+
 export type TripInvitationPayload = {
   trip_id: string;
   trip_name: string;
@@ -11,6 +17,7 @@ export type TripInvitationPayload = {
   start_date: string;
   end_date: string;
   invitation_id: string;
+  invitation_status: TripInvitationStatus;
 };
 
 export type TripCancelledPayload = {

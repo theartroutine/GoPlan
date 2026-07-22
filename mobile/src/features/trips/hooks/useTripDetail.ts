@@ -1,6 +1,7 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type ApiError, normalizeApiError } from '@/shared/api/errors';
+import { useAppForegroundEffect } from '@/shared/hooks/useAppForegroundEffect';
 import { getTripDetail } from '../api';
 import { subscribeToTripEvents } from '../tripEvents';
 import type { Trip, TripDetailResponse, TripStatus } from '../types';
@@ -108,6 +109,22 @@ export function useTripDetail(tripId: string | undefined) {
     [applyTrip],
   );
 
+  const applyMemberRemoved = useCallback(
+    (userId: string) => {
+      const current = detailRef.current;
+      if (!current || current.trip.id !== tripId) {
+        return;
+      }
+      requestIdRef.current += 1;
+      commitDetail({
+        ...current,
+        members: current.members.filter((member) => member.user.id !== userId),
+      });
+      setRefreshing(false);
+    },
+    [commitDetail, tripId],
+  );
+
   useEffect(
     () =>
       subscribeToTripEvents((event) => {
@@ -115,10 +132,18 @@ export function useTripDetail(tripId: string | undefined) {
           applyTrip(event.trip);
         } else if (event.type === 'statusChanged' && event.tripId === tripId) {
           applyStatus(event.status);
+        } else if (event.type === 'memberRemoved' && event.tripId === tripId) {
+          applyMemberRemoved(event.userId);
         }
       }),
-    [applyStatus, applyTrip, tripId],
+    [applyMemberRemoved, applyStatus, applyTrip, tripId],
   );
+
+  const reconcileOnForeground = useCallback(() => {
+    void refresh(detailRef.current?.trip.id === tripId ? 'silent' : 'initial');
+  }, [refresh, tripId]);
+
+  useAppForegroundEffect(reconcileOnForeground);
 
   useFocusEffect(
     useCallback(() => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type ApiError, normalizeApiError } from '@/shared/api/errors';
+import { useAppForegroundEffect } from '@/shared/hooks/useAppForegroundEffect';
 import { listTrips } from '../api';
 import { subscribeToTripEvents, type TripEvent } from '../tripEvents';
 import type { Trip, TripListItem, TripStatus } from '../types';
@@ -53,7 +54,13 @@ function applyOverrides(
   });
 }
 
-function overrideFromEvent(event: TripEvent, version: number, current?: TripListOverride): [string, TripListOverride] {
+type TripListOverrideEvent = Extract<TripEvent, { type: 'updated' | 'statusChanged' | 'removed' }>;
+
+function overrideFromEvent(
+  event: TripListOverrideEvent,
+  version: number,
+  current?: TripListOverride,
+): [string, TripListOverride] {
   if (event.type === 'updated') {
     return [event.trip.id, { ...current, version, trip: event.trip, status: event.trip.status, removed: false }];
   }
@@ -76,30 +83,7 @@ export function useTripsList() {
   const loadMoreInFlightRef = useRef(false);
   const overridesRef = useRef(new Map<string, TripListOverride>());
   const eventVersionRef = useRef(0);
-
-  useEffect(
-    () =>
-      subscribeToTripEvents((event) => {
-        const eventTripId = event.type === 'updated' ? event.trip.id : event.tripId;
-        eventVersionRef.current += 1;
-        const [tripId, override] = overrideFromEvent(
-          event,
-          eventVersionRef.current,
-          overridesRef.current.get(eventTripId),
-        );
-        overridesRef.current.set(tripId, override);
-        setItems((current) =>
-          current.flatMap((item) => {
-            if (item.id !== tripId) {
-              return [item];
-            }
-            const next = applyOverride(item, override);
-            return next ? [next] : [];
-          }),
-        );
-      }),
-    [],
-  );
+  const hasLoadedFirstPageRef = useRef(false);
 
   const loadFirstPage = useCallback(async (mode: 'initial' | 'refresh' | 'silent') => {
     const requestId = firstPageRequestRef.current + 1;
@@ -122,6 +106,7 @@ export function useTripsList() {
       }
       nextCursorRef.current = page.nextCursor;
       setItems(applyOverrides(page.items, overridesRef.current, requestEventVersion));
+      hasLoadedFirstPageRef.current = true;
       setError(null);
       setStatus('ready');
     } catch (err) {
@@ -143,6 +128,48 @@ export function useTripsList() {
       }
     }
   }, []);
+
+  const reconcileOnForeground = useCallback(() => {
+    void loadFirstPage(hasLoadedFirstPageRef.current ? 'silent' : 'initial');
+  }, [loadFirstPage]);
+
+  useAppForegroundEffect(reconcileOnForeground);
+
+  useEffect(
+    () =>
+      subscribeToTripEvents((event) => {
+        if (event.type === 'membershipAdded') {
+          void loadFirstPage('silent');
+          return;
+        }
+        if (event.type === 'memberRemoved') {
+          void loadFirstPage('silent');
+          return;
+        }
+        if (event.type === 'invitationsSent') {
+          return;
+        }
+
+        const eventTripId = event.type === 'updated' ? event.trip.id : event.tripId;
+        eventVersionRef.current += 1;
+        const [tripId, override] = overrideFromEvent(
+          event,
+          eventVersionRef.current,
+          overridesRef.current.get(eventTripId),
+        );
+        overridesRef.current.set(tripId, override);
+        setItems((current) =>
+          current.flatMap((item) => {
+            if (item.id !== tripId) {
+              return [item];
+            }
+            const next = applyOverride(item, override);
+            return next ? [next] : [];
+          }),
+        );
+      }),
+    [loadFirstPage],
+  );
 
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current;

@@ -1,5 +1,5 @@
 jest.mock('@/shared/api/client', () => ({
-  apiClient: { get: jest.fn(), patch: jest.fn(), post: jest.fn() },
+  apiClient: { delete: jest.fn(), get: jest.fn(), patch: jest.fn(), post: jest.fn() },
 }));
 
 // eslint-disable-next-line import/first
@@ -13,12 +13,17 @@ import {
   createTrip,
   getTripDetail,
   leaveTrip,
+  listInvitableFriends,
+  listPendingInvitations,
   listTrips,
+  removeTripMember,
+  sendTripInvitations,
   startTrip,
   updateTrip,
 } from '../api';
 
 const mockGet = apiClient.get as jest.MockedFunction<typeof apiClient.get>;
+const mockDelete = apiClient.delete as jest.MockedFunction<typeof apiClient.delete>;
 const mockPatch = apiClient.patch as jest.MockedFunction<typeof apiClient.patch>;
 const mockPost = apiClient.post as jest.MockedFunction<typeof apiClient.post>;
 
@@ -113,5 +118,43 @@ describe('trips api', () => {
     await expect(leaveTrip('t1')).resolves.toBeUndefined();
 
     expect(mockPost).toHaveBeenCalledWith('/trips/t1/leave');
+  });
+
+  it('lists invitable friends and pending invitations from trip-scoped endpoints', async () => {
+    const friend = { id: 'user-1', display_name: 'Lan', identify_tag: 'lan#1234' };
+    const invitation = {
+      id: 'invitation-1',
+      invitee: friend,
+      status: 'PENDING',
+      created_at: '2026-07-22T08:00:00Z',
+    };
+    mockGet
+      .mockResolvedValueOnce({ data: { users: [friend] } } as never)
+      .mockResolvedValueOnce({ data: { invitations: [invitation] } } as never);
+
+    await expect(listInvitableFriends('t1')).resolves.toEqual([friend]);
+    await expect(listPendingInvitations('t1')).resolves.toEqual([invitation]);
+
+    expect(mockGet).toHaveBeenNthCalledWith(1, '/trips/t1/invitations/invitable-friends');
+    expect(mockGet).toHaveBeenNthCalledWith(2, '/trips/t1/invitations');
+  });
+
+  it('sends unique invitee ids and unwraps created invitations', async () => {
+    const invitations = [{ id: 'invitation-1' }];
+    mockPost.mockResolvedValue({ data: { invitations } } as never);
+
+    await expect(sendTripInvitations('t1', ['user-1', 'user-2'])).resolves.toEqual(invitations);
+
+    expect(mockPost).toHaveBeenCalledWith('/trips/t1/invitations', {
+      invitee_ids: ['user-1', 'user-2'],
+    });
+  });
+
+  it('removes a trip member through the member endpoint', async () => {
+    mockDelete.mockResolvedValue({ data: {} } as never);
+
+    await expect(removeTripMember('t1', 'user-2')).resolves.toBeUndefined();
+
+    expect(mockDelete).toHaveBeenCalledWith('/trips/t1/members/user-2');
   });
 });

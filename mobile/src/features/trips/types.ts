@@ -1,6 +1,7 @@
 export type TripStatus = 'PLANNING' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
 export type TripRole = 'CAPTAIN' | 'MEMBER';
 export type MemberStatus = 'ACTIVE' | 'LEFT' | 'REMOVED';
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED';
 
 export interface TripListItem {
   id: string;
@@ -61,6 +62,19 @@ export interface TripDetailResponse {
   trip: Trip;
   my_membership: MyMembership;
   members: TripMember[];
+}
+
+export interface InvitableFriend {
+  id: string;
+  display_name: string;
+  identify_tag: string;
+}
+
+export interface TripInvitation {
+  id: string;
+  invitee: InvitableFriend;
+  status: InvitationStatus;
+  created_at: string;
 }
 
 export interface TripListPage {

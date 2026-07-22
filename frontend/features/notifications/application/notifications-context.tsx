@@ -11,7 +11,10 @@ import {
   type ReactNode,
 } from "react";
 
-import type { Notification } from "@/features/notifications/domain/types";
+import type {
+  Notification,
+  TripInvitationStatus,
+} from "@/features/notifications/domain/types";
 import {
   bffMarkAllRead,
   bffMarkRead,
@@ -22,6 +25,11 @@ import { wsManager } from "@/features/realtime/infrastructure/ws-manager";
 import type { WsMessage } from "@/features/realtime/domain/types";
 
 // -------- State --------
+
+type TerminalTripInvitationStatus = Exclude<
+  TripInvitationStatus,
+  "PENDING"
+>;
 
 type NotificationsState = {
   unreadCount: number;
@@ -35,6 +43,12 @@ type NotificationsState = {
   /** IDs optimistically marked read by THIS tab — used to avoid double-decrement
    *  when the WS echo arrives back for our own mark-read action. */
   optimisticReadIds: string[];
+  /** Terminal invitation states observed or confirmed during this provider
+   *  lifetime. They prevent an older PENDING REST/WS snapshot from restoring
+   *  invitation actions after the server has accepted a mutation. */
+  confirmedInvitationStatuses: Partial<
+    Record<string, TerminalTripInvitationStatus>
+  >;
 };
 
 const initialState: NotificationsState = {
@@ -47,6 +61,7 @@ const initialState: NotificationsState = {
   isListLoaded: false,
   isLoading: false,
   optimisticReadIds: [],
+  confirmedInvitationStatuses: {},
 };
 
 // -------- Actions --------
@@ -63,7 +78,12 @@ type Action =
   | { type: "MARK_ALL_READ" }
   | { type: "MARK_READ_ROLLBACK"; notificationId: string }
   | { type: "MARK_ALL_READ_RECONCILE" }
-  | { type: "RECONCILE_APPLIED"; count: number; notifications: Notification[]; nextCursor: string | null };
+  | { type: "RECONCILE_APPLIED"; count: number; notifications: Notification[]; nextCursor: string | null }
+  | {
+      type: "CONFIRM_INVITATION_STATUS";
+      notificationId: string;
+      status: TerminalTripInvitationStatus;
+    };
 
 // -------- Helpers --------
 
@@ -98,6 +118,96 @@ function upsertMany(
   return result;
 }
 
+function getInvitationStatus(
+  notification: Notification,
+): TripInvitationStatus | null {
+  if (notification.notification_type !== "TRIP_INVITATION") return null;
+
+  const payload: unknown = notification.payload;
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    return null;
+  }
+
+  const status = (payload as Record<string, unknown>).invitation_status;
+  return status === "PENDING" ||
+    status === "ACCEPTED" ||
+    status === "DECLINED" ||
+    status === "CANCELLED"
+    ? status
+    : null;
+}
+
+function getTerminalInvitationStatus(
+  notification: Notification,
+): TerminalTripInvitationStatus | null {
+  const status = getInvitationStatus(notification);
+  return status && status !== "PENDING" ? status : null;
+}
+
+function collectConfirmedInvitationStatuses(
+  current: NotificationsState["confirmedInvitationStatuses"],
+  notifications: Notification[],
+): NotificationsState["confirmedInvitationStatuses"] {
+  let result = current;
+
+  for (const notification of notifications) {
+    const status = getTerminalInvitationStatus(notification);
+    if (!status || result[notification.id]) continue;
+
+    if (result === current) result = { ...current };
+    result[notification.id] = status;
+  }
+
+  return result;
+}
+
+function applyConfirmedInvitationStatus(
+  notification: Notification,
+  confirmedStatuses: NotificationsState["confirmedInvitationStatuses"],
+): Notification {
+  if (notification.notification_type !== "TRIP_INVITATION") {
+    return notification;
+  }
+
+  const confirmedStatus = confirmedStatuses[notification.id];
+  const incomingStatus = getInvitationStatus(notification);
+
+  if (!confirmedStatus || !incomingStatus || incomingStatus === confirmedStatus) {
+    return notification;
+  }
+
+  return {
+    ...notification,
+    payload: {
+      ...notification.payload,
+      invitation_status: confirmedStatus,
+    },
+  };
+}
+
+function reconcileIncomingNotifications(
+  currentStatuses: NotificationsState["confirmedInvitationStatuses"],
+  notifications: Notification[],
+) {
+  const confirmedInvitationStatuses = collectConfirmedInvitationStatuses(
+    currentStatuses,
+    notifications,
+  );
+  return {
+    confirmedInvitationStatuses,
+    notifications: notifications.map((notification) =>
+      applyConfirmedInvitationStatus(
+        notification,
+        confirmedInvitationStatuses,
+      ),
+    ),
+  };
+}
+
 function mergePendingReconcile(
   current: NotificationsState["pendingReconcile"],
   requested: NotificationsState["pendingReconcile"],
@@ -124,33 +234,65 @@ function reducer(state: NotificationsState, action: Action): NotificationsState 
     case "SET_LOADING":
       return { ...state, isLoading: action.loading };
 
-    case "NOTIFICATIONS_LOADED":
+    case "NOTIFICATIONS_LOADED": {
+      const reconciled = reconcileIncomingNotifications(
+        state.confirmedInvitationStatuses,
+        action.notifications,
+      );
       return {
         ...state,
-        notifications: upsertMany(state.notifications, action.notifications),
+        notifications: upsertMany(
+          state.notifications,
+          reconciled.notifications,
+        ),
+        confirmedInvitationStatuses:
+          reconciled.confirmedInvitationStatuses,
         hasMore: action.nextCursor !== null,
         cursor: action.nextCursor,
         isListLoaded: true,
         isLoading: false,
       };
+    }
 
-    case "MORE_LOADED":
+    case "MORE_LOADED": {
+      const reconciled = reconcileIncomingNotifications(
+        state.confirmedInvitationStatuses,
+        action.notifications,
+      );
       return {
         ...state,
-        notifications: upsertMany(state.notifications, action.notifications),
+        notifications: upsertMany(
+          state.notifications,
+          reconciled.notifications,
+        ),
+        confirmedInvitationStatuses:
+          reconciled.confirmedInvitationStatuses,
         hasMore: action.nextCursor !== null,
         cursor: action.nextCursor,
         isLoading: false,
       };
+    }
 
     case "NOTIFICATION_RECEIVED": {
-      const exists = state.notifications.some((n) => n.id === action.notification.id);
-      const notifications = upsertNotification(state.notifications, action.notification);
+      const reconciled = reconcileIncomingNotifications(
+        state.confirmedInvitationStatuses,
+        [action.notification],
+      );
+      const incomingNotification = reconciled.notifications[0];
+      const exists = state.notifications.some(
+        (notification) => notification.id === incomingNotification.id,
+      );
+      const notifications = upsertNotification(
+        state.notifications,
+        incomingNotification,
+      );
 
       if (!state.unreadCountHydrated) {
         return {
           ...state,
           notifications,
+          confirmedInvitationStatuses:
+            reconciled.confirmedInvitationStatuses,
           pendingReconcile: mergePendingReconcile(
             state.pendingReconcile,
             "count_only",
@@ -161,6 +303,8 @@ function reducer(state: NotificationsState, action: Action): NotificationsState 
       return {
         ...state,
         notifications,
+        confirmedInvitationStatuses:
+          reconciled.confirmedInvitationStatuses,
         unreadCount: exists ? state.unreadCount : state.unreadCount + 1,
       };
     }
@@ -274,19 +418,47 @@ function reducer(state: NotificationsState, action: Action): NotificationsState 
         pendingReconcile: "snapshot_on_open",
       };
 
-    case "RECONCILE_APPLIED":
+    case "RECONCILE_APPLIED": {
+      const reconciled = reconcileIncomingNotifications(
+        state.confirmedInvitationStatuses,
+        action.notifications,
+      );
       return {
         ...state,
         unreadCount: action.count,
         unreadCountHydrated: true,
         pendingReconcile: "none",
-        notifications: action.notifications,
+        notifications: reconciled.notifications,
+        confirmedInvitationStatuses:
+          reconciled.confirmedInvitationStatuses,
         hasMore: action.nextCursor !== null,
         cursor: action.nextCursor,
         isListLoaded: true,
         isLoading: false,
         optimisticReadIds: [],
       };
+    }
+
+    case "CONFIRM_INVITATION_STATUS": {
+      const status =
+        state.confirmedInvitationStatuses[action.notificationId] ??
+        action.status;
+      const confirmedInvitationStatuses = {
+        ...state.confirmedInvitationStatuses,
+        [action.notificationId]: status,
+      };
+
+      return {
+        ...state,
+        confirmedInvitationStatuses,
+        notifications: state.notifications.map((notification) =>
+          applyConfirmedInvitationStatus(
+            notification,
+            confirmedInvitationStatuses,
+          ),
+        ),
+      };
+    }
   }
 }
 
@@ -302,6 +474,10 @@ type NotificationsContextValue = {
   loadMore: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  confirmTripInvitationStatus: (
+    notificationId: string,
+    status: TerminalTripInvitationStatus,
+  ) => void;
 };
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
@@ -470,6 +646,20 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const confirmTripInvitationStatus = useCallback(
+    (
+      notificationId: string,
+      status: TerminalTripInvitationStatus,
+    ) => {
+      dispatch({
+        type: "CONFIRM_INVITATION_STATUS",
+        notificationId,
+        status,
+      });
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       unreadCount: state.unreadCount,
@@ -481,8 +671,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       loadMore,
       markRead,
       markAllRead,
+      confirmTripInvitationStatus,
     }),
-    [state.unreadCount, state.notifications, state.isLoading, state.hasMore, state.isListLoaded, fetchNotifications, loadMore, markRead, markAllRead],
+    [state.unreadCount, state.notifications, state.isLoading, state.hasMore, state.isListLoaded, fetchNotifications, loadMore, markRead, markAllRead, confirmTripInvitationStatus],
   );
 
   return (

@@ -9,6 +9,7 @@ from notifications.services import (
     NotificationNotFoundError,
     mark_all_notifications_read,
     mark_notification_read,
+    resolve_trip_invitation_statuses,
 )
 
 
@@ -34,7 +35,15 @@ class NotificationListAPIView(APIView):
 
         paginator = NotificationCursorPagination()
         page = paginator.paginate_queryset(queryset, request)
-        serializer = NotificationSerializer(page, many=True)
+        invitation_statuses = resolve_trip_invitation_statuses(
+            page,
+            recipient_id=request.user.id,
+        )
+        serializer = NotificationSerializer(
+            page,
+            many=True,
+            context={"invitation_statuses": invitation_statuses},
+        )
         return paginator.get_paginated_response(serializer.data)
 
 

@@ -1,7 +1,12 @@
 const mockUseFocusEffect = jest.fn();
+const mockUseAppForegroundEffect = jest.fn();
 
 jest.mock('expo-router', () => ({
   useFocusEffect: (effect: () => (() => void) | void) => mockUseFocusEffect(effect),
+}));
+
+jest.mock('@/shared/hooks/useAppForegroundEffect', () => ({
+  useAppForegroundEffect: (listener: () => void) => mockUseAppForegroundEffect(listener),
 }));
 
 jest.mock('../api', () => ({
@@ -48,6 +53,18 @@ const tripDetail = {
   members: [],
 };
 
+const member = {
+  membership_id: 'membership-2',
+  user: {
+    id: 'user-2',
+    display_name: 'Lan Nguyen',
+    identify_tag: 'lan#1234',
+    avatar_url: null,
+  },
+  role: 'MEMBER' as const,
+  joined_at: '2026-01-02T00:00:00Z',
+};
+
 function axiosErrorWith(status: number, data: unknown): AxiosError {
   const config = { headers: new AxiosHeaders() };
   return new AxiosError('Request failed', 'ERR_BAD_REQUEST', config, {}, {
@@ -71,6 +88,14 @@ function latestFocusCallback(): () => (() => void) | void {
   const callback = mockUseFocusEffect.mock.calls.at(-1)?.[0] as (() => (() => void) | void) | undefined;
   if (!callback) {
     throw new Error('Expected useFocusEffect to register a callback.');
+  }
+  return callback;
+}
+
+function latestForegroundCallback(): () => void {
+  const callback = mockUseAppForegroundEffect.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+  if (!callback) {
+    throw new Error('Expected useAppForegroundEffect to register a callback.');
   }
   return callback;
 }
@@ -99,7 +124,7 @@ describe('useTripDetail', () => {
     unmount();
   });
 
-  it('retains rendered detail after a non-404 silent refresh failure', async () => {
+  it('retains rendered detail after a non-404 foreground refresh failure', async () => {
     mockGetTripDetail
       .mockResolvedValueOnce(tripDetail)
       .mockRejectedValueOnce(axiosErrorWith(500, { detail: 'Service unavailable.' }));
@@ -110,12 +135,32 @@ describe('useTripDetail', () => {
     });
     await waitFor(() => expect(result.current.detail).toEqual(tripDetail));
     await act(async () => {
-      latestFocusCallback()();
+      latestForegroundCallback()();
     });
 
     await waitFor(() => expect(result.current.error?.message).toBe('Service unavailable.'));
     expect(result.current.detail).toEqual(tripDetail);
     expect(result.current.status).toBe('ready');
+    unmount();
+  });
+
+  it('reconciles member data when the app returns to foreground', async () => {
+    const detailWithMember = { ...tripDetail, members: [member] };
+    mockGetTripDetail
+      .mockResolvedValueOnce(tripDetail)
+      .mockResolvedValueOnce(detailWithMember);
+    const { result, unmount } = await renderHook(() => useTripDetail('trip-1'));
+    await act(async () => {
+      latestFocusCallback()();
+    });
+    await waitFor(() => expect(result.current.detail).toEqual(tripDetail));
+
+    await act(async () => {
+      latestForegroundCallback()();
+    });
+
+    await waitFor(() => expect(result.current.detail?.members).toEqual([member]));
+    expect(mockGetTripDetail).toHaveBeenCalledTimes(2);
     unmount();
   });
 
@@ -180,6 +225,33 @@ describe('useTripDetail', () => {
     });
 
     expect(result.current.detail?.trip).toMatchObject({ name: 'Updated Da Lat', status: 'ONGOING' });
+    unmount();
+  });
+
+  it('removes a member locally and prevents an older detail response from restoring them', async () => {
+    const detailWithMember = { ...tripDetail, members: [member] };
+    const staleRefresh = deferred<typeof detailWithMember>();
+    mockGetTripDetail
+      .mockResolvedValueOnce(detailWithMember)
+      .mockReturnValueOnce(staleRefresh.promise);
+    const { result, unmount } = await renderHook(() => useTripDetail('trip-1'));
+
+    await act(async () => {
+      latestFocusCallback()();
+    });
+    await waitFor(() => expect(result.current.detail?.members).toEqual([member]));
+    await act(async () => {
+      void result.current.refresh('silent');
+      publishTripEvent({ type: 'memberRemoved', tripId: 'trip-1', userId: 'user-2' });
+    });
+
+    expect(result.current.detail?.members).toEqual([]);
+    await act(async () => {
+      staleRefresh.resolve(detailWithMember);
+    });
+
+    expect(result.current.detail?.members).toEqual([]);
+    expect(result.current.refreshing).toBe(false);
     unmount();
   });
 });
