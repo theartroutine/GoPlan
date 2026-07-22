@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 
-import type { Notification } from "@/features/notifications/domain/types";
+import type {
+  Notification,
+  TripInvitationStatus,
+} from "@/features/notifications/domain/types";
 import { parseTripInvitationPayload } from "@/features/notifications/domain/payload-parsers";
 import { Button } from "@/shared/ui/button";
 
@@ -12,9 +15,18 @@ type Props = {
   onDecline: (invitationId: string, notificationId: string) => Promise<void>;
 };
 
+const RESOLVED_STATUS_LABELS: Record<
+  Exclude<TripInvitationStatus, "PENDING">,
+  string
+> = {
+  ACCEPTED: "✓ You joined the trip",
+  DECLINED: "Invitation declined",
+  CANCELLED: "Invitation cancelled",
+};
+
 export function TripInvitationNotification({ notification, onAccept, onDecline }: Props) {
   const [loading, setLoading] = useState<"accept" | "decline" | null>(null);
-  const [responded, setResponded] = useState<"accepted" | "declined" | null>(null);
+  const [localStatus, setLocalStatus] = useState<"ACCEPTED" | "DECLINED" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const payload = parseTripInvitationPayload(notification.payload);
@@ -29,13 +41,17 @@ export function TripInvitationNotification({ notification, onAccept, onDecline }
   }
 
   const invitationId = payload.invitation_id;
+  const status =
+    payload.invitation_status === "PENDING"
+      ? (localStatus ?? payload.invitation_status)
+      : payload.invitation_status;
 
   async function handleAccept() {
     setLoading("accept");
     setActionError(null);
     try {
       await onAccept(invitationId, notification.id);
-      setResponded("accepted");
+      setLocalStatus("ACCEPTED");
     } catch {
       setActionError("Failed to accept invitation. Please try again.");
     } finally {
@@ -48,7 +64,7 @@ export function TripInvitationNotification({ notification, onAccept, onDecline }
     setActionError(null);
     try {
       await onDecline(invitationId, notification.id);
-      setResponded("declined");
+      setLocalStatus("DECLINED");
     } catch {
       setActionError("Failed to decline invitation. Please try again.");
     } finally {
@@ -71,9 +87,9 @@ export function TripInvitationNotification({ notification, onAccept, onDecline }
             📍 {payload.destination} · {payload.start_date} → {payload.end_date}
           </p>
 
-          {responded ? (
+          {status !== "PENDING" ? (
             <p className="mt-2 text-xs text-muted-foreground">
-              {responded === "accepted" ? "✓ You joined the trip" : "Invitation declined"}
+              {RESOLVED_STATUS_LABELS[status]}
             </p>
           ) : (
             <>

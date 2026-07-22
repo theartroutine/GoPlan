@@ -2,18 +2,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ComponentProps, useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { resolveMediaUrl } from '@/shared/api/base-url';
 import { type ApiError, normalizeApiError } from '@/shared/api/errors';
 import { colors, radii, spacing, typography } from '@/shared/theme/tokens';
 import { Button } from '@/shared/ui/Button';
 import { LoadingScreen } from '@/shared/ui/LoadingScreen';
-import { cancelTrip, completeTrip, leaveTrip, startTrip } from '../api';
+import { cancelTrip, completeTrip, leaveTrip, removeTripMember, startTrip } from '../api';
 import { MemberRow } from '../components/MemberRow';
+import { PendingInvitationRow } from '../components/PendingInvitationRow';
 import { StatusBadge } from '../components/StatusBadge';
 import { TripActions, type TripDisplayAction } from '../components/TripActions';
 import { formatDateRange } from '../dates';
+import { usePendingInvitations } from '../hooks/usePendingInvitations';
 import { useTripDetail } from '../hooks/useTripDetail';
 import { publishTripEvent } from '../tripEvents';
 
@@ -48,8 +50,13 @@ export function TripDetailScreen() {
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const router = useRouter();
   const { detail, status, error, refreshing, refresh, applyStatus } = useTripDetail(tripId);
+  const captainControlsEnabled = Boolean(
+    detail?.my_membership.role === 'CAPTAIN' && detail.my_membership.status === 'ACTIVE',
+  );
+  const pendingInvitations = usePendingInvitations(tripId, captainControlsEnabled);
   const [mutationError, setMutationError] = useState<ApiError | null>(null);
   const [mutatingAction, setMutatingAction] = useState<TripDisplayAction | null>(null);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const mutationLockRef = useRef(false);
 
   const handleAction = useCallback(
@@ -92,6 +99,69 @@ export function TripDetailScreen() {
     [applyStatus, refresh, router, tripId],
   );
 
+  const removeMember = useCallback(
+    async (userId: string) => {
+      if (!tripId) {
+        mutationLockRef.current = false;
+        return;
+      }
+      setMutationError(null);
+      setRemovingMemberId(userId);
+      try {
+        await removeTripMember(tripId, userId);
+        publishTripEvent({ type: 'memberRemoved', tripId, userId });
+        void refresh('silent');
+      } catch (caught) {
+        setMutationError(normalizeApiError(caught));
+      } finally {
+        mutationLockRef.current = false;
+        setRemovingMemberId(null);
+      }
+    },
+    [refresh, tripId],
+  );
+
+  const confirmMemberRemoval = useCallback(
+    (userId: string, displayName: string) => {
+      if (!tripId || mutationLockRef.current) {
+        return;
+      }
+      mutationLockRef.current = true;
+      let confirmed = false;
+      const releaseLock = () => {
+        mutationLockRef.current = false;
+      };
+      Alert.alert(
+        'Remove trip member?',
+        `Remove ${displayName} from this trip? They will lose access immediately.`,
+        [
+          { text: 'Keep member', style: 'cancel', onPress: releaseLock },
+          {
+            text: 'Remove member',
+            style: 'destructive',
+            onPress: () => {
+              confirmed = true;
+              void removeMember(userId);
+            },
+          },
+        ],
+        {
+          cancelable: true,
+          onDismiss: () => {
+            if (!confirmed) {
+              releaseLock();
+            }
+          },
+        },
+      );
+    },
+    [removeMember, tripId],
+  );
+
+  const openInvite = useCallback(() => {
+    router.push(`/trips/${tripId}/invite`);
+  }, [router, tripId]);
+
   if (status === 'loading') {
     return <LoadingScreen />;
   }
@@ -116,6 +186,10 @@ export function TripDetailScreen() {
   const { trip, members, my_membership: membership } = detail;
   const coverUrl = resolveMediaUrl(trip.cover_image_url || null);
   const inlineError = mutationError ?? error;
+  const isNonTerminal = trip.status === 'PLANNING' || trip.status === 'ONGOING';
+  const canInvite = captainControlsEnabled && isNonTerminal;
+  const canRemoveMembers = captainControlsEnabled && isNonTerminal;
+  const mutationInFlight = mutatingAction !== null || removingMemberId !== null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
@@ -171,7 +245,7 @@ export function TripDetailScreen() {
         <TripActions
           trip={trip}
           membership={membership}
-          isMutating={mutatingAction !== null}
+          isMutating={mutationInFlight}
           onAction={handleAction}
         />
         {mutatingAction ? (
@@ -191,15 +265,93 @@ export function TripDetailScreen() {
           </View>
         ) : null}
         <View style={styles.section}>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>
-            Members ({members.length})
-          </Text>
+          <View style={styles.sectionHeader}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              Members ({members.length})
+            </Text>
+          </View>
           <View style={[styles.card, styles.membersCard]}>
             {members.map((member, index) => (
-              <MemberRow key={member.membership_id} member={member} showDivider={index < members.length - 1} />
+              <MemberRow
+                key={member.membership_id}
+                member={member}
+                showDivider={index < members.length - 1}
+                showRemove={canRemoveMembers && member.role !== 'CAPTAIN'}
+                removeDisabled={mutationInFlight}
+                removing={removingMemberId === member.user.id}
+                onRemoveRequest={confirmMemberRemoval}
+              />
             ))}
           </View>
         </View>
+        {captainControlsEnabled ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text accessibilityRole="header" style={styles.sectionTitle}>
+                Pending invitations
+              </Text>
+              {canInvite ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Invite friends"
+                  disabled={mutationInFlight}
+                  onPress={openInvite}
+                  style={({ pressed }) => [
+                    styles.inviteButton,
+                    pressed && !mutationInFlight ? styles.inviteButtonPressed : null,
+                    mutationInFlight ? styles.inviteButtonDisabled : null,
+                  ]}
+                >
+                  <Ionicons name="person-add-outline" size={18} color={colors.primary} />
+                  <Text style={styles.inviteButtonText}>Invite</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <View style={[styles.card, styles.pendingCard]}>
+              {pendingInvitations.status === 'loading' || pendingInvitations.status === 'idle' ? (
+                <View accessibilityLabel="Loading pending invitations" style={styles.pendingState}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.pendingStateText}>Loading invitations…</Text>
+                </View>
+              ) : pendingInvitations.status === 'error' ? (
+                <View accessibilityRole="alert" style={styles.pendingState}>
+                  <Text style={styles.pendingErrorText}>{pendingInvitations.error?.message}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Retry pending invitations"
+                    onPress={() => void pendingInvitations.load('initial')}
+                    style={({ pressed }) => [styles.pendingRetry, pressed ? styles.retryButtonPressed : null]}
+                  >
+                    <Text style={styles.retryText}>Try again</Text>
+                  </Pressable>
+                </View>
+              ) : pendingInvitations.items.length === 0 ? (
+                <Text style={styles.pendingEmpty}>No pending invitations.</Text>
+              ) : (
+                pendingInvitations.items.map((invitation, index) => (
+                  <PendingInvitationRow
+                    key={invitation.id}
+                    invitation={invitation}
+                    showDivider={index < pendingInvitations.items.length - 1}
+                  />
+                ))
+              )}
+              {pendingInvitations.status === 'ready' && pendingInvitations.error ? (
+                <View accessibilityRole="alert" style={styles.pendingInlineError}>
+                  <Text style={styles.pendingErrorText}>{pendingInvitations.error.message}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Retry pending invitations"
+                    onPress={() => void pendingInvitations.load('silent')}
+                    style={({ pressed }) => [styles.pendingRetry, pressed ? styles.retryButtonPressed : null]}
+                  >
+                    <Text style={styles.retryText}>Retry</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -262,4 +414,36 @@ const styles = StyleSheet.create({
   retryText: { ...typography.label, color: colors.danger },
   refreshingRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   refreshingText: { ...typography.caption, color: colors.textMuted },
+  inviteButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
+  },
+  inviteButtonPressed: { opacity: 0.55 },
+  inviteButtonDisabled: { opacity: 0.5 },
+  inviteButtonText: { ...typography.label, color: colors.primary },
+  pendingCard: { paddingVertical: 0 },
+  pendingState: {
+    minHeight: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  pendingStateText: { ...typography.caption, color: colors.textMuted },
+  pendingErrorText: { ...typography.caption, color: colors.danger, textAlign: 'center' },
+  pendingRetry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.sm },
+  pendingEmpty: { ...typography.body, color: colors.textMuted, paddingVertical: spacing.md },
+  pendingInlineError: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.dangerBorder,
+  },
 });

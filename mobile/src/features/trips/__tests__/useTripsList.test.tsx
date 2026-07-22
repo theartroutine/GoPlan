@@ -1,3 +1,9 @@
+const mockUseAppForegroundEffect = jest.fn();
+
+jest.mock('@/shared/hooks/useAppForegroundEffect', () => ({
+  useAppForegroundEffect: (listener: () => void) => mockUseAppForegroundEffect(listener),
+}));
+
 jest.mock('../api', () => ({
   listTrips: jest.fn(),
 }));
@@ -12,6 +18,14 @@ import { useTripsList } from '../hooks/useTripsList';
 import { publishTripEvent } from '../tripEvents';
 
 const mockListTrips = listTrips as jest.MockedFunction<typeof listTrips>;
+
+function latestForegroundCallback(): () => void {
+  const callback = mockUseAppForegroundEffect.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+  if (!callback) {
+    throw new Error('Expected useAppForegroundEffect to register a callback.');
+  }
+  return callback;
+}
 
 const tripA = {
   id: 'trip-a',
@@ -101,7 +115,7 @@ describe('useTripsList', () => {
     expect(mockListTrips).toHaveBeenCalledTimes(2);
   });
 
-  it('preserves the rendered list when a silent focus refresh fails', async () => {
+  it('preserves the rendered list when a foreground refresh fails', async () => {
     mockListTrips
       .mockResolvedValueOnce({ items: [tripA], nextCursor: 'cursor-1' })
       .mockRejectedValueOnce(new Error('offline'));
@@ -112,12 +126,26 @@ describe('useTripsList', () => {
       await result.current.loadFirstPage('initial');
     });
     await act(async () => {
-      await result.current.loadFirstPage('silent');
+      latestForegroundCallback()();
     });
 
     expect(result.current.items).toEqual([tripA]);
     expect(result.current.status).toBe('ready');
     expect(result.current.error).toBeNull();
+  });
+
+  it('reconciles the first page when the app returns to foreground', async () => {
+    mockListTrips
+      .mockResolvedValueOnce({ items: [tripA], nextCursor: null })
+      .mockResolvedValueOnce({ items: [tripB], nextCursor: null });
+    const { result } = await renderHook(() => useTripsList());
+    await act(async () => {
+      await result.current.loadFirstPage('initial');
+      latestForegroundCallback()();
+    });
+
+    await waitFor(() => expect(result.current.items).toEqual([tripB]));
+    expect(mockListTrips).toHaveBeenCalledTimes(2);
   });
 
   it('finishes a failed pull-to-refresh while retaining the ready list and exposing the error', async () => {
@@ -276,6 +304,56 @@ describe('useTripsList', () => {
     });
 
     expect(result.current.items).toEqual([serverTrip]);
+    unmount();
+  });
+
+  it('reconciles an accepted membership with a new first page and ignores the older response', async () => {
+    const staleRefresh = deferred<{ items: typeof tripA[]; nextCursor: null }>();
+    mockListTrips
+      .mockResolvedValueOnce({ items: [tripA], nextCursor: null })
+      .mockReturnValueOnce(staleRefresh.promise)
+      .mockResolvedValueOnce({ items: [tripA, tripB], nextCursor: null });
+    const { result, unmount } = await renderHook(() => useTripsList());
+    await act(async () => {
+      await result.current.loadFirstPage('initial');
+    });
+    await act(async () => {
+      void result.current.loadFirstPage('silent');
+      publishTripEvent({ type: 'membershipAdded', tripId: 'trip-b' });
+    });
+
+    await waitFor(() => expect(result.current.items).toEqual([tripA, tripB]));
+    expect(mockListTrips).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      staleRefresh.resolve({ items: [tripA], nextCursor: null });
+    });
+
+    expect(result.current.items).toEqual([tripA, tripB]);
+    unmount();
+  });
+
+  it('refreshes list metadata after member removal and ignores invitation-only events', async () => {
+    const updatedTrip = { ...tripA, member_count: 1 };
+    mockListTrips
+      .mockResolvedValueOnce({ items: [{ ...tripA, member_count: 2 }], nextCursor: null })
+      .mockResolvedValueOnce({ items: [updatedTrip], nextCursor: null });
+    const { result, unmount } = await renderHook(() => useTripsList());
+    await act(async () => {
+      await result.current.loadFirstPage('initial');
+      publishTripEvent({
+        type: 'invitationsSent',
+        tripId: 'trip-a',
+        invitations: [],
+      });
+    });
+    expect(mockListTrips).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      publishTripEvent({ type: 'memberRemoved', tripId: 'trip-a', userId: 'user-2' });
+    });
+
+    await waitFor(() => expect(result.current.items).toEqual([updatedTrip]));
+    expect(mockListTrips).toHaveBeenCalledTimes(2);
     unmount();
   });
 });

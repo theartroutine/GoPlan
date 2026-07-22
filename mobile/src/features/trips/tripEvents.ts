@@ -1,9 +1,12 @@
-import type { Trip, TripStatus } from './types';
+import type { Trip, TripInvitation, TripStatus } from './types';
 
 export type TripEvent =
   | { type: 'updated'; trip: Trip }
   | { type: 'statusChanged'; tripId: string; status: TripStatus }
-  | { type: 'removed'; tripId: string };
+  | { type: 'removed'; tripId: string }
+  | { type: 'memberRemoved'; tripId: string; userId: string }
+  | { type: 'invitationsSent'; tripId: string; invitations: TripInvitation[] }
+  | { type: 'membershipAdded'; tripId: string };
 
 type TripEventListener = (event: TripEvent) => void;
 

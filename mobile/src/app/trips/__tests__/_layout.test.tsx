@@ -1,5 +1,6 @@
 const mockRouter = { canGoBack: jest.fn(), back: jest.fn(), replace: jest.fn() };
 const mockUseSession = jest.fn();
+const mockRegisterScreen = jest.fn();
 
 jest.mock('expo-router', () => {
   const React = jest.requireActual<typeof import('react')>('react');
@@ -14,8 +15,13 @@ jest.mock('expo-router', () => {
     options,
   }: {
     name: string;
-    options: { title: string; headerLeft?: () => import('react').ReactNode };
+    options: {
+      title: string;
+      presentation?: string;
+      headerLeft?: () => import('react').ReactNode;
+    };
   }) {
+    mockRegisterScreen(name, options);
     return React.createElement(View, { testID: `screen-${name}` }, options.headerLeft?.());
   };
 
@@ -45,6 +51,12 @@ describe('TripsLayout header actions', () => {
     await render(<TripsLayout />);
     expect(screen.getByTestId('screen-[tripId]/edit')).toBeTruthy();
     expect(screen.getByLabelText('Cancel trip editing')).toBeTruthy();
+    expect(screen.getByTestId('screen-[tripId]/invite')).toBeTruthy();
+    expect(screen.getByLabelText('Cancel member invitation')).toBeTruthy();
+    expect(mockRegisterScreen).toHaveBeenCalledWith(
+      '[tripId]/invite',
+      expect.objectContaining({ title: 'Invite Friends', presentation: 'formSheet' }),
+    );
   });
 
   it('returns to the previous route from the trip detail header when history exists', async () => {
@@ -58,6 +70,7 @@ describe('TripsLayout header actions', () => {
   it.each([
     ['Cancel trip creation'],
     ['Cancel trip editing'],
+    ['Cancel member invitation'],
   ])('returns to tabs from %s when there is no navigation history', async (label) => {
     mockRouter.canGoBack.mockReturnValue(false);
     await render(<TripsLayout />);

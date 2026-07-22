@@ -480,21 +480,30 @@ def send_trip_invitations(trip, captain, invitee_ids: list) -> list:
 def accept_invitation(invitation_id, actor) -> TripMember:
     """Accept a PENDING invitation. Creates ACTIVE TripMember for invitee."""
     with transaction.atomic():
+        invitation_reference = (
+            TripInvitation.objects.filter(pk=invitation_id, invitee=actor)
+            .values("trip_id")
+            .first()
+        )
+        if invitation_reference is None:
+            raise TripNotFoundError("Invitation not found.")
+
+        try:
+            trip = Trip.objects.select_for_update().get(
+                pk=invitation_reference["trip_id"]
+            )
+        except Trip.DoesNotExist:
+            raise TripNotFoundError("Trip not found.")
+
         try:
             invitation = (
                 TripInvitation.objects
-                .select_related("trip", "inviter")
+                .select_related("inviter")
                 .select_for_update()
-                .get(pk=invitation_id, invitee=actor)
+                .get(pk=invitation_id, invitee=actor, trip=trip)
             )
         except TripInvitation.DoesNotExist:
             raise TripNotFoundError("Invitation not found.")
-
-        trip = invitation.trip
-        try:
-            trip = Trip.objects.select_for_update().get(pk=trip.pk)
-        except Trip.DoesNotExist:
-            raise TripNotFoundError("Trip not found.")
 
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationError("This invitation is no longer pending.")

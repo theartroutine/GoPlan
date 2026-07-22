@@ -17,18 +17,21 @@ export function NotificationDropdown() {
     loadMore,
     markRead,
     markAllRead,
+    confirmTripInvitationStatus,
   } = useNotifications();
   const router = useRouter();
 
   async function handleAcceptInvitation(invitationId: string, notificationId: string) {
     await bffAcceptInvitation(invitationId);
-    markRead(notificationId);
+    confirmTripInvitationStatus(notificationId, "ACCEPTED");
+    void markRead(notificationId);
     router.refresh();
   }
 
   async function handleDeclineInvitation(invitationId: string, notificationId: string) {
     await bffDeclineInvitation(invitationId);
-    markRead(notificationId);
+    confirmTripInvitationStatus(notificationId, "DECLINED");
+    void markRead(notificationId);
   }
 
   const canMarkAllRead =
