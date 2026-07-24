@@ -8,6 +8,7 @@ urlpatterns = [
     path("realtime/", include("realtime.urls")),
     path("notifications/", include("notifications.urls")),
     path("friends/", include("friends.urls")),
+    path("location-search/", include("location_search.urls")),
     path("trips/", include("trips.urls")),
     path("trips/", include("expenses.urls")),
     path("trips/", include("memories.urls")),
