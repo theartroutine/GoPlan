@@ -11,7 +11,9 @@ LOCATION_ID_TOO_LONG = "LOCATION_ID_TOO_LONG"
 LOCATION_ID_INVALID = "LOCATION_ID_INVALID"
 
 MAX_LOCATION_QUERY_LENGTH = 120
-MAX_LOCATION_ID_LENGTH = 255
+# Matches the web BFF limit so a provider id accepted on web is accepted on
+# mobile.
+MAX_LOCATION_ID_LENGTH = 256
 
 
 class LocationSearchQuerySerializer(serializers.Serializer):

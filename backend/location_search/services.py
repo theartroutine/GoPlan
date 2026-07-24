@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import hashlib
+import logging
 import math
 import re
-import warnings
 from collections.abc import Mapping
 from typing import TypedDict, cast
 
 import httpx
 from django.conf import settings
 from django.core.cache import cache
-from django.core.cache.backends.base import CacheKeyWarning
 
 from location_search.country_codes import normalize_country_code
+
+logger = logging.getLogger(__name__)
 
 HERE_AUTOSUGGEST_URL = "https://geocode.search.hereapi.com/v1/autosuggest"
 HERE_LOOKUP_URL = "https://lookup.search.hereapi.com/v1/lookup"
@@ -20,17 +22,18 @@ HERE_LANGUAGE = "vi-VN"
 HERE_POLITICAL_VIEW = "VNM"
 HERE_SUGGEST_LIMIT = 8
 
-# Django warns when raw keys are incompatible with Memcached. The approved HERE
-# key contract intentionally contains user input, so register one narrow filter
-# at import time instead of mutating the process-wide warning state per request.
-warnings.filterwarnings(
-    "ignore",
-    message=(
-        r"Cache key contains characters that will cause errors if used with "
-        r"memcached: .*here:(?:suggest|lookup):"
-    ),
-    category=CacheKeyWarning,
-)
+SUGGEST_KIND = "suggest"
+LOOKUP_KIND = "lookup"
+
+# Connect and pool phases are bounded well below the configured read budget so a
+# single slow provider call cannot pin a worker for a multiple of the timeout.
+MAX_CONNECT_TIMEOUT_SECONDS = 2.0
+MAX_POOL_TIMEOUT_SECONDS = 1.0
+
+# One client for the process so autocomplete traffic reuses pooled TLS
+# connections instead of repeating a handshake on every keystroke. Constructing
+# the client opens no socket, so it is safe to build at import time.
+_HTTP_CLIENT = httpx.Client()
 
 _RESULT_TYPE_RANKS = {
     "locality": 0,
@@ -96,15 +99,18 @@ def ensure_location_search_available() -> None:
 
 
 def suggest_locations(*, query: str) -> list[LocationSuggestion]:
+    ensure_location_search_available()
+
     if len(query) < 2:
         return []
 
-    cache_key = f"here:suggest:{query.casefold()}"
+    cache_key = _cache_key(SUGGEST_KIND, query.casefold())
     cached = _cache_get(cache_key)
     if cached is not None:
         return cast(list[LocationSuggestion], cached)
 
     payload = _fetch_here_payload(
+        kind=SUGGEST_KIND,
         url=HERE_AUTOSUGGEST_URL,
         params={
             "q": query,
@@ -119,6 +125,7 @@ def suggest_locations(*, query: str) -> list[LocationSuggestion]:
     try:
         suggestions = _normalize_suggestions(payload)
     except _InvalidProviderResponseError:
+        logger.warning("HERE %s returned an unusable payload shape.", SUGGEST_KIND)
         raise LocationProviderUnavailableError from None
 
     _cache_set(
@@ -130,12 +137,15 @@ def suggest_locations(*, query: str) -> list[LocationSuggestion]:
 
 
 def lookup_location(*, provider_id: str) -> LocationLookupResult:
-    cache_key = f"here:lookup:{provider_id}"
+    ensure_location_search_available()
+
+    cache_key = _cache_key(LOOKUP_KIND, provider_id)
     cached = _cache_get(cache_key)
     if cached is not None:
         return cast(LocationLookupResult, cached)
 
     payload = _fetch_here_payload(
+        kind=LOOKUP_KIND,
         url=HERE_LOOKUP_URL,
         params={
             "id": provider_id,
@@ -148,6 +158,7 @@ def lookup_location(*, provider_id: str) -> LocationLookupResult:
     try:
         location = _normalize_lookup(payload)
     except _InvalidProviderResponseError:
+        logger.warning("HERE %s returned an unusable payload shape.", LOOKUP_KIND)
         raise LocationProviderUnavailableError from None
 
     _cache_set(
@@ -158,16 +169,64 @@ def lookup_location(*, provider_id: str) -> LocationLookupResult:
     return location
 
 
-def _fetch_here_payload(*, url: str, params: Mapping[str, str]) -> object:
+def _request_timeout() -> httpx.Timeout:
+    read_timeout = float(settings.HERE_LOCATION_SEARCH_TIMEOUT_SECONDS)
+    return httpx.Timeout(
+        read_timeout,
+        connect=min(MAX_CONNECT_TIMEOUT_SECONDS, read_timeout),
+        pool=min(MAX_POOL_TIMEOUT_SECONDS, read_timeout),
+    )
+
+
+def _fetch_here_payload(
+    *,
+    kind: str,
+    url: str,
+    params: Mapping[str, str],
+) -> object:
     try:
-        with httpx.Client(
-            timeout=settings.HERE_LOCATION_SEARCH_TIMEOUT_SECONDS,
-        ) as client:
-            response = client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-    except (httpx.HTTPError, RuntimeError, TypeError, ValueError):
+        response = _HTTP_CLIENT.get(url, params=params, timeout=_request_timeout())
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as exc:
+        _log_provider_failure(kind, exc, status_code=exc.response.status_code)
         raise LocationProviderUnavailableError from None
+    except (httpx.HTTPError, ValueError) as exc:
+        _log_provider_failure(kind, exc)
+        raise LocationProviderUnavailableError from None
+
+
+def _log_provider_failure(
+    kind: str,
+    exc: Exception,
+    *,
+    status_code: int | None = None,
+) -> None:
+    """Log enough to diagnose a provider outage and nothing more.
+
+    Never log the exception message or the request URL: httpx embeds the full
+    URL in both, and HERE authenticates through an ``apiKey`` query parameter.
+    """
+    if status_code is None:
+        logger.warning("HERE %s request failed: %s", kind, type(exc).__name__)
+        return
+    logger.warning(
+        "HERE %s request failed: %s (status %s)",
+        kind,
+        type(exc).__name__,
+        status_code,
+    )
+
+
+def _cache_key(kind: str, raw: str) -> str:
+    """Namespace a cache key without embedding raw user input.
+
+    Hashing keeps the key a fixed-length, backend-safe ASCII string, so no
+    query text or opaque provider id reaches cache keys, cache warnings, or
+    cache-inspection tooling.
+    """
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"here:{kind}:{digest}"
 
 
 def _cache_get(key: str) -> object:
@@ -224,7 +283,7 @@ def _normalize_lookup(payload: object) -> LocationLookupResult:
     address = _as_dict(payload.get("address"))
     position = _as_dict(payload.get("position"))
 
-    address_label = address.get("label") if address is not None else None
+    address_label = address.get("label")
     title = payload.get("title")
     if isinstance(address_label, str) and address_label:
         destination = address_label
@@ -237,15 +296,9 @@ def _normalize_lookup(payload: object) -> LocationLookupResult:
         "destination": destination,
         "destination_provider": "here",
         "destination_provider_id": canonical_id,
-        "destination_lat": _numeric_coordinate(
-            position.get("lat") if position is not None else None
-        ),
-        "destination_lng": _numeric_coordinate(
-            position.get("lng") if position is not None else None
-        ),
-        "destination_country_code": normalize_country_code(
-            address.get("countryCode") if address is not None else None
-        ),
+        "destination_lat": _numeric_coordinate(position.get("lat")),
+        "destination_lng": _numeric_coordinate(position.get("lng")),
+        "destination_country_code": normalize_country_code(address.get("countryCode")),
     }
 
 
@@ -257,8 +310,7 @@ def _result_type_rank(item: dict[str, object]) -> int:
 
 
 def _build_subtitle(item: dict[str, object], *, title: str) -> str:
-    address = _as_dict(item.get("address"))
-    label = address.get("label") if address is not None else None
+    label = _as_dict(item.get("address")).get("label")
     if not isinstance(label, str):
         return ""
     if label.startswith(title):
@@ -266,10 +318,10 @@ def _build_subtitle(item: dict[str, object], *, title: str) -> str:
     return label
 
 
-def _as_dict(value: object) -> dict[str, object] | None:
+def _as_dict(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return value
-    return None
+    return {}
 
 
 def _is_non_blank_string(value: object) -> bool:

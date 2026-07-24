@@ -357,7 +357,8 @@ REST_FRAMEWORK = {
         'settlement_finalize': '30/hour',
         'settlement_reopen': '20/hour',
         'settlement_transfer_action': '240/hour',
-        'location_search': '30/minute',
+        'location_suggest': '30/minute',
+        'location_lookup': '30/minute',
         'ws_ticket_refresh': '20/minute',
     },
 }

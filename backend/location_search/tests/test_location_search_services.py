@@ -21,17 +21,26 @@ from location_search.services import (
     HERE_LOOKUP_URL,
     HERE_POLITICAL_VIEW,
     HERE_SUGGEST_LIMIT,
+    LOOKUP_KIND,
+    SUGGEST_KIND,
     VIETNAM_BIAS_AT,
     LocationProviderUnavailableError,
     LocationSearchDisabledError,
     LocationSearchNotConfiguredError,
+    _cache_key,
+    _request_timeout,
     ensure_location_search_available,
     lookup_location,
     suggest_locations,
 )
 
 TEST_HERE_API_KEY = "test-here-api-key"
+SERVICE_LOGGER = "location_search.services"
 _UNSET = object()
+
+# Mirrors the configured 7-second read budget with the bounded connect/pool
+# phases the service applies on top of it.
+EXPECTED_TIMEOUT = httpx.Timeout(7.0, connect=2.0, pool=1.0)
 
 
 @override_settings(
@@ -59,30 +68,25 @@ class LocationSearchServiceTests(SimpleTestCase):
         self,
         *,
         payload: object = _UNSET,
-    ) -> Iterator[tuple[MagicMock, MagicMock, MagicMock]]:
+    ) -> Iterator[tuple[MagicMock, MagicMock]]:
         response = MagicMock(name="here_response")
         if payload is not _UNSET:
             response.json.return_value = payload
 
-        client = MagicMock(name="here_client")
+        client = MagicMock(name="here_client", spec_set=["get"])
         client.get.return_value = response
 
-        client_context = MagicMock(name="here_client_context")
-        client_context.__enter__.return_value = client
-        client_context.__exit__.return_value = False
+        with patch("location_search.services._HTTP_CLIENT", client):
+            yield client, response
 
-        with patch(
-            "location_search.services.httpx.Client",
-            return_value=client_context,
-        ) as client_class:
-            yield client_class, client, response
+    # -------- Availability gate --------
 
     @override_settings(
         ENABLE_HERE_LOCATION_SEARCH=False,
         HERE_API_KEY=TEST_HERE_API_KEY,
     )
     def test_availability_rejects_disabled_feature_before_key_check(self) -> None:
-        with patch("location_search.services.httpx.Client") as client_class:
+        with self._mock_here_client() as (client, _):
             with self.assertRaises(LocationSearchDisabledError) as caught:
                 ensure_location_search_available()
 
@@ -91,14 +95,14 @@ class LocationSearchServiceTests(SimpleTestCase):
             caught.exception.error_code,
             "LOCATION_SEARCH_DISABLED",
         )
-        client_class.assert_not_called()
+        client.get.assert_not_called()
 
     @override_settings(
         ENABLE_HERE_LOCATION_SEARCH=True,
         HERE_API_KEY="   ",
     )
     def test_availability_rejects_blank_api_key(self) -> None:
-        with patch("location_search.services.httpx.Client") as client_class:
+        with self._mock_here_client() as (client, _):
             with self.assertRaises(LocationSearchNotConfiguredError) as caught:
                 ensure_location_search_available()
 
@@ -110,24 +114,61 @@ class LocationSearchServiceTests(SimpleTestCase):
             caught.exception.error_code,
             "LOCATION_SEARCH_NOT_CONFIGURED",
         )
-        client_class.assert_not_called()
+        client.get.assert_not_called()
 
     def test_availability_accepts_enabled_feature_with_key(self) -> None:
-        with patch("location_search.services.httpx.Client") as client_class:
+        with self._mock_here_client() as (client, _):
             ensure_location_search_available()
 
-        client_class.assert_not_called()
+        client.get.assert_not_called()
 
-    def test_short_suggest_queries_return_empty_without_provider_work(self) -> None:
-        for query in ("", "a"):
-            with self.subTest(query=query):
-                with patch(
-                    "location_search.services.httpx.Client"
-                ) as client_class:
-                    result = suggest_locations(query=query)
+    @override_settings(
+        ENABLE_HERE_LOCATION_SEARCH=False,
+        HERE_API_KEY=TEST_HERE_API_KEY,
+    )
+    def test_services_enforce_the_disabled_gate_without_a_view(self) -> None:
+        """The gate is a service invariant, not a handler convention."""
+        with self._mock_here_client() as (client, _):
+            with self.assertRaises(LocationSearchDisabledError):
+                suggest_locations(query="Đà Nẵng")
+            with self.assertRaises(LocationSearchDisabledError):
+                lookup_location(provider_id="here:opaque:id")
 
-                self.assertEqual(result, [])
-                client_class.assert_not_called()
+        client.get.assert_not_called()
+
+    @override_settings(
+        ENABLE_HERE_LOCATION_SEARCH=True,
+        HERE_API_KEY="",
+    )
+    def test_services_enforce_the_missing_key_gate_without_a_view(self) -> None:
+        with self._mock_here_client() as (client, _):
+            with self.assertRaises(LocationSearchNotConfiguredError):
+                suggest_locations(query="Đà Nẵng")
+            with self.assertRaises(LocationSearchNotConfiguredError):
+                lookup_location(provider_id="here:opaque:id")
+
+        client.get.assert_not_called()
+
+    # -------- Outbound request shape --------
+
+    def test_request_timeout_bounds_connect_and_pool_below_read_budget(
+        self,
+    ) -> None:
+        timeout = _request_timeout()
+
+        self.assertEqual(timeout.read, 7.0)
+        self.assertEqual(timeout.write, 7.0)
+        self.assertEqual(timeout.connect, 2.0)
+        self.assertEqual(timeout.pool, 1.0)
+
+    @override_settings(HERE_LOCATION_SEARCH_TIMEOUT_SECONDS=1)
+    def test_request_timeout_never_exceeds_a_small_configured_budget(
+        self,
+    ) -> None:
+        timeout = _request_timeout()
+
+        for phase in (timeout.connect, timeout.read, timeout.write, timeout.pool):
+            self.assertLessEqual(phase, 1.0)
 
     def test_suggest_uses_exact_provider_request_and_timeout(self) -> None:
         payload = {
@@ -141,14 +182,9 @@ class LocationSearchServiceTests(SimpleTestCase):
             ]
         }
 
-        with self._mock_here_client(payload=payload) as (
-            client_class,
-            client,
-            response,
-        ):
+        with self._mock_here_client(payload=payload) as (client, response):
             result = suggest_locations(query="Đà Nẵng")
 
-        client_class.assert_called_once_with(timeout=7)
         client.get.assert_called_once_with(
             HERE_AUTOSUGGEST_URL,
             params={
@@ -159,6 +195,7 @@ class LocationSearchServiceTests(SimpleTestCase):
                 "at": VIETNAM_BIAS_AT,
                 "limit": str(HERE_SUGGEST_LIMIT),
             },
+            timeout=EXPECTED_TIMEOUT,
         )
         response.raise_for_status.assert_called_once_with()
         response.json.assert_called_once_with()
@@ -173,6 +210,17 @@ class LocationSearchServiceTests(SimpleTestCase):
                 }
             ],
         )
+
+    def test_short_suggest_queries_return_empty_without_provider_work(self) -> None:
+        for query in ("", "a"):
+            with self.subTest(query=query):
+                with self._mock_here_client() as (client, _):
+                    result = suggest_locations(query=query)
+
+                self.assertEqual(result, [])
+                client.get.assert_not_called()
+
+    # -------- Suggest normalization --------
 
     def test_suggest_stably_ranks_results_and_normalizes_subtitles(self) -> None:
         payload = {
@@ -312,13 +360,44 @@ class LocationSearchServiceTests(SimpleTestCase):
     def test_suggest_treats_missing_items_as_empty_and_caches_the_empty_list(
         self,
     ) -> None:
-        with self._mock_here_client(payload={}) as (_, client, _):
+        with self._mock_here_client(payload={}) as (client, _):
             first_result = suggest_locations(query="no results")
             second_result = suggest_locations(query="no results")
 
         self.assertEqual(first_result, [])
         self.assertEqual(second_result, [])
         client.get.assert_called_once()
+
+    # -------- Cache keys --------
+
+    def test_cache_key_is_namespaced_opaque_and_backend_safe(self) -> None:
+        suggest_key = _cache_key(SUGGEST_KIND, "đà nẵng")
+        lookup_key = _cache_key(LOOKUP_KIND, "đà nẵng")
+
+        self.assertIsNotNone(
+            re.fullmatch(r"here:suggest:[0-9a-f]{64}", suggest_key)
+        )
+        self.assertIsNotNone(
+            re.fullmatch(r"here:lookup:[0-9a-f]{64}", lookup_key)
+        )
+        # Same input, different namespace must not collide.
+        self.assertNotEqual(suggest_key, lookup_key)
+        self.assertNotEqual(
+            _cache_key(SUGGEST_KIND, "đà nẵng"),
+            _cache_key(SUGGEST_KIND, "hội an"),
+        )
+        # Stable across calls, so a cache write is readable by a later request.
+        self.assertEqual(suggest_key, _cache_key(SUGGEST_KIND, "đà nẵng"))
+
+    def test_cache_key_never_embeds_raw_user_input(self) -> None:
+        query = "Đà Nẵng bãi biển"
+
+        self.assertNotIn(query, _cache_key(SUGGEST_KIND, query))
+        self.assertNotIn(query.casefold(), _cache_key(SUGGEST_KIND, query))
+        self.assertNotIn(
+            "here:opaque:id",
+            _cache_key(LOOKUP_KIND, "here:opaque:id"),
+        )
 
     def test_suggest_cache_key_uses_casefold_and_cache_hit_skips_provider(
         self,
@@ -331,38 +410,33 @@ class LocationSearchServiceTests(SimpleTestCase):
                 "subtitle": "Cached subtitle",
             }
         ]
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", CacheKeyWarning)
-            cache.set(
-                "here:suggest:đà nẵng",
-                cached_suggestions,
-                timeout=60,
-            )
+        cache.set(
+            _cache_key(SUGGEST_KIND, "đà nẵng"),
+            cached_suggestions,
+            timeout=60,
+        )
 
-        with patch("location_search.services.httpx.Client") as client_class:
+        with self._mock_here_client() as (client, _):
             result = suggest_locations(query="ĐÀ NẴNG")
 
         self.assertEqual(result, cached_suggestions)
-        client_class.assert_not_called()
+        client.get.assert_not_called()
 
-    def test_cache_operations_do_not_log_raw_location_queries(self) -> None:
+    def test_cache_operations_emit_no_cache_key_warnings(self) -> None:
+        """Hashed keys are memcached-safe, so no warning has to be suppressed."""
         with warnings.catch_warnings(record=True) as caught_warnings:
-            warnings.warn("unrelated cache warning", CacheKeyWarning)
+            warnings.simplefilter("always")
             with self._mock_here_client(payload={"items": []}):
-                suggest_locations(query="Đà Nẵng")
+                suggest_locations(query="Đà Nẵng bãi biển")
+            with self._mock_here_client(payload={"id": "canonical"}):
+                lookup_location(provider_id="here:opaque:id with spaces")
 
-        self.assertTrue(
-            any(
-                str(caught.message) == "unrelated cache warning"
-                for caught in caught_warnings
-            )
-        )
-        self.assertFalse(
-            any(
-                "here:suggest:" in str(caught.message)
-                for caught in caught_warnings
-            )
-        )
+        cache_key_warnings = [
+            caught
+            for caught in caught_warnings
+            if issubclass(caught.category, CacheKeyWarning)
+        ]
+        self.assertEqual(cache_key_warnings, [])
 
     @override_settings(
         HERE_LOCATION_SEARCH_SUGGEST_CACHE_TTL_SECONDS=17,
@@ -398,10 +472,12 @@ class LocationSearchServiceTests(SimpleTestCase):
 
         self.assertEqual(result, expected)
         cache_set.assert_called_once_with(
-            "here:suggest:mixed",
+            _cache_key(SUGGEST_KIND, "mixed"),
             expected,
             timeout=17,
         )
+
+    # -------- Provider failure mapping --------
 
     def test_suggest_maps_http_status_failures_without_retry(self) -> None:
         for status_code in (429, 500, 503):
@@ -418,16 +494,13 @@ class LocationSearchServiceTests(SimpleTestCase):
                     response=upstream_response,
                 )
 
-                with self._mock_here_client(payload={}) as (
-                    _,
-                    client,
-                    response,
-                ):
+                with self._mock_here_client(payload={}) as (client, response):
                     response.raise_for_status.side_effect = upstream_error
-                    with self.assertRaises(
-                        LocationProviderUnavailableError
-                    ) as caught:
-                        suggest_locations(query=f"status {status_code}")
+                    with self.assertLogs(SERVICE_LOGGER, level="WARNING"):
+                        with self.assertRaises(
+                            LocationProviderUnavailableError
+                        ) as caught:
+                            suggest_locations(query=f"status {status_code}")
 
                 self.assertEqual(
                     str(caught.exception),
@@ -449,18 +522,20 @@ class LocationSearchServiceTests(SimpleTestCase):
         for index, failure in enumerate(failures):
             with self.subTest(failure=type(failure).__name__):
                 cache.clear()
-                with self._mock_here_client() as (_, client, _):
+                with self._mock_here_client() as (client, _):
                     client.get.side_effect = failure
-                    with self.assertRaises(LocationProviderUnavailableError):
-                        suggest_locations(query=f"network failure {index}")
+                    with self.assertLogs(SERVICE_LOGGER, level="WARNING"):
+                        with self.assertRaises(LocationProviderUnavailableError):
+                            suggest_locations(query=f"network failure {index}")
 
                 client.get.assert_called_once()
 
     def test_suggest_maps_invalid_json_to_provider_unavailable(self) -> None:
-        with self._mock_here_client() as (_, client, response):
+        with self._mock_here_client() as (client, response):
             response.json.side_effect = ValueError("invalid json")
-            with self.assertRaises(LocationProviderUnavailableError):
-                suggest_locations(query="invalid json")
+            with self.assertLogs(SERVICE_LOGGER, level="WARNING"):
+                with self.assertRaises(LocationProviderUnavailableError):
+                    suggest_locations(query="invalid json")
 
         client.get.assert_called_once()
 
@@ -485,11 +560,14 @@ class LocationSearchServiceTests(SimpleTestCase):
         for index, payload in enumerate(invalid_payloads):
             with self.subTest(payload=payload):
                 cache.clear()
-                with self._mock_here_client(payload=payload) as (_, client, _):
-                    with self.assertRaises(LocationProviderUnavailableError):
-                        suggest_locations(query=f"invalid shape {index}")
+                with self._mock_here_client(payload=payload) as (client, _):
+                    with self.assertLogs(SERVICE_LOGGER, level="WARNING"):
+                        with self.assertRaises(LocationProviderUnavailableError):
+                            suggest_locations(query=f"invalid shape {index}")
 
                 client.get.assert_called_once()
+
+    # -------- Secret containment --------
 
     def test_provider_exception_does_not_expose_key_or_request_url(self) -> None:
         request_url = (
@@ -503,17 +581,63 @@ class LocationSearchServiceTests(SimpleTestCase):
             response=upstream_response,
         )
 
-        with self._mock_here_client(payload={}) as (_, _, response):
+        with self._mock_here_client(payload={}) as (_, response):
             response.raise_for_status.side_effect = upstream_error
-            with self.assertRaises(
-                LocationProviderUnavailableError
-            ) as caught:
-                suggest_locations(query="secret")
+            with self.assertLogs(SERVICE_LOGGER, level="WARNING"):
+                with self.assertRaises(LocationProviderUnavailableError) as caught:
+                    suggest_locations(query="secret")
 
         public_error = str(caught.exception)
         self.assertEqual(public_error, "Location service unavailable.")
         self.assertNotIn(TEST_HERE_API_KEY, public_error)
         self.assertNotIn(HERE_AUTOSUGGEST_URL, public_error)
+
+    def test_provider_failure_logs_diagnosis_without_leaking_the_key(self) -> None:
+        """httpx embeds the signed URL in its exception message; we must not log it."""
+        request_url = (
+            f"{HERE_AUTOSUGGEST_URL}?q=secret&apiKey={TEST_HERE_API_KEY}"
+        )
+        request = httpx.Request("GET", request_url)
+        upstream_error = httpx.HTTPStatusError(
+            f"Server error '503' for url '{request_url}'",
+            request=request,
+            response=httpx.Response(503, request=request),
+        )
+
+        with self._mock_here_client(payload={}) as (_, response):
+            response.raise_for_status.side_effect = upstream_error
+            with self.assertLogs(SERVICE_LOGGER, level="WARNING") as logs:
+                with self.assertRaises(LocationProviderUnavailableError):
+                    suggest_locations(query="secret")
+
+        logged = "\n".join(logs.output)
+        self.assertIn("HTTPStatusError", logged)
+        self.assertIn("503", logged)
+        self.assertIn(SUGGEST_KIND, logged)
+        self.assertNotIn(TEST_HERE_API_KEY, logged)
+        self.assertNotIn("apiKey", logged)
+        self.assertNotIn(HERE_AUTOSUGGEST_URL, logged)
+
+    def test_network_failure_log_records_only_the_exception_type(self) -> None:
+        request_url = f"{HERE_LOOKUP_URL}?apiKey={TEST_HERE_API_KEY}"
+        request = httpx.Request("GET", request_url)
+
+        with self._mock_here_client() as (client, _):
+            client.get.side_effect = httpx.ConnectError(
+                f"failed connecting to {request_url}",
+                request=request,
+            )
+            with self.assertLogs(SERVICE_LOGGER, level="WARNING") as logs:
+                with self.assertRaises(LocationProviderUnavailableError):
+                    lookup_location(provider_id="here:opaque:id")
+
+        logged = "\n".join(logs.output)
+        self.assertIn("ConnectError", logged)
+        self.assertIn(LOOKUP_KIND, logged)
+        self.assertNotIn(TEST_HERE_API_KEY, logged)
+        self.assertNotIn(HERE_LOOKUP_URL, logged)
+
+    # -------- Lookup --------
 
     def test_lookup_uses_exact_provider_request_timeout_and_canonical_id(
         self,
@@ -528,14 +652,9 @@ class LocationSearchServiceTests(SimpleTestCase):
             "position": {"lat": 16.0544, "lng": 108.2022},
         }
 
-        with self._mock_here_client(payload=payload) as (
-            client_class,
-            client,
-            response,
-        ):
+        with self._mock_here_client(payload=payload) as (client, response):
             result = lookup_location(provider_id="here:requested:id")
 
-        client_class.assert_called_once_with(timeout=7)
         client.get.assert_called_once_with(
             HERE_LOOKUP_URL,
             params={
@@ -544,6 +663,7 @@ class LocationSearchServiceTests(SimpleTestCase):
                 "lang": HERE_LANGUAGE,
                 "politicalView": HERE_POLITICAL_VIEW,
             },
+            timeout=EXPECTED_TIMEOUT,
         )
         response.raise_for_status.assert_called_once_with()
         response.json.assert_called_once_with()
@@ -660,11 +780,10 @@ class LocationSearchServiceTests(SimpleTestCase):
             with self.subTest(payload=payload):
                 cache.clear()
                 requested_id = f"requested-fallback-{index}"
-                with self._mock_here_client(payload=payload) as (_, client, _):
-                    with self.assertRaises(
-                        LocationProviderUnavailableError
-                    ):
-                        lookup_location(provider_id=requested_id)
+                with self._mock_here_client(payload=payload) as (client, _):
+                    with self.assertLogs(SERVICE_LOGGER, level="WARNING"):
+                        with self.assertRaises(LocationProviderUnavailableError):
+                            lookup_location(provider_id=requested_id)
 
                 client.get.assert_called_once()
 
@@ -673,10 +792,9 @@ class LocationSearchServiceTests(SimpleTestCase):
             with self.subTest(payload=payload):
                 cache.clear()
                 with self._mock_here_client(payload=payload):
-                    with self.assertRaises(
-                        LocationProviderUnavailableError
-                    ):
-                        lookup_location(provider_id=f"invalid-root-{index}")
+                    with self.assertLogs(SERVICE_LOGGER, level="WARNING"):
+                        with self.assertRaises(LocationProviderUnavailableError):
+                            lookup_location(provider_id=f"invalid-root-{index}")
 
     def test_lookup_cache_hit_uses_exact_opaque_id_and_skips_provider(
         self,
@@ -690,16 +808,24 @@ class LocationSearchServiceTests(SimpleTestCase):
             "destination_country_code": "VN",
         }
         cache.set(
-            "here:lookup:Here:Opaque:MiXeD",
+            _cache_key(LOOKUP_KIND, "Here:Opaque:MiXeD"),
             cached_location,
             timeout=60,
         )
 
-        with patch("location_search.services.httpx.Client") as client_class:
+        with self._mock_here_client() as (client, _):
             result = lookup_location(provider_id="Here:Opaque:MiXeD")
 
         self.assertEqual(result, cached_location)
-        client_class.assert_not_called()
+        client.get.assert_not_called()
+
+    def test_lookup_cache_key_is_case_sensitive_on_the_opaque_id(self) -> None:
+        """Provider ids are opaque: casefolding them would merge distinct places."""
+        with self._mock_here_client(payload={"id": "canonical"}) as (client, _):
+            lookup_location(provider_id="Here:Opaque:MiXeD")
+            lookup_location(provider_id="here:opaque:mixed")
+
+        self.assertEqual(client.get.call_count, 2)
 
     @override_settings(
         HERE_LOCATION_SEARCH_LOOKUP_CACHE_TTL_SECONDS=23,
@@ -730,7 +856,7 @@ class LocationSearchServiceTests(SimpleTestCase):
 
         self.assertEqual(result, expected)
         cache_set.assert_called_once_with(
-            "here:lookup:Here:Opaque",
+            _cache_key(LOOKUP_KIND, "Here:Opaque"),
             expected,
             timeout=23,
         )
@@ -758,7 +884,7 @@ class LocationSearchServiceTests(SimpleTestCase):
         for index, failure in enumerate(cases):
             with self.subTest(failure=type(failure).__name__):
                 cache.clear()
-                with self._mock_here_client() as (_, client, response):
+                with self._mock_here_client() as (client, response):
                     if isinstance(failure, httpx.HTTPStatusError):
                         response.raise_for_status.side_effect = failure
                     elif isinstance(failure, httpx.HTTPError):
@@ -766,10 +892,11 @@ class LocationSearchServiceTests(SimpleTestCase):
                     else:
                         response.json.side_effect = failure
 
-                    with self.assertRaises(
-                        LocationProviderUnavailableError
-                    ) as caught:
-                        lookup_location(provider_id=f"failure-{index}")
+                    with self.assertLogs(SERVICE_LOGGER, level="WARNING"):
+                        with self.assertRaises(
+                            LocationProviderUnavailableError
+                        ) as caught:
+                            lookup_location(provider_id=f"failure-{index}")
 
                 self.assertEqual(
                     str(caught.exception),

@@ -22,6 +22,12 @@ from trips.permissions import IsProfileCompleted
 
 LOCATION_SEARCH_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 
+# Suggest and lookup hold independent budgets on purpose. Debounced autocomplete
+# spends the suggest budget quickly, and lookup is the only call that produces a
+# canonical place, so it must not be starved by the search that preceded it.
+SUGGEST_THROTTLE_SCOPE = "location_suggest"
+LOOKUP_THROTTLE_SCOPE = "location_lookup"
+
 
 def _service_error_response(
     exc: LocationSearchServiceError,
@@ -58,7 +64,7 @@ def _availability_error_response(
 
 class LocationSearchSuggestAPIView(APIView):
     permission_classes = LOCATION_SEARCH_PERMISSIONS
-    throttle_scope = "location_search"
+    throttle_scope = SUGGEST_THROTTLE_SCOPE
 
     def get(self, request):
         try:
@@ -87,7 +93,7 @@ class LocationSearchSuggestAPIView(APIView):
 
 class LocationSearchLookupAPIView(APIView):
     permission_classes = LOCATION_SEARCH_PERMISSIONS
-    throttle_scope = "location_search"
+    throttle_scope = LOOKUP_THROTTLE_SCOPE
 
     def get(self, request):
         try:

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import warnings
 from unittest.mock import patch
 
 from django.core.cache import cache
-from django.core.cache.backends.base import CacheKeyWarning
 from django.test import override_settings
 from django.urls import Resolver404, resolve
 from rest_framework import status
@@ -15,7 +13,11 @@ from location_search.serializers import (
     LocationSearchLookupQuerySerializer,
     LocationSearchSuggestQuerySerializer,
 )
-from location_search.services import LocationProviderUnavailableError
+from location_search.services import (
+    SUGGEST_KIND,
+    LocationProviderUnavailableError,
+    _cache_key,
+)
 from test_helpers import create_completed_user, create_verified_user
 
 
@@ -294,11 +296,11 @@ class LocationSearchAPITests(APITestCase):
         mock_lookup_location.assert_not_called()
 
     @patch("location_search.views.lookup_location")
-    def test_lookup_trims_and_accepts_255_character_id(
+    def test_lookup_trims_and_accepts_256_character_id(
         self,
         mock_lookup_location,
     ):
-        provider_id = "p" * 255
+        provider_id = "p" * 256
         lookup_result = {
             "destination": "Da Nang, Vietnam",
             "destination_provider": "here",
@@ -319,11 +321,11 @@ class LocationSearchAPITests(APITestCase):
         mock_lookup_location.assert_called_once_with(provider_id=provider_id)
 
     @patch("location_search.views.lookup_location")
-    def test_lookup_rejects_256_character_id_without_service_call(
+    def test_lookup_rejects_257_character_id_without_service_call(
         self,
         mock_lookup_location,
     ):
-        response = self.client.get(LOOKUP_URL, {"id": "p" * 256})
+        response = self.client.get(LOOKUP_URL, {"id": "p" * 257})
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data, ID_TOO_LONG_ERROR)
@@ -434,14 +436,24 @@ class LocationSearchThrottleTests(APITestCase):
 
     @patch("location_search.views.lookup_location")
     @patch("location_search.views.suggest_locations", return_value=[])
-    def test_suggest_and_lookup_share_one_throttle_bucket(
+    def test_exhausting_suggest_does_not_starve_lookup(
         self,
         mock_suggest_locations,
         mock_lookup_location,
     ):
+        """Lookup commits the chosen place, so autocomplete must not spend its budget."""
+        mock_lookup_location.return_value = {
+            "destination": "Hoi An, Quang Nam, Vietnam",
+            "destination_provider": "here",
+            "destination_provider_id": "here:cm:namedplace:456",
+            "destination_lat": 15.880058,
+            "destination_lng": 108.338047,
+            "destination_country_code": "VN",
+        }
         rates = {
             **DevBypassScopedRateThrottle.THROTTLE_RATES,
-            "location_search": "1/hour",
+            "location_suggest": "1/hour",
+            "location_lookup": "1/hour",
         }
 
         with patch.object(
@@ -449,32 +461,46 @@ class LocationSearchThrottleTests(APITestCase):
             "THROTTLE_RATES",
             rates,
         ):
-            first_response = self.client.get(SUGGEST_URL, {"q": "Da Nang"})
-            second_response = self.client.get(
+            first_suggest = self.client.get(SUGGEST_URL, {"q": "Da Nang"})
+            second_suggest = self.client.get(SUGGEST_URL, {"q": "Da Nang 2"})
+            first_lookup = self.client.get(
                 LOOKUP_URL,
                 {"id": "here:cm:namedplace:456"},
             )
+            second_lookup = self.client.get(
+                LOOKUP_URL,
+                {"id": "here:cm:namedplace:789"},
+            )
 
-        self.assertEqual(first_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(first_suggest.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            second_response.status_code,
+            second_suggest.status_code,
             status.HTTP_429_TOO_MANY_REQUESTS,
         )
-        self.assertIn("Retry-After", second_response)
+        self.assertIn("Retry-After", second_suggest)
+
+        # The exhausted suggest bucket must not have spent the lookup budget.
+        self.assertEqual(first_lookup.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            second_lookup.status_code,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+        self.assertIn("Retry-After", second_lookup)
+
         mock_suggest_locations.assert_called_once_with(query="Da Nang")
-        mock_lookup_location.assert_not_called()
+        mock_lookup_location.assert_called_once_with(
+            provider_id="here:cm:namedplace:456",
+        )
 
     @patch("location_search.services._fetch_here_payload")
     def test_cache_hit_still_consumes_throttle_quota(
         self,
         mock_fetch_here_payload,
     ):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", CacheKeyWarning)
-            cache.set("here:suggest:da nang", [], timeout=60)
+        cache.set(_cache_key(SUGGEST_KIND, "da nang"), [], timeout=60)
         rates = {
             **DevBypassScopedRateThrottle.THROTTLE_RATES,
-            "location_search": "1/hour",
+            "location_suggest": "1/hour",
         }
 
         with patch.object(
