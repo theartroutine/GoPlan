@@ -21,6 +21,10 @@ celery==5.5.3
 # -------- AI Provider SDK --------
 openai==2.9.0
 
+# -------- Outbound Provider HTTP Clients --------
+# Direct HERE dependency; compatible with openai==2.9.0 (httpx>=0.23,<1).
+httpx==0.28.1
+
 # -------- Imaging --------
 Pillow==11.1.0
 
