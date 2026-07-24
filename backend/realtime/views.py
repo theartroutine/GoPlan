@@ -2,8 +2,8 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsProfileCompleted
 from realtime.services import issue_ws_ticket
-from trips.permissions import IsProfileCompleted
 
 
 class WebSocketTicketAPIView(APIView):

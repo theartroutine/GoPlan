@@ -39,6 +39,24 @@ def env_int(name: str, default: int) -> int:
         raise ImproperlyConfigured(f"{name} must be an integer.") from exc
 
 
+def env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        value = default
+    else:
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ImproperlyConfigured(
+                f"{name} must be a positive integer."
+            ) from exc
+
+    if value <= 0:
+        raise ImproperlyConfigured(f"{name} must be a positive integer.")
+
+    return value
+
+
 # -------- Core Flags --------
 DEBUG = os.environ.get('DJANGO_DEBUG') == '1'
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
@@ -85,6 +103,7 @@ INSTALLED_APPS = [
     'chat',
     'media',
     'memories',
+    'location_search',
 
 ]
 
@@ -338,6 +357,8 @@ REST_FRAMEWORK = {
         'settlement_finalize': '30/hour',
         'settlement_reopen': '20/hour',
         'settlement_transfer_action': '240/hour',
+        'location_suggest': '30/minute',
+        'location_lookup': '30/minute',
         'ws_ticket_refresh': '20/minute',
     },
 }
@@ -403,6 +424,22 @@ CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", 
 CELERY_TASK_ROUTES = {
     "memories.tasks.render_trip_memory_video_task": {"queue": TRIP_MEMORY_RENDER_QUEUE},
 }
+
+# -------- HERE Location Search --------
+ENABLE_HERE_LOCATION_SEARCH = env_bool("ENABLE_HERE_LOCATION_SEARCH", False)
+HERE_API_KEY = os.environ.get("HERE_API_KEY", "")
+HERE_LOCATION_SEARCH_TIMEOUT_SECONDS = env_positive_int(
+    "HERE_LOCATION_SEARCH_TIMEOUT_SECONDS",
+    5,
+)
+HERE_LOCATION_SEARCH_SUGGEST_CACHE_TTL_SECONDS = env_positive_int(
+    "HERE_LOCATION_SEARCH_SUGGEST_CACHE_TTL_SECONDS",
+    60,
+)
+HERE_LOCATION_SEARCH_LOOKUP_CACHE_TTL_SECONDS = env_positive_int(
+    "HERE_LOCATION_SEARCH_LOOKUP_CACHE_TTL_SECONDS",
+    300,
+)
 
 # -------- DeepSeek AI Configuration --------
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
@@ -471,6 +508,19 @@ LOGGING = {
             "handlers": ["ai_agent_console"],
             "level": "INFO",
             "propagate": False,
+        },
+        # HTTPX logs complete request URLs at INFO, while HERE authentication
+        # uses an apiKey query parameter. Keep client/transport request logs
+        # below WARNING disabled so deployment logging cannot expose the key.
+        "httpx": {
+            "handlers": [],
+            "level": "WARNING",
+            "propagate": True,
+        },
+        "httpcore": {
+            "handlers": [],
+            "level": "WARNING",
+            "propagate": True,
         },
     },
 }

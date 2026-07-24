@@ -4,6 +4,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsProfileCompleted
 from expenses.serializers import (
     ContributionResponseSerializer,
     CreateExpenseSerializer,
@@ -38,7 +39,6 @@ from expenses.services import (
     set_contribution,
     update_expense,
 )
-from trips.permissions import IsProfileCompleted
 from trips.services import NotTripMemberError, TripNotFoundError, TripPermissionError, TripTerminalError
 
 EXPENSE_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]

@@ -7,6 +7,7 @@ from rest_framework.exceptions import Throttled
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsProfileCompleted
 from ai.services import AIBusyError, AIInvalidPromptError
 from chat.mentions import extract_goplan_ai_prompt
 from chat.serializers import (
@@ -35,7 +36,6 @@ from chat.services import (
     remove_reaction,
     send_chat_message,
 )
-from trips.permissions import IsProfileCompleted
 from trips.services import TripNotFoundError, TripServiceError, TripTerminalError
 
 CHAT_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]

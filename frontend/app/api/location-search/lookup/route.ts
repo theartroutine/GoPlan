@@ -4,6 +4,7 @@ import {
   buildProtectedResponse,
   protectedUpstreamCall,
 } from "@/app/api/_lib/protected-upstream";
+import { normalizeCountryCode } from "@/app/api/location-search/_lib/country-codes";
 import {
   consumeHereLocationSearchSlot,
   getHereLocationSearchAvailability,
@@ -17,39 +18,18 @@ const HERE_API_KEY = process.env.HERE_API_KEY;
 const HERE_LOOKUP_URL = "https://lookup.search.hereapi.com/v1/lookup";
 const MAX_PROVIDER_ID_LENGTH = 256;
 
-const viRegionNames = new Intl.DisplayNames(["vi-VN"], { type: "region" });
-const localizedCountryNameToAlpha2 = new Map<string, string>();
-
-for (let first = 65; first <= 90; first += 1) {
-  for (let second = 65; second <= 90; second += 1) {
-    const code = String.fromCharCode(first, second);
-    const localizedName = viRegionNames.of(code);
-    if (!localizedName || localizedName === code) continue;
-    localizedCountryNameToAlpha2.set(localizedName.toLocaleLowerCase("vi-VN"), code);
-  }
-}
-
 type HereLookupItem = {
   id?: string;
   title?: string;
   address?: {
     label?: string;
     countryCode?: string;
-    countryName?: string;
   };
   position?: {
     lat?: number;
     lng?: number;
   };
 };
-
-function toAlpha2CountryCode(address?: HereLookupItem["address"]): string {
-  const rawCountryCode = address?.countryCode?.toUpperCase() ?? "";
-  if (rawCountryCode.length === 2) return rawCountryCode;
-
-  const localizedName = address?.countryName?.toLocaleLowerCase("vi-VN") ?? "";
-  return localizedCountryNameToAlpha2.get(localizedName) ?? "";
-}
 
 function asObject(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -180,7 +160,7 @@ export async function GET(request: NextRequest) {
       destination_provider_id: item.id ?? providerId,
       destination_lat: item.position?.lat ?? null,
       destination_lng: item.position?.lng ?? null,
-      destination_country_code: toAlpha2CountryCode(item.address),
+      destination_country_code: normalizeCountryCode(item.address?.countryCode),
     };
 
     writeHereLocationSearchCache({

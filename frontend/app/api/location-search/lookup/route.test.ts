@@ -107,5 +107,52 @@ describe("GET /api/location-search/lookup", () => {
         signal: expect.any(AbortSignal),
       }),
     );
+    // HERE returns alpha-3; web must resolve the same alpha-2 as the Django
+    // proxy, because both write into Trip.destination_country_code.
+    await expect(response.json()).resolves.toMatchObject({
+      destination_country_code: "VN",
+    });
+  });
+
+  it("normalizes country codes the same way the Django proxy does", async () => {
+    const { GET } = await import("@/app/api/location-search/lookup/route");
+
+    const cases = [
+      { countryCode: "VNM", expected: "VN" },
+      { countryCode: "usa", expected: "US" },
+      { countryCode: "GB", expected: "GB" },
+      { countryCode: "ZZZ", expected: "" },
+      { countryCode: undefined, expected: "" },
+    ];
+
+    for (const [index, { countryCode, expected }] of cases.entries()) {
+      protectedUpstreamMock.protectedUpstreamCall.mockResolvedValue({
+        ok: true,
+        data: { user: { id: "user-1" } },
+        status: 200,
+      });
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: `here:${index}`,
+            title: "Somewhere",
+            address: { label: "Somewhere", countryCode },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+      const response = await GET({
+        headers: new Headers(),
+        nextUrl: new URL(
+          `http://localhost/api/location-search/lookup?id=here:${index}`,
+        ),
+      } as never);
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        destination_country_code: expected,
+      });
+    }
   });
 });

@@ -4,7 +4,12 @@ from rest_framework.permissions import BasePermission
 
 
 class IsProfileCompleted(BasePermission):
-    """Reuse same check as friends app — user must have completed profile."""
+    """User must have a verified email and a completed profile.
+
+    Lives in ``accounts`` because it reads ``User`` fields only. Every app that
+    gates a feature behind profile completion imports it from here.
+    """
+
     message = "Complete verification and profile setup to use this feature."
 
     def has_permission(self, request, view):
