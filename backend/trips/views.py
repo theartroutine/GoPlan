@@ -5,8 +5,8 @@ from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsProfileCompleted
 from trips.models import MemberStatus, TripRole, TripStatus
-from trips.permissions import IsProfileCompleted
 from trips.serializers import (
     CreateCustomTypeSerializer,
     CreateSpecialSectionSerializer,

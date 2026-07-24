@@ -10,6 +10,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsProfileCompleted
 from memories.memory_video_services import (
     MemoryVideoDeleteBlockedError,
     MemoryVideoNotFoundError,
@@ -60,7 +61,6 @@ from memories.services import (
     safe_trip_photos_zip_filename,
     _get_active_membership,
 )
-from trips.permissions import IsProfileCompleted
 from trips.services import TripNotFoundError, TripTerminalError
 
 TRIP_PHOTO_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]

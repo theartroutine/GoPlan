@@ -8,6 +8,7 @@ from rest_framework import serializers as drf_serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsProfileCompleted
 from ai.agent.drafts import build_action_draft_payload, can_cancel_action_draft
 from ai.agent.draft_mutations import (
     AIActionDraftPatchFieldNotAllowedError,
@@ -54,7 +55,6 @@ from expenses.services import (
     TransferNotFoundError,
     TransferNotSentError,
 )
-from trips.permissions import IsProfileCompleted
 from trips.services import (
     NotTripMemberError,
     StatusTransitionError,

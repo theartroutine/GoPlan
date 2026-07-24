@@ -4,6 +4,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsProfileCompleted
 from location_search.serializers import (
     LocationSearchLookupQuerySerializer,
     LocationSearchQuerySerializer,
@@ -18,7 +19,6 @@ from location_search.services import (
     lookup_location,
     suggest_locations,
 )
-from trips.permissions import IsProfileCompleted
 
 LOCATION_SEARCH_PERMISSIONS = [permissions.IsAuthenticated, IsProfileCompleted]
 
